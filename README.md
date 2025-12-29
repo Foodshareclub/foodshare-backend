@@ -5,35 +5,28 @@ Shared Supabase backend for FoodShare cross-platform apps (Web, iOS, Android).
 ## Structure
 
 ```
-supabase/
-├── config.toml           # Supabase CLI configuration
-├── migrations/           # Database migrations (40 files)
-├── functions/            # Edge Functions (42 functions)
+foodshare-backend/
+├── functions/            # Deno Edge Functions (40+)
 │   ├── _shared/          # Shared utilities
 │   ├── PLATFORM_GUIDE.md # Platform categorization
 │   └── */                # Individual functions
-└── types/                # Generated TypeScript types
+└── migrations/           # Database migrations
 ```
 
 ## Usage
 
-This repository is intended to be used as a Git submodule in client applications:
+This repository is the source of truth. Client apps link to it via symlinks:
 
 ```bash
-# Add as submodule to your project
-git submodule add git@github.com:your-org/foodshare-backend.git supabase
-
-# Update to latest version
-git submodule update --remote supabase
-git add supabase
-git commit -m "chore: update supabase submodule"
+# From foodshare (web) or foodshare-ios directory:
+ln -s ../foodshare-backend supabase
 ```
+
+Changes here are instantly visible to all client apps.
 
 ## Edge Functions
 
-See `supabase/functions/PLATFORM_GUIDE.md` for platform categorization.
-
-### Deploy Functions
+See `functions/PLATFORM_GUIDE.md` for platform categorization.
 
 ```bash
 # Deploy all functions
@@ -43,41 +36,22 @@ supabase functions deploy
 supabase functions deploy email
 ```
 
-### Local Development
+## Local Development
 
 ```bash
-# Start local Supabase
-supabase start
-
-# Serve functions locally
-supabase functions serve
+supabase start            # Start local Supabase
+supabase functions serve  # Serve functions locally
 ```
 
 ## Migrations
 
 ```bash
-# Apply migrations
-supabase db push
-
-# Create new migration
-supabase migration new migration_name
-
-# View migration status
-supabase migration list
+supabase db push                    # Apply migrations
+supabase migration new <name>       # Create migration
+supabase migration list             # View status
 ```
 
 ## Client Apps
 
-- **Web**: [foodshare](https://github.com/your-org/foodshare) - Next.js 16 app
-- **iOS**: [foodshare-ios](https://github.com/your-org/foodshare-ios) - Swift app
-- **Android**: Coming soon
-
-## Environment Variables
-
-Required secrets (set in Supabase dashboard):
-
-- `SUPABASE_URL` - Project URL
-- `SUPABASE_SERVICE_ROLE_KEY` - Service role key
-- `APPLE_TEAM_ID` - For iOS attestation
-- `APP_BUNDLE_ID` - App bundle identifier
-- Various API keys for email, push notifications, etc.
+- **Web**: [foodshare](https://github.com/Foodshareclub/foodshare) - Next.js app
+- **iOS**: [foodshare-ios](https://github.com/Foodshareclub/foodshare-ios) - Swift app
