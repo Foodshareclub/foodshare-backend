@@ -1,0 +1,2 @@
+[functions.notify-forum-post]
+verify_jwt = false

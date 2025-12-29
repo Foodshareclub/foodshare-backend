@@ -1,0 +1,6 @@
+# Notify New Report Edge Function
+# Called by database triggers when reports are created
+# Sends Telegram notifications to admins
+
+# JWT verification disabled - called from database triggers
+verify_jwt = false

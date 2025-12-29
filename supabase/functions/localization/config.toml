@@ -1,0 +1,2 @@
+[functions.localization]
+verify_jwt = false

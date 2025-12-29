@@ -1,0 +1,5 @@
+# Unified Email Edge Function
+# Handles: send, process-queue, route, health
+
+[function]
+verify_jwt = false

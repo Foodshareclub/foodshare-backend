@@ -1,0 +1,2 @@
+[functions.domain-monitor]
+verify_jwt = false

@@ -1,0 +1,2 @@
+[functions.resize-tinify-upload-image]
+verify_jwt = false

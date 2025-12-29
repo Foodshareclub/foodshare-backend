@@ -1,0 +1,2 @@
+[functions.get-my-chat-id]
+verify_jwt = false

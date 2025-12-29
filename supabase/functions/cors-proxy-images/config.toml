@@ -1,0 +1,2 @@
+[functions.cors-proxy-images]
+verify_jwt = false
