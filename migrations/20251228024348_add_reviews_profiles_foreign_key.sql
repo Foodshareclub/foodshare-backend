@@ -1,5 +1,0 @@
--- Migration: add_reviews_profiles_foreign_key
--- Applied to production: 2024-12-28
--- This migration was applied via Supabase dashboard before this repo was created.
--- The actual SQL is tracked in the supabase_migrations table.
--- DO NOT MODIFY - this is a historical stub for migration tracking only.
