@@ -4,7 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-FoodShare Backend is an enterprise-grade shared Supabase backend serving cross-platform apps (Web, iOS, Android). Used as a Git submodule in client applications.
+FoodShare Backend is an enterprise-grade shared Supabase backend serving cross-platform apps (Web, iOS, Android).
+
+### Repository Structure
+
+```
+foodshare/
+├── foodshare-backend/     ← This repo (source of truth)
+├── foodshare-ios/
+│   └── supabase → ../foodshare-backend  (symlink)
+└── foodshare/  (web)
+    └── supabase → ../foodshare-backend  (symlink)
+```
+
+Changes here are **instantly visible** to both iOS and Web apps via symlinks. No syncing required.
 
 ## Commands
 
@@ -214,6 +227,110 @@ Tables with `deleted_at`: posts, profiles, forum, challenges, rooms, comments
 - GiST indexes for geospatial (`location`)
 - Partial indexes (`WHERE deleted_at IS NULL AND active = true`)
 
+## Webhook Patterns
+
+### WhatsApp/Telegram Webhook Verification
+```typescript
+// GET: Meta webhook verification (hub.challenge)
+if (req.method === "GET") {
+  const mode = url.searchParams.get("hub.mode");
+  const token = url.searchParams.get("hub.verify_token");
+  const challenge = url.searchParams.get("hub.challenge");
+
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    return new Response(challenge, { status: 200 });
+  }
+}
+
+// POST: HMAC signature verification (X-Hub-Signature-256)
+const signature = req.headers.get("X-Hub-Signature-256");
+const isValid = await verifyWebhookSignature(rawBody, signature); // Constant-time comparison
+```
+
+### Webhook Response Pattern
+```typescript
+// Always return 200 to prevent retries (even on errors)
+return new Response(JSON.stringify({ ok: false, error }), { status: 200 });
+```
+
+## Internationalization (i18n)
+
+### Structure (`whatsapp-bot-foodshare/locales/`)
+```typescript
+// locales/en.ts, ru.ts, de.ts
+export const en = {
+  welcome: { title: "Welcome!", subtitle: "..." },
+  auth: { invalidEmail: "...", codeExpired: "..." },
+  // nested keys with {placeholder} support
+};
+```
+
+### Usage
+```typescript
+import { t, detectLanguage, getUserLanguage } from "./lib/i18n.ts";
+
+// Get translation with replacements
+const msg = t("en", "impact.foodShared", { count: 5 });
+
+// Detect from browser/device language code
+const lang = detectLanguage("de");  // → "de"
+
+// Get user preference from database
+const userLang = await getUserLanguage(phoneNumber);
+```
+
+## Location Privacy
+
+Deterministic 100-200m offset for user safety:
+```typescript
+import { approximateLocation } from "../_shared/location-privacy.ts";
+
+// Same postId always produces same offset (seeded PRNG)
+const approx = approximateLocation(lat, lng, postId);
+// → { latitude: lat + offset, longitude: lng + offset }
+```
+
+## Utility Functions (`_shared/utils.ts`)
+
+```typescript
+import {
+  retryWithJitter,      // Exponential backoff with jitter
+  processInParallel,    // Batch processing with concurrency
+  deduplicate,          // Request deduplication
+  withTimeout,          // Timeout wrapper
+  errorResponse,        // Standardized error response
+  successResponse       // Standardized success response
+} from "../_shared/utils.ts";
+
+// Retry with jitter (prevents thundering herd)
+await retryWithJitter(fn, 3, 1000);
+
+// Process with concurrency limit
+await processInParallel(items, processor, 10);
+
+// Deduplicate concurrent identical requests
+await deduplicate("cache-key", expensiveOperation);
+
+// Timeout wrapper
+await withTimeout(promise, 5000, "Request timed out");
+```
+
+## Structured Logging
+
+```typescript
+function log(level: string, message: string, context: Record<string, unknown> = {}): void {
+  console.log(JSON.stringify({
+    level,
+    message,
+    ...context,
+    timestamp: new Date().toISOString(),
+  }));
+}
+
+// Usage
+log("info", "Message handled", { requestId, phoneNumber: phone.substring(0, 4) + "***", durationMs });
+```
+
 ## Environment Variables
 
 Required secrets (Supabase dashboard):
@@ -222,3 +339,5 @@ Required secrets (Supabase dashboard):
 - **Android**: `FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL`, `FCM_PRIVATE_KEY`
 - **Web Push**: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`
 - **Email**: `RESEND_API_KEY`, `BREVO_API_KEY`, `AWS_*` (SES), `MAILERSEND_API_KEY`
+- **WhatsApp**: `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`
+- **Telegram**: `TELEGRAM_BOT_TOKEN`
