@@ -1,51 +1,80 @@
-// ============================================================================
-// NEW USER NOTIFICATION v6 - Modern Stack
-// Built with: Deno 2, TypeScript strict mode
-// Features: Enhanced user data, smart formatting, error handling
-// ============================================================================
+/**
+ * Notify New User Edge Function
+ *
+ * Database webhook trigger that sends Telegram notifications
+ * when new users join the platform.
+ *
+ * Features:
+ * - Rich user profile formatting
+ * - Transportation and dietary info
+ * - Social media links
+ * - Verified status badges
+ *
+ * Trigger: Database INSERT on profiles table
+ */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { logger } from "../_shared/logger.ts";
 
-const VERSION = "6.0.0";
-const botToken = Deno.env.get("BOT_TOKEN");
-const adminChatId = Deno.env.get("ADMIN_CHAT_ID");
+// =============================================================================
+// Configuration
+// =============================================================================
+
+const botToken = Deno.env.get("BOT_TOKEN")!;
+const adminChatId = Deno.env.get("ADMIN_CHAT_ID")!;
 const appUrl = Deno.env.get("APP_URL") || "https://foodshare.club";
 
-interface TelegramResponse {
-  ok: boolean;
-  result?: unknown;
-  description?: string;
+// =============================================================================
+// Request Schema (Database Webhook Payload)
+// =============================================================================
+
+const profileSchema = z.object({
+  record: z.object({
+    id: z.string(),
+    nickname: z.string().optional().nullable(),
+    first_name: z.string().optional().nullable(),
+    second_name: z.string().optional().nullable(),
+    email: z.string().optional().nullable(),
+    phone: z.string().optional().nullable(),
+    about_me: z.string().optional().nullable(),
+    bio: z.string().optional().nullable(),
+    avatar_url: z.string().optional().nullable(),
+    transportation: z.string().optional().nullable(),
+    dietary_preferences: z.union([z.array(z.string()), z.record(z.unknown())]).optional().nullable(),
+    search_radius_km: z.number().optional().nullable(),
+    facebook: z.string().optional().nullable(),
+    instagram: z.string().optional().nullable(),
+    twitter: z.string().optional().nullable(),
+    is_verified: z.boolean().optional().nullable(),
+    is_active: z.boolean().optional().nullable(),
+    created_time: z.string(),
+    updated_at: z.string().optional().nullable(),
+  }).passthrough(),
+}).passthrough();
+
+type ProfilePayload = z.infer<typeof profileSchema>;
+
+// =============================================================================
+// Response Types
+// =============================================================================
+
+interface NotifyResponse {
+  success: boolean;
+  message: string;
+  profile_id: string;
 }
 
-interface ProfileData {
-  id: string;
-  nickname?: string;
-  first_name?: string;
-  second_name?: string;
-  email?: string;
-  phone?: string;
-  about_me?: string;
-  bio?: string;
-  avatar_url?: string;
-  transportation?: string;
-  dietary_preferences?: string[] | Record<string, unknown>;
-  search_radius_km?: number;
-  facebook?: string;
-  instagram?: string;
-  twitter?: string;
-  is_verified?: boolean;
-  is_active?: boolean;
-  created_time: string;
-  updated_at?: string;
-}
+// =============================================================================
+// Telegram API
+// =============================================================================
 
 async function sendTelegramMessage(chatId: string, text: string): Promise<boolean> {
   try {
     const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
         text,
@@ -54,19 +83,23 @@ async function sendTelegramMessage(chatId: string, text: string): Promise<boolea
       }),
     });
 
-    const result = (await response.json()) as TelegramResponse;
+    const result = await response.json();
     if (!result.ok) {
-      console.error("Telegram API error:", result.description || "Unknown error");
+      logger.error("Telegram API error", { error: result.description || "Unknown error" });
       return false;
     }
     return true;
   } catch (error) {
-    console.error("Error sending Telegram message:", error);
+    logger.error("Error sending Telegram message", { error });
     return false;
   }
 }
 
-function formatUserMessage(profile: ProfileData): string {
+// =============================================================================
+// Message Formatting
+// =============================================================================
+
+function formatUserMessage(profile: ProfilePayload["record"]): string {
   const fullName = [profile.first_name, profile.second_name].filter(Boolean).join(" ");
   const displayName = fullName || profile.nickname || "New user";
   const profileUrl = `${appUrl}/profile/${profile.id}`;
@@ -96,18 +129,18 @@ function formatUserMessage(profile: ProfileData): string {
 
   // Transportation
   if (profile.transportation && profile.transportation.trim()) {
-    const transportEmoji =
-      {
-        car: "🚗",
-        bike: "🚲",
-        walk: "🚶",
-        walking: "🚶",
-        public: "🚌",
-        bus: "🚌",
-        scooter: "🛴",
-        motorcycle: "🏍️",
-      }[profile.transportation.toLowerCase()] || "🚶";
-    message += `\n${transportEmoji} Transport: ${profile.transportation}`;
+    const transportEmoji: Record<string, string> = {
+      car: "🚗",
+      bike: "🚲",
+      walk: "🚶",
+      walking: "🚶",
+      public: "🚌",
+      bus: "🚌",
+      scooter: "🛴",
+      motorcycle: "🏍️",
+    };
+    const emoji = transportEmoji[profile.transportation.toLowerCase()] || "🚶";
+    message += `\n${emoji} Transport: ${profile.transportation}`;
   }
 
   // Dietary preferences
@@ -130,7 +163,7 @@ function formatUserMessage(profile: ProfileData): string {
   }
 
   // Social media
-  const socials = [];
+  const socials: string[] = [];
   if (profile.facebook && profile.facebook.trim())
     socials.push(`<a href="${profile.facebook}">Facebook</a>`);
   if (profile.instagram && profile.instagram.trim())
@@ -142,9 +175,8 @@ function formatUserMessage(profile: ProfileData): string {
   }
 
   // Status badges
-  const badges = [];
+  const badges: string[] = [];
   if (profile.is_verified) badges.push("✅ Verified");
-  // Note: Role info now comes from user_roles table, not shown in new user notification
   if (badges.length > 0) {
     message += `\n\n${badges.join(" • ")}`;
   }
@@ -168,82 +200,50 @@ function formatUserMessage(profile: ProfileData): string {
   return message;
 }
 
-Deno.serve(async (req: Request) => {
-  const startTime = Date.now();
-  const requestId = crypto.randomUUID();
+// =============================================================================
+// Handler Implementation
+// =============================================================================
 
-  try {
-    console.log(`[${requestId}] New user notification request received`);
+async function handleNotifyNewUser(ctx: HandlerContext<ProfilePayload>): Promise<Response> {
+  const { body, ctx: requestCtx } = ctx;
+  const profile = body.record;
 
-    const payload = await req.json();
-    console.log(`[${requestId}] Payload:`, JSON.stringify(payload));
+  logger.info("Processing new user notification", {
+    profileId: profile.id.substring(0, 8),
+    nickname: profile.nickname,
+    requestId: requestCtx?.requestId,
+  });
 
-    const profile = payload.record || payload;
+  // Format and send message
+  const message = formatUserMessage(profile);
+  const sent = await sendTelegramMessage(adminChatId, message);
 
-    if (!profile?.id) {
-      console.error(`[${requestId}] Invalid profile data - missing ID`);
-      return new Response(
-        JSON.stringify({
-          error: "Invalid profile data",
-          version: VERSION,
-          requestId,
-        }),
-        {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            "X-Request-ID": requestId,
-            "X-Version": VERSION,
-          },
-        }
-      );
-    }
+  logger.info("Notification sent", {
+    success: sent,
+    profileId: profile.id.substring(0, 8),
+  });
 
-    const message = formatUserMessage(profile as ProfileData);
-    const sent = await sendTelegramMessage(adminChatId!, message);
+  const result: NotifyResponse = {
+    success: sent,
+    message: sent ? "Notification sent" : "Failed to send notification",
+    profile_id: profile.id,
+  };
 
-    const duration = Date.now() - startTime;
-    console.log(`[${requestId}] Notification ${sent ? "sent" : "failed"} in ${duration}ms`);
+  return ok(result, ctx, sent ? 200 : 500);
+}
 
-    return new Response(
-      JSON.stringify({
-        success: sent,
-        message: sent ? "Notification sent" : "Failed to send notification",
-        profile_id: profile.id,
-        version: VERSION,
-        requestId,
-        duration_ms: duration,
-      }),
-      {
-        status: sent ? 200 : 500,
-        headers: {
-          "Content-Type": "application/json",
-          "X-Request-ID": requestId,
-          "X-Version": VERSION,
-          "X-Duration-Ms": duration.toString(),
-        },
-      }
-    );
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    console.error(`[${requestId}] Edge function error:`, error);
+// =============================================================================
+// Export Handler
+// =============================================================================
 
-    return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : "Unknown error",
-        version: VERSION,
-        requestId,
-        duration_ms: duration,
-      }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "X-Request-ID": requestId,
-          "X-Version": VERSION,
-          "X-Duration-Ms": duration.toString(),
-        },
-      }
-    );
-  }
+export default createAPIHandler({
+  service: "notify-new-user",
+  version: "2.0.0",
+  requireAuth: false, // Database webhook - no JWT auth
+  routes: {
+    POST: {
+      schema: profileSchema,
+      handler: handleNotifyNewUser,
+    },
+  },
 });

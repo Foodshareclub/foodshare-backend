@@ -1,7 +1,8 @@
 /**
- * Smart Image Compression Edge Function v15
+ * Smart Image Compression Edge Function v16
  *
  * Modular architecture with separate provider implementations.
+ * Migrated to createAPIHandler for unified patterns.
  *
  * Features:
  * - Modular provider system (TinyPNG, Cloudinary)
@@ -11,9 +12,22 @@
  * - Orphan file detection and cleanup
  * - Batch processing with concurrency control
  * - Comprehensive health monitoring
+ *
+ * Modes:
+ * - GET ?mode=health - Health check and metrics
+ * - GET ?mode=quota - Provider quotas
+ * - GET ?mode=providers - Provider health
+ * - POST ?mode=batch - Process images from single bucket
+ * - POST ?mode=batch-all - Process images from all buckets
+ * - POST ?mode=upload - Compress and upload single image
  */
 
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { logger } from "../_shared/logger.ts";
+import { ServerError, RateLimitError } from "../_shared/errors.ts";
 import {
   createCompressionService,
   CompressionService,
@@ -23,12 +37,12 @@ import {
   ErrorType,
 } from "../_shared/compression/index.ts";
 
-// ============================================================================
-// CONFIGURATION
-// ============================================================================
+// =============================================================================
+// Configuration
+// =============================================================================
 
 const CONFIG = {
-  version: "v15",
+  version: "v16",
   skipThreshold: 100 * 1024, // 100KB
   defaultBucket: "posts",
   batch: {
@@ -49,31 +63,30 @@ const CONFIG = {
 const BUCKETS = ["profiles", "posts", "flags", "forum", "challenges", "rooms", "assets"] as const;
 type Bucket = (typeof BUCKETS)[number];
 
-// ============================================================================
-// STATE
-// ============================================================================
+// =============================================================================
+// State
+// =============================================================================
 
 const rateLimitWindow = { requests: 0, windowStart: Date.now() };
 let orphansDetected = 0;
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-};
+// =============================================================================
+// Query Schemas
+// =============================================================================
 
-// ============================================================================
-// UTILITIES
-// ============================================================================
+const modeQuerySchema = z.object({
+  mode: z.enum(["health", "quota", "providers", "batch", "batch-all", "upload"]).optional().default("health"),
+  bucket: z.string().optional(),
+  limit: z.string().optional(),
+  minSize: z.string().optional(),
+  concurrency: z.string().optional(),
+});
 
-type LogLevel = "info" | "warn" | "error" | "debug";
+type ModeQuery = z.infer<typeof modeQuerySchema>;
 
-function log(level: LogLevel, msg: string, ctx?: Record<string, unknown>): void {
-  const entry = { ts: new Date().toISOString(), level, msg, ...ctx };
-  if (level === "error") console.error(JSON.stringify(entry));
-  else if (level === "warn") console.warn(JSON.stringify(entry));
-  else if (level !== "debug") console.log(JSON.stringify(entry));
-}
+// =============================================================================
+// Utilities
+// =============================================================================
 
 function formatBytes(b: number): string {
   if (b < 1024) return `${b}B`;
@@ -115,13 +128,6 @@ function categorizeError(error: string): ErrorType {
   return "unknown";
 }
 
-function jsonResponse(body: unknown, status: number, cache = "no-store"): Response {
-  return new Response(JSON.stringify(body), {
-    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": cache },
-    status,
-  });
-}
-
 function checkRateLimit(): boolean {
   const now = Date.now();
   if (now - rateLimitWindow.windowStart > CONFIG.rateLimit.windowMs) {
@@ -133,9 +139,9 @@ function checkRateLimit(): boolean {
   return true;
 }
 
-// ============================================================================
-// ORPHAN DETECTION
-// ============================================================================
+// =============================================================================
+// Orphan Detection
+// =============================================================================
 
 async function checkFileExists(
   supabase: SupabaseClient,
@@ -185,15 +191,15 @@ async function markAsOrphan(
     });
 
     orphansDetected++;
-    log("warn", "Orphan file detected", { bucket, path, size: formatBytes(size) });
+    logger.warn("Orphan file detected", { bucket, path, size: formatBytes(size) });
   } catch (e) {
-    log("error", "Failed to mark orphan", { bucket, path, error: String(e) });
+    logger.error("Failed to mark orphan", { bucket, path, error: String(e) });
   }
 }
 
-// ============================================================================
-// DB LOGGING
-// ============================================================================
+// =============================================================================
+// DB Logging
+// =============================================================================
 
 async function logResult(
   supabase: SupabaseClient,
@@ -220,13 +226,13 @@ async function logResult(
       p_error_message: result.error || null,
     });
   } catch (e) {
-    log("warn", "Failed to log result", { error: String(e) });
+    logger.warn("Failed to log result", { error: String(e) });
   }
 }
 
-// ============================================================================
-// BATCH PROCESSING
-// ============================================================================
+// =============================================================================
+// Batch Processing
+// =============================================================================
 
 async function processItem(
   supabase: SupabaseClient,
@@ -376,7 +382,7 @@ async function processBatch(
   const avgTimeMs =
     times.length > 0 ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : 0;
 
-  log("info", "Batch complete", {
+  logger.info("Batch complete", {
     processed,
     failed,
     skipped,
@@ -387,398 +393,447 @@ async function processBatch(
   return { processed, failed, skipped, orphaned, results, totalSavedBytes: totalSaved, avgTimeMs };
 }
 
-// ============================================================================
-// MAIN HANDLER
-// ============================================================================
+// =============================================================================
+// Handler Implementations
+// =============================================================================
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders, status: 204 });
-  }
+async function handleHealthCheck(
+  ctx: HandlerContext<unknown, ModeQuery>,
+  compressionService: CompressionService
+): Promise<Response> {
+  const metrics = compressionService.getMetrics();
+  const circuits = compressionService.getCircuits();
+  const quotas = compressionService.getQuotas();
 
-  const startTime = Date.now();
-  const url = new URL(req.url);
-  const mode = url.searchParams.get("mode") || "health";
-
-  // Create compression service
-  const compressionService = createCompressionService();
-
-  // Health check - lightweight
-  if (mode === "health") {
-    const metrics = compressionService.getMetrics();
-    const circuits = compressionService.getCircuits();
-    const quotas = compressionService.getQuotas();
-
-    return jsonResponse(
-      {
-        status: "healthy",
-        version: CONFIG.version,
-        uptime: formatDuration(metrics.uptime),
-        providers: compressionService.getConfiguredProviders(),
-        metrics: {
-          requests: {
-            total: metrics.requestsTotal,
-            success: metrics.requestsSuccess,
-            failed: metrics.requestsFailed,
-          },
-          bytes: {
-            processed: formatBytes(metrics.bytesProcessed),
-            saved: formatBytes(metrics.bytesSaved),
-          },
-          orphansDetected,
-          avgLatency: formatDuration(metrics.avgLatencyMs),
-          byProvider: metrics.compressionsByProvider,
+  return ok(
+    {
+      status: "healthy",
+      version: CONFIG.version,
+      uptime: formatDuration(metrics.uptime),
+      providers: compressionService.getConfiguredProviders(),
+      metrics: {
+        requests: {
+          total: metrics.requestsTotal,
+          success: metrics.requestsSuccess,
+          failed: metrics.requestsFailed,
         },
-        circuits,
-        quotas,
-        rateLimit: {
-          remaining: CONFIG.rateLimit.maxRequestsPerMinute - rateLimitWindow.requests,
+        bytes: {
+          processed: formatBytes(metrics.bytesProcessed),
+          saved: formatBytes(metrics.bytesSaved),
         },
+        orphansDetected,
+        avgLatency: formatDuration(metrics.avgLatencyMs),
+        byProvider: metrics.compressionsByProvider,
       },
-      200,
-      "public, max-age=5"
-    );
+      circuits,
+      quotas,
+      rateLimit: {
+        remaining: CONFIG.rateLimit.maxRequestsPerMinute - rateLimitWindow.requests,
+      },
+    },
+    ctx
+  );
+}
+
+async function handleQuotaCheck(
+  ctx: HandlerContext<unknown, ModeQuery>,
+  compressionService: CompressionService
+): Promise<Response> {
+  const quotas = compressionService.getQuotas();
+  const circuits = compressionService.getCircuits();
+
+  return ok(
+    {
+      success: true,
+      providers: compressionService.getConfiguredProviders(),
+      quotas,
+      circuits,
+    },
+    ctx
+  );
+}
+
+async function handleProviderHealth(
+  ctx: HandlerContext<unknown, ModeQuery>,
+  compressionService: CompressionService
+): Promise<Response> {
+  const health = await compressionService.checkHealth();
+  const debug = compressionService.getDebugInfo();
+
+  return ok(
+    {
+      success: true,
+      providers: health,
+      debug,
+    },
+    ctx
+  );
+}
+
+async function handleBatch(
+  ctx: HandlerContext<unknown, ModeQuery>,
+  compressionService: CompressionService,
+  startTime: number
+): Promise<Response> {
+  const { supabase, query } = ctx;
+
+  if (!checkRateLimit()) {
+    throw new RateLimitError("Rate limit exceeded", CONFIG.rateLimit.windowMs / 1000);
   }
 
-  try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey =
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
+  if (!compressionService.hasAvailableProvider()) {
+    throw new ServerError("No compression providers available");
+  }
 
-    if (!supabaseUrl || !supabaseKey) {
-      return jsonResponse({ error: "Server configuration error" }, 500);
-    }
+  const bucket = query.bucket || CONFIG.defaultBucket;
+  const limit = Math.min(
+    parseInt(query.limit || String(CONFIG.batch.defaultLimit)),
+    CONFIG.batch.maxBatchSize
+  );
+  const minSize = parseInt(query.minSize || String(CONFIG.skipThreshold));
+  const concurrency = Math.min(
+    parseInt(query.concurrency || String(CONFIG.batch.maxConcurrency)),
+    CONFIG.batch.maxConcurrency
+  );
 
-    const supabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
+  const { data: images, error } = await supabase.rpc("get_large_uncompressed_images", {
+    target_bucket: bucket,
+    size_threshold_bytes: minSize,
+    max_results: limit,
+  });
 
-    // Quota check
-    if (mode === "quota") {
-      const quotas = compressionService.getQuotas();
-      const circuits = compressionService.getCircuits();
+  if (error) {
+    throw new ServerError(`Query failed: ${error.message}`);
+  }
 
-      return jsonResponse(
-        {
-          success: true,
-          providers: compressionService.getConfiguredProviders(),
-          quotas,
-          circuits,
-        },
-        200
-      );
-    }
-
-    // Provider health check
-    if (mode === "providers") {
-      const health = await compressionService.checkHealth();
-      const debug = compressionService.getDebugInfo();
-
-      return jsonResponse(
-        {
-          success: true,
-          providers: health,
-          debug,
-        },
-        200
-      );
-    }
-
-    // Rate limit check for processing modes
-    if ((mode === "batch" || mode === "batch-all" || mode === "upload") && !checkRateLimit()) {
-      return jsonResponse(
-        { error: "Rate limit exceeded", retryAfter: CONFIG.rateLimit.windowMs / 1000 },
-        429
-      );
-    }
-
-    if (!compressionService.hasAvailableProvider()) {
-      return jsonResponse({ error: "No compression providers available" }, 503);
-    }
-
-    // Batch mode - single bucket
-    if (mode === "batch") {
-      const bucket = url.searchParams.get("bucket") || CONFIG.defaultBucket;
-      const limit = Math.min(
-        parseInt(url.searchParams.get("limit") || String(CONFIG.batch.defaultLimit)),
-        CONFIG.batch.maxBatchSize
-      );
-      const minSize = parseInt(url.searchParams.get("minSize") || String(CONFIG.skipThreshold));
-      const concurrency = Math.min(
-        parseInt(url.searchParams.get("concurrency") || String(CONFIG.batch.maxConcurrency)),
-        CONFIG.batch.maxConcurrency
-      );
-
-      const { data: images, error } = await supabase.rpc("get_large_uncompressed_images", {
-        target_bucket: bucket,
-        size_threshold_bytes: minSize,
-        max_results: limit,
-      });
-
-      if (error) return jsonResponse({ error: `Query failed: ${error.message}` }, 500);
-
-      if (!images?.length) {
-        return jsonResponse(
-          {
-            success: true,
-            message: "No images to process",
-            bucket,
-            processed: 0,
-            failed: 0,
-            skipped: 0,
-            orphaned: 0,
-          },
-          200
-        );
-      }
-
-      const items: BatchItem[] = images.map(
-        (i: { bucket: string; path: string; size: number }) => ({
-          bucket: i.bucket,
-          path: i.path,
-          size: i.size,
-        })
-      );
-
-      const result = await processBatch(supabase, items, compressionService, concurrency);
-
-      return jsonResponse(
-        {
-          success: true,
-          mode: "batch",
-          bucket,
-          concurrency,
-          ...result,
-          duration: Date.now() - startTime,
-          circuits: compressionService.getCircuits(),
-          results: result.results.map((r) => ({
-            path: r.originalPath,
-            success: r.success,
-            originalSize: r.originalSize,
-            compressedSize: r.compressedSize,
-            savedPercent:
-              r.compressedSize && r.originalSize > r.compressedSize
-                ? Math.round((1 - r.compressedSize / r.originalSize) * 100)
-                : 0,
-            method: r.compressionMethod,
-            error: r.error,
-            errorType: r.errorType,
-          })),
-        },
-        200
-      );
-    }
-
-    // Batch-all mode - all buckets
-    if (mode === "batch-all") {
-      const limit = Math.min(
-        parseInt(url.searchParams.get("limit") || String(CONFIG.batch.defaultLimit)),
-        CONFIG.batch.maxBatchSize
-      );
-      const minSize = parseInt(url.searchParams.get("minSize") || String(CONFIG.skipThreshold));
-      const concurrency = Math.min(
-        parseInt(url.searchParams.get("concurrency") || String(CONFIG.batch.maxConcurrency)),
-        CONFIG.batch.maxConcurrency
-      );
-
-      const { data: images, error } = await supabase.rpc(
-        "get_large_uncompressed_images_all_buckets",
-        {
-          size_threshold_bytes: minSize,
-          max_results: limit,
-        }
-      );
-
-      if (error) return jsonResponse({ error: `Query failed: ${error.message}` }, 500);
-
-      if (!images?.length) {
-        return jsonResponse(
-          {
-            success: true,
-            message: "No images to process across all buckets",
-            buckets: BUCKETS,
-            processed: 0,
-            failed: 0,
-            skipped: 0,
-            orphaned: 0,
-          },
-          200
-        );
-      }
-
-      const items: BatchItem[] = images.map(
-        (i: { bucket: string; path: string; size: number }) => ({
-          bucket: i.bucket,
-          path: i.path,
-          size: i.size,
-        })
-      );
-
-      // Group by bucket for reporting
-      const bucketCounts: Record<string, number> = {};
-      items.forEach((item) => {
-        bucketCounts[item.bucket] = (bucketCounts[item.bucket] || 0) + 1;
-      });
-
-      const result = await processBatch(supabase, items, compressionService, concurrency);
-
-      // Group results by bucket
-      const resultsByBucket: Record<string, number> = {};
-      result.results.forEach((r) => {
-        const bucket = items.find((i) => i.path === r.originalPath)?.bucket || "unknown";
-        if (
-          r.success &&
-          !r.compressionMethod?.includes("skipped") &&
-          r.compressionMethod !== "no-improvement"
-        ) {
-          resultsByBucket[bucket] = (resultsByBucket[bucket] || 0) + 1;
-        }
-      });
-
-      return jsonResponse(
-        {
-          success: true,
-          mode: "batch-all",
-          buckets: BUCKETS,
-          bucketCounts,
-          resultsByBucket,
-          concurrency,
-          ...result,
-          duration: Date.now() - startTime,
-          circuits: compressionService.getCircuits(),
-          results: result.results.map((r) => ({
-            bucket: items.find((i) => i.path === r.originalPath)?.bucket,
-            path: r.originalPath,
-            success: r.success,
-            originalSize: r.originalSize,
-            compressedSize: r.compressedSize,
-            savedPercent:
-              r.compressedSize && r.originalSize > r.compressedSize
-                ? Math.round((1 - r.compressedSize / r.originalSize) * 100)
-                : 0,
-            method: r.compressionMethod,
-            error: r.error,
-            errorType: r.errorType,
-          })),
-        },
-        200
-      );
-    }
-
-    // Upload mode - compress and upload a single image
-    if (mode === "upload") {
-      let imageData: Uint8Array;
-      let targetBucket = CONFIG.defaultBucket;
-      let customPath = "";
-      const ct = req.headers.get("content-type") || "";
-
-      if (ct.includes("multipart/form-data")) {
-        const form = await req.formData();
-        const file = form.get("file") as File | null;
-        const bucket = form.get("bucket") as string | null;
-        const path = form.get("path") as string | null;
-
-        if (!file) return jsonResponse({ error: "No file provided" }, 400);
-        imageData = new Uint8Array(await file.arrayBuffer());
-        if (bucket && BUCKETS.includes(bucket as Bucket)) targetBucket = bucket;
-        if (path) customPath = path;
-      } else {
-        imageData = new Uint8Array(await req.arrayBuffer());
-        const bp = url.searchParams.get("bucket") || req.headers.get("x-bucket");
-        const pp = url.searchParams.get("path") || req.headers.get("x-path");
-        if (bp && BUCKETS.includes(bp as Bucket)) targetBucket = bp;
-        if (pp) customPath = pp;
-      }
-
-      if (!imageData.length) {
-        return jsonResponse({ error: "Empty file" }, 400);
-      }
-
-      const originalSize = imageData.length;
-
-      // Compress
-      const compressed = await compressionService.compress(imageData, `upload:${generateUUID()}`);
-      const format = detectFormat(compressed.buffer);
-
-      // Generate filename
-      const ext = format === "webp" ? "webp" : format === "jpeg" ? "jpg" : format;
-      const fileName = customPath
-        ? `${customPath}/${generateUUID().slice(0, 8)}-${Date.now()}.${ext}`
-        : `${generateUUID().slice(0, 8)}-${Date.now()}.${ext}`;
-
-      // Upload
-      const { data: uploadData, error: upErr } = await supabase.storage
-        .from(targetBucket)
-        .upload(fileName, compressed.buffer, {
-          contentType: `image/${format}`,
-          cacheControl: "31536000",
-          upsert: false,
-        });
-
-      if (upErr) return jsonResponse({ error: upErr.message }, 400);
-
-      const processingTimeMs = Date.now() - startTime;
-      const savedPercent = ((1 - compressed.buffer.length / originalSize) * 100).toFixed(1);
-
-      // Log result
-      await logResult(supabase, targetBucket, {
+  if (!images?.length) {
+    return ok(
+      {
         success: true,
-        originalPath: fileName,
-        compressedPath: fileName,
-        originalSize,
-        compressedSize: compressed.buffer.length,
-        compressedFormat: format,
-        compressionMethod: compressed.method,
-        processingTimeMs,
-      });
-
-      log("info", "Upload complete", {
-        path: fileName,
-        in: formatBytes(originalSize),
-        out: formatBytes(compressed.buffer.length),
-        saved: savedPercent + "%",
-        provider: compressed.provider,
-        time: formatDuration(processingTimeMs),
-      });
-
-      return jsonResponse(
-        {
-          success: true,
-          data: uploadData,
-          metadata: {
-            originalSize,
-            finalSize: compressed.buffer.length,
-            savedBytes: originalSize - compressed.buffer.length,
-            savedPercent: parseFloat(savedPercent),
-            format,
-            method: compressed.method,
-            provider: compressed.provider,
-            bucket: targetBucket,
-            path: fileName,
-            duration: processingTimeMs,
-          },
-        },
-        200
-      );
-    }
-
-    // Unknown mode
-    return jsonResponse(
-      {
-        error: "Unknown mode",
-        availableModes: ["health", "quota", "providers", "batch", "batch-all", "upload"],
+        message: "No images to process",
+        bucket,
+        processed: 0,
+        failed: 0,
+        skipped: 0,
+        orphaned: 0,
       },
-      400
+      ctx
     );
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Unknown error";
-    const errorType = categorizeError(msg);
+  }
 
-    log("error", "Request failed", {
-      error: msg,
-      errorType,
-      duration: formatDuration(Date.now() - startTime),
+  const items: BatchItem[] = images.map(
+    (i: { bucket: string; path: string; size: number }) => ({
+      bucket: i.bucket,
+      path: i.path,
+      size: i.size,
+    })
+  );
+
+  const result = await processBatch(supabase, items, compressionService, concurrency);
+
+  return ok(
+    {
+      success: true,
+      mode: "batch",
+      bucket,
+      concurrency,
+      ...result,
+      duration: Date.now() - startTime,
+      circuits: compressionService.getCircuits(),
+      results: result.results.map((r) => ({
+        path: r.originalPath,
+        success: r.success,
+        originalSize: r.originalSize,
+        compressedSize: r.compressedSize,
+        savedPercent:
+          r.compressedSize && r.originalSize > r.compressedSize
+            ? Math.round((1 - r.compressedSize / r.originalSize) * 100)
+            : 0,
+        method: r.compressionMethod,
+        error: r.error,
+        errorType: r.errorType,
+      })),
+    },
+    ctx
+  );
+}
+
+async function handleBatchAll(
+  ctx: HandlerContext<unknown, ModeQuery>,
+  compressionService: CompressionService,
+  startTime: number
+): Promise<Response> {
+  const { supabase, query } = ctx;
+
+  if (!checkRateLimit()) {
+    throw new RateLimitError("Rate limit exceeded", CONFIG.rateLimit.windowMs / 1000);
+  }
+
+  if (!compressionService.hasAvailableProvider()) {
+    throw new ServerError("No compression providers available");
+  }
+
+  const limit = Math.min(
+    parseInt(query.limit || String(CONFIG.batch.defaultLimit)),
+    CONFIG.batch.maxBatchSize
+  );
+  const minSize = parseInt(query.minSize || String(CONFIG.skipThreshold));
+  const concurrency = Math.min(
+    parseInt(query.concurrency || String(CONFIG.batch.maxConcurrency)),
+    CONFIG.batch.maxConcurrency
+  );
+
+  const { data: images, error } = await supabase.rpc(
+    "get_large_uncompressed_images_all_buckets",
+    {
+      size_threshold_bytes: minSize,
+      max_results: limit,
+    }
+  );
+
+  if (error) {
+    throw new ServerError(`Query failed: ${error.message}`);
+  }
+
+  if (!images?.length) {
+    return ok(
+      {
+        success: true,
+        message: "No images to process across all buckets",
+        buckets: BUCKETS,
+        processed: 0,
+        failed: 0,
+        skipped: 0,
+        orphaned: 0,
+      },
+      ctx
+    );
+  }
+
+  const items: BatchItem[] = images.map(
+    (i: { bucket: string; path: string; size: number }) => ({
+      bucket: i.bucket,
+      path: i.path,
+      size: i.size,
+    })
+  );
+
+  // Group by bucket for reporting
+  const bucketCounts: Record<string, number> = {};
+  items.forEach((item) => {
+    bucketCounts[item.bucket] = (bucketCounts[item.bucket] || 0) + 1;
+  });
+
+  const result = await processBatch(supabase, items, compressionService, concurrency);
+
+  // Group results by bucket
+  const resultsByBucket: Record<string, number> = {};
+  result.results.forEach((r) => {
+    const bucket = items.find((i) => i.path === r.originalPath)?.bucket || "unknown";
+    if (
+      r.success &&
+      !r.compressionMethod?.includes("skipped") &&
+      r.compressionMethod !== "no-improvement"
+    ) {
+      resultsByBucket[bucket] = (resultsByBucket[bucket] || 0) + 1;
+    }
+  });
+
+  return ok(
+    {
+      success: true,
+      mode: "batch-all",
+      buckets: BUCKETS,
+      bucketCounts,
+      resultsByBucket,
+      concurrency,
+      ...result,
+      duration: Date.now() - startTime,
+      circuits: compressionService.getCircuits(),
+      results: result.results.map((r) => ({
+        bucket: items.find((i) => i.path === r.originalPath)?.bucket,
+        path: r.originalPath,
+        success: r.success,
+        originalSize: r.originalSize,
+        compressedSize: r.compressedSize,
+        savedPercent:
+          r.compressedSize && r.originalSize > r.compressedSize
+            ? Math.round((1 - r.compressedSize / r.originalSize) * 100)
+            : 0,
+        method: r.compressionMethod,
+        error: r.error,
+        errorType: r.errorType,
+      })),
+    },
+    ctx
+  );
+}
+
+async function handleUpload(
+  ctx: HandlerContext<unknown, ModeQuery>,
+  compressionService: CompressionService,
+  startTime: number
+): Promise<Response> {
+  const { request, supabase, query } = ctx;
+
+  if (!checkRateLimit()) {
+    throw new RateLimitError("Rate limit exceeded", CONFIG.rateLimit.windowMs / 1000);
+  }
+
+  if (!compressionService.hasAvailableProvider()) {
+    throw new ServerError("No compression providers available");
+  }
+
+  let imageData: Uint8Array;
+  let targetBucket = CONFIG.defaultBucket;
+  let customPath = "";
+  const ct = request.headers.get("content-type") || "";
+
+  if (ct.includes("multipart/form-data")) {
+    const form = await request.formData();
+    const file = form.get("file") as File | null;
+    const bucket = form.get("bucket") as string | null;
+    const path = form.get("path") as string | null;
+
+    if (!file) {
+      throw new ServerError("No file provided");
+    }
+    imageData = new Uint8Array(await file.arrayBuffer());
+    if (bucket && BUCKETS.includes(bucket as Bucket)) targetBucket = bucket;
+    if (path) customPath = path;
+  } else {
+    imageData = new Uint8Array(await request.arrayBuffer());
+    const bp = query.bucket || request.headers.get("x-bucket");
+    const pp = request.headers.get("x-path");
+    if (bp && BUCKETS.includes(bp as Bucket)) targetBucket = bp;
+    if (pp) customPath = pp;
+  }
+
+  if (!imageData.length) {
+    throw new ServerError("Empty file");
+  }
+
+  const originalSize = imageData.length;
+
+  // Compress
+  const compressed = await compressionService.compress(imageData, `upload:${generateUUID()}`);
+  const format = detectFormat(compressed.buffer);
+
+  // Generate filename
+  const ext = format === "webp" ? "webp" : format === "jpeg" ? "jpg" : format;
+  const fileName = customPath
+    ? `${customPath}/${generateUUID().slice(0, 8)}-${Date.now()}.${ext}`
+    : `${generateUUID().slice(0, 8)}-${Date.now()}.${ext}`;
+
+  // Upload
+  const { data: uploadData, error: upErr } = await supabase.storage
+    .from(targetBucket)
+    .upload(fileName, compressed.buffer, {
+      contentType: `image/${format}`,
+      cacheControl: "31536000",
+      upsert: false,
     });
 
-    const statusCode = errorType === "timeout" ? 504 : errorType === "quota" ? 429 : 500;
-    return jsonResponse({ error: msg, errorType }, statusCode);
+  if (upErr) {
+    throw new ServerError(upErr.message);
   }
+
+  const processingTimeMs = Date.now() - startTime;
+  const savedPercent = ((1 - compressed.buffer.length / originalSize) * 100).toFixed(1);
+
+  // Log result
+  await logResult(supabase, targetBucket, {
+    success: true,
+    originalPath: fileName,
+    compressedPath: fileName,
+    originalSize,
+    compressedSize: compressed.buffer.length,
+    compressedFormat: format,
+    compressionMethod: compressed.method,
+    processingTimeMs,
+  });
+
+  logger.info("Upload complete", {
+    path: fileName,
+    in: formatBytes(originalSize),
+    out: formatBytes(compressed.buffer.length),
+    saved: savedPercent + "%",
+    provider: compressed.provider,
+    time: formatDuration(processingTimeMs),
+  });
+
+  return ok(
+    {
+      success: true,
+      data: uploadData,
+      metadata: {
+        originalSize,
+        finalSize: compressed.buffer.length,
+        savedBytes: originalSize - compressed.buffer.length,
+        savedPercent: parseFloat(savedPercent),
+        format,
+        method: compressed.method,
+        provider: compressed.provider,
+        bucket: targetBucket,
+        path: fileName,
+        duration: processingTimeMs,
+      },
+    },
+    ctx
+  );
+}
+
+// =============================================================================
+// Main Handler
+// =============================================================================
+
+async function handleImageCompression(ctx: HandlerContext<unknown, ModeQuery>): Promise<Response> {
+  const startTime = Date.now();
+  const compressionService = createCompressionService();
+  const mode = ctx.query.mode || "health";
+
+  logger.info("Image compression request", { mode });
+
+  switch (mode) {
+    case "health":
+      return handleHealthCheck(ctx, compressionService);
+    case "quota":
+      return handleQuotaCheck(ctx, compressionService);
+    case "providers":
+      return handleProviderHealth(ctx, compressionService);
+    case "batch":
+      return handleBatch(ctx, compressionService, startTime);
+    case "batch-all":
+      return handleBatchAll(ctx, compressionService, startTime);
+    case "upload":
+      return handleUpload(ctx, compressionService, startTime);
+    default:
+      return ok(
+        {
+          error: "Unknown mode",
+          availableModes: ["health", "quota", "providers", "batch", "batch-all", "upload"],
+        },
+        ctx
+      );
+  }
+}
+
+// =============================================================================
+// Export Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: "resize-tinify-upload-image",
+  version: CONFIG.version,
+  requireAuth: false, // Public health check, rate-limited operations
+  routes: {
+    GET: {
+      querySchema: modeQuerySchema,
+      handler: handleImageCompression,
+    },
+    POST: {
+      querySchema: modeQuerySchema,
+      handler: handleImageCompression,
+    },
+  },
 });

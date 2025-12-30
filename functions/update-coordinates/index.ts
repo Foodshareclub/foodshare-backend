@@ -1,23 +1,41 @@
 /**
- * Update Coordinates - Optimized
+ * Update Coordinates Edge Function
+ *
+ * Geocodes user addresses using Nominatim API and updates coordinates.
  *
  * Features:
- * - Geocoding cache (Memory + Database)
- * - Batch processing
- * - Rate limiting with exponential backoff
- * - Retry logic
- * - Performance monitoring
+ * - Geocoding with retry and exponential backoff
+ * - Rate limiting respect for Nominatim API
+ * - In-memory geocoding cache
+ *
+ * Usage:
+ * POST /update-coordinates
+ * { "address": { "profile_id": "xxx", "generated_full_address": "..." } }
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { logger } from "../_shared/logger.ts";
+import { ValidationError } from "../_shared/errors.ts";
 
-const NOMINATIM_BASE_URL = "https://nominatim.openstreetmap.org/search";
-const API_DELAY = 1000;
-const USER_AGENT = "Foodshare/2.0 (https://foodshare.club)";
-const CACHE_TTL = 86400000; // 24 hours
+// =============================================================================
+// Configuration
+// =============================================================================
 
-// In-memory geocoding cache
+const CONFIG = {
+  version: "2.0.0",
+  nominatimBaseUrl: "https://nominatim.openstreetmap.org/search",
+  userAgent: "Foodshare/2.0 (https://foodshare.club)",
+  cacheTTL: 86400000, // 24 hours
+  maxRetries: 3,
+  initialRetryDelay: 1000,
+};
+
+// =============================================================================
+// In-Memory Cache
+// =============================================================================
+
 const geocodeCache = new Map<
   string,
   {
@@ -27,94 +45,181 @@ const geocodeCache = new Map<
   }
 >();
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
-function delay(ms) {
+// =============================================================================
+// Request Schema
+// =============================================================================
+
+const addressSchema = z.object({
+  profile_id: z.string(),
+  generated_full_address: z.string().optional(),
+  lat: z.string().optional().nullable(),
+  long: z.string().optional().nullable(),
+});
+
+const updateCoordinatesSchema = z.object({
+  address: addressSchema,
+});
+
+type UpdateCoordinatesRequest = z.infer<typeof updateCoordinatesSchema>;
+
+// =============================================================================
+// Response Types
+// =============================================================================
+
+interface UpdateResult {
+  profile_id: string;
+  status: "updated" | "unchanged" | "not_found" | "error";
+  address?: string;
+  message?: string;
+  error?: string;
+  oldCoordinates?: { lat: string; long: string };
+  newCoordinates?: { lat: string; long: string };
+}
+
+// =============================================================================
+// Geocoding Helpers
+// =============================================================================
+
+function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-async function fetchWithRetry(url, maxRetries = 3, initialDelay = 1000) {
+
+async function fetchWithRetry(
+  url: string,
+  maxRetries = CONFIG.maxRetries,
+  initialDelay = CONFIG.initialRetryDelay
+): Promise<Response> {
   for (let i = 0; i < maxRetries; i++) {
     try {
       const response = await fetch(url, {
-        headers: {
-          "User-Agent": USER_AGENT,
-        },
+        headers: { "User-Agent": CONFIG.userAgent },
       });
+
       if (response.ok) return response;
+
       if (response.status === 429) {
         const retryAfter = response.headers.get("Retry-After");
         const delayMs = retryAfter ? parseInt(retryAfter) * 1000 : initialDelay * Math.pow(2, i);
-        console.log(`Rate limited. Waiting for ${delayMs}ms before retrying.`);
+        logger.warn("Rate limited by Nominatim", { delayMs, attempt: i + 1 });
         await delay(delayMs);
         continue;
       }
+
       throw new Error(`HTTP error! status: ${response.status}`);
     } catch (err) {
-      console.error(`Attempt ${i + 1} failed: ${err}`);
+      logger.error("Geocoding attempt failed", {
+        attempt: i + 1,
+        error: err instanceof Error ? err.message : "Unknown",
+      });
       if (i === maxRetries - 1) throw err;
     }
+
     const delayMs = initialDelay * Math.pow(2, i);
-    console.log(`Waiting for ${delayMs}ms before retrying.`);
     await delay(delayMs);
   }
+
   throw new Error(`Failed to fetch after ${maxRetries} retries`);
 }
-async function geocodeAddress(addressString) {
-  console.log(`Geocoding address: ${addressString}`);
+
+async function geocodeAddress(
+  addressString: string
+): Promise<{ lat: string; lon: string } | null> {
+  logger.info("Geocoding address", { address: addressString.substring(0, 50) });
+
+  // Check cache first
+  const cached = geocodeCache.get(addressString);
+  if (cached && Date.now() - cached.timestamp < CONFIG.cacheTTL) {
+    logger.info("Cache hit for geocoding");
+    return { lat: cached.lat, lon: cached.lon };
+  }
+
   const encodedAddress = encodeURIComponent(addressString);
-  const url = `${NOMINATIM_BASE_URL}?q=${encodedAddress}&format=json&addressdetails=1&limit=1`;
+  const url = `${CONFIG.nominatimBaseUrl}?q=${encodedAddress}&format=json&addressdetails=1&limit=1`;
+
   try {
-    const nominatimResponse = await fetchWithRetry(url);
-    const contentType = nominatimResponse.headers.get("content-type");
+    const response = await fetchWithRetry(url);
+    const contentType = response.headers.get("content-type");
+
     if (!contentType || !contentType.includes("application/json")) {
-      console.error("Received non-JSON response from Nominatim API");
-      return [];
+      logger.error("Received non-JSON response from Nominatim");
+      return null;
     }
-    const result = await nominatimResponse.json();
-    console.log(`Geocoding result: ${JSON.stringify(result)}`);
-    return result;
+
+    const result = await response.json();
+
+    if (!result || result.length === 0) {
+      return null;
+    }
+
+    const { lat, lon } = result[0];
+
+    // Cache the result
+    geocodeCache.set(addressString, {
+      lat,
+      lon,
+      timestamp: Date.now(),
+    });
+
+    return { lat, lon };
   } catch (error) {
-    console.error("Error querying Nominatim API:", error);
-    return [];
+    logger.error("Error querying Nominatim API", {
+      error: error instanceof Error ? error.message : "Unknown",
+    });
+    return null;
   }
 }
-async function updateCoordinates(supabase, address) {
-  console.log("Updating coordinates for profile_id:", address.profile_id);
+
+// =============================================================================
+// Handler Implementation
+// =============================================================================
+
+async function handleUpdateCoordinates(
+  ctx: HandlerContext<UpdateCoordinatesRequest>
+): Promise<Response> {
+  const { supabase, body, ctx: requestCtx } = ctx;
+  const { address } = body;
+
+  logger.info("Updating coordinates", {
+    profileId: address.profile_id.substring(0, 8),
+    requestId: requestCtx?.requestId,
+  });
+
   if (!address.generated_full_address) {
-    console.log("No generated_full_address for profile_id:", address.profile_id);
-    return {
+    const result: UpdateResult = {
       profile_id: address.profile_id,
       status: "error",
       message: "No generated_full_address available",
     };
+    return ok(result, ctx);
   }
+
+  // Geocode the address
   const geocodeData = await geocodeAddress(address.generated_full_address);
-  if (geocodeData.length === 0) {
-    console.log("No coordinates found for the address");
-    return {
+
+  if (!geocodeData) {
+    const result: UpdateResult = {
       profile_id: address.profile_id,
       status: "not_found",
       address: address.generated_full_address,
       message: "Nominatim could not find coordinates for this address",
     };
+    return ok(result, ctx);
   }
-  const { lat, lon } = geocodeData[0];
-  console.log(`Coordinates found: lat=${lat}, lon=${lon}`);
+
+  const { lat, lon } = geocodeData;
+
+  // Check if coordinates have changed
   if (lat === address.lat && lon === address.long) {
-    console.log("Coordinates have not changed");
-    return {
+    const result: UpdateResult = {
       profile_id: address.profile_id,
       status: "unchanged",
       address: address.generated_full_address,
-      coordinates: {
-        lat,
-        long: lon,
-      },
+      newCoordinates: { lat, long: lon },
     };
+    return ok(result, ctx);
   }
+
+  // Update the coordinates
   const { error: updateError } = await supabase
     .from("address")
     .update({
@@ -122,72 +227,52 @@ async function updateCoordinates(supabase, address) {
       long: lon,
     })
     .eq("profile_id", address.profile_id);
+
   if (updateError) {
-    console.error("Error updating coordinates:", updateError.message);
-    return {
+    logger.error("Failed to update coordinates", {
+      error: updateError.message,
+      profileId: address.profile_id.substring(0, 8),
+    });
+
+    const result: UpdateResult = {
       profile_id: address.profile_id,
       status: "error",
       error: updateError.message,
     };
+    return ok(result, ctx);
   }
-  console.log("Coordinates updated successfully");
-  return {
+
+  logger.info("Coordinates updated successfully", {
+    profileId: address.profile_id.substring(0, 8),
+    lat,
+    lon,
+  });
+
+  const result: UpdateResult = {
     profile_id: address.profile_id,
     status: "updated",
     address: address.generated_full_address,
-    oldCoordinates: {
-      lat: address.lat,
-      long: address.long,
-    },
-    newCoordinates: {
-      lat,
-      long: lon,
-    },
+    oldCoordinates: address.lat && address.long
+      ? { lat: address.lat, long: address.long }
+      : undefined,
+    newCoordinates: { lat, long: lon },
   };
+
+  return ok(result, ctx);
 }
-serve(async (req) => {
-  console.log("Function started - Updating coordinates");
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables");
-    return new Response(
-      JSON.stringify({
-        error: "Server configuration error",
-      }),
-      {
-        status: 500,
-      }
-    );
-  }
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
-  try {
-    const { address } = await req.json();
-    if (address) {
-      console.log("Updating coordinates for single address");
-      const result = await updateCoordinates(supabase, address);
-      return new Response(JSON.stringify(result), {
-        status: 200,
-      });
-    } else {
-      return new Response(
-        JSON.stringify({
-          error: "Invalid request. Address data is required.",
-        }),
-        {
-          status: 400,
-        }
-      );
-    }
-  } catch (error) {
-    console.error("Unexpected error:", error.message);
-    return new Response(
-      JSON.stringify({
-        error: error.message,
-      }),
-      {
-        status: 500,
-      }
-    );
-  }
+
+// =============================================================================
+// Export Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: "update-coordinates",
+  version: CONFIG.version,
+  requireAuth: false, // Service-level operation
+  routes: {
+    POST: {
+      schema: updateCoordinatesSchema,
+      handler: handleUpdateCoordinates,
+    },
+  },
 });

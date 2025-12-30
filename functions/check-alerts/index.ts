@@ -18,30 +18,34 @@
  * - Database alert log
  *
  * Usage:
- * - Cron: Run every 5 minutes
- * - Manual: POST /check-alerts with optional { force: true } to bypass cooldowns
+ * POST /check-alerts { "force": true } // Bypass cooldowns
+ * GET /check-alerts
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { logger } from "../_shared/logger.ts";
 
+// =============================================================================
+// Configuration
+// =============================================================================
+
+const CONFIG = {
+  version: "2.0.0",
+  alertCooldownMinutes: 15,
+  defaultThresholds: {
+    errorRatePercent: 5,
+    p95LatencyMs: 2000,
+    failedLoginMultiplier: 10,
+    connectionPoolPercent: 80,
+    vaultFailuresPerHour: 5,
+  },
+};
+
+// =============================================================================
 // Types
-interface AlertThresholds {
-  errorRatePercent: number;
-  p95LatencyMs: number;
-  failedLoginMultiplier: number;
-  connectionPoolPercent: number;
-  vaultFailuresPerHour: number;
-}
-
-interface AlertCondition {
-  type: AlertType;
-  severity: AlertSeverity;
-  message: string;
-  value: number;
-  threshold: number;
-  details?: Record<string, unknown>;
-}
+// =============================================================================
 
 type AlertType =
   | "error_rate_high"
@@ -54,6 +58,15 @@ type AlertType =
 
 type AlertSeverity = "critical" | "warning" | "info";
 
+interface AlertCondition {
+  type: AlertType;
+  severity: AlertSeverity;
+  message: string;
+  value: number;
+  threshold: number;
+  details?: Record<string, unknown>;
+}
+
 interface AlertResult {
   checked_at: string;
   alerts_triggered: number;
@@ -61,233 +74,37 @@ interface AlertResult {
   notifications_sent: string[];
 }
 
-interface MetricsRow {
-  error_rate: number;
-  total_requests: number;
-  error_count: number;
+interface AlertThresholds {
+  errorRatePercent: number;
+  p95LatencyMs: number;
+  failedLoginMultiplier: number;
+  connectionPoolPercent: number;
+  vaultFailuresPerHour: number;
 }
-
-interface LatencyRow {
-  p95_latency_ms: number;
-}
-
-interface CircuitRow {
-  circuit_name: string;
-  state: string;
-  failure_count: number;
-  last_change: string;
-}
-
-interface LoginStatsRow {
-  current_failures: number;
-  baseline_failures: number;
-  spike_multiplier: number;
-}
-
-interface VaultFailuresRow {
-  failure_count: number;
-}
-
-interface ConnectionPoolRow {
-  total_connections: number;
-  active_connections: number;
-  utilization_percent: number;
-}
-
-// Default thresholds (can be overridden via environment)
-const DEFAULT_THRESHOLDS: AlertThresholds = {
-  errorRatePercent: 5,
-  p95LatencyMs: 2000,
-  failedLoginMultiplier: 10,
-  connectionPoolPercent: 80,
-  vaultFailuresPerHour: 5,
-};
-
-// Alert cooldown in minutes (to prevent spam)
-const ALERT_COOLDOWN_MINUTES = 15;
-
-// CORS headers
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
-
-Deno.serve(async (req: Request) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  const startTime = performance.now();
-
-  try {
-    // Initialize Supabase client
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!supabaseUrl || !supabaseKey) {
-      console.error("Missing Supabase configuration");
-      return new Response(
-        JSON.stringify({ error: "Server configuration error" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Check if force mode (bypass cooldowns)
-    let forceCheck = false;
-    try {
-      const body = await req.json();
-      forceCheck = body?.force === true;
-    } catch {
-      // No body or invalid JSON - continue with normal check
-    }
-
-    // Load custom thresholds from environment or use defaults
-    const thresholds: AlertThresholds = {
-      errorRatePercent: parseFloat(
-        Deno.env.get("ALERT_ERROR_RATE_PERCENT") ||
-          String(DEFAULT_THRESHOLDS.errorRatePercent)
-      ),
-      p95LatencyMs: parseInt(
-        Deno.env.get("ALERT_P95_LATENCY_MS") ||
-          String(DEFAULT_THRESHOLDS.p95LatencyMs)
-      ),
-      failedLoginMultiplier: parseFloat(
-        Deno.env.get("ALERT_LOGIN_SPIKE_MULTIPLIER") ||
-          String(DEFAULT_THRESHOLDS.failedLoginMultiplier)
-      ),
-      connectionPoolPercent: parseInt(
-        Deno.env.get("ALERT_CONNECTION_POOL_PERCENT") ||
-          String(DEFAULT_THRESHOLDS.connectionPoolPercent)
-      ),
-      vaultFailuresPerHour: parseInt(
-        Deno.env.get("ALERT_VAULT_FAILURES_HOUR") ||
-          String(DEFAULT_THRESHOLDS.vaultFailuresPerHour)
-      ),
-    };
-
-    // Run all checks in parallel
-    const [
-      errorRateAlert,
-      latencyAlert,
-      circuitBreakerAlerts,
-      loginSpikeAlert,
-      vaultFailuresAlert,
-      connectionPoolAlert,
-    ] = await Promise.all([
-      checkErrorRate(supabase, thresholds),
-      checkLatency(supabase, thresholds),
-      checkCircuitBreakers(supabase),
-      checkLoginSpike(supabase, thresholds),
-      checkVaultFailures(supabase, thresholds),
-      checkConnectionPool(supabase, thresholds),
-    ]);
-
-    // Collect all triggered alerts
-    const alerts: AlertCondition[] = [
-      errorRateAlert,
-      latencyAlert,
-      ...circuitBreakerAlerts,
-      loginSpikeAlert,
-      vaultFailuresAlert,
-      connectionPoolAlert,
-    ].filter((a): a is AlertCondition => a !== null);
-
-    console.log(`Checked ${6} conditions, found ${alerts.length} alerts`);
-
-    // Send notifications for new alerts
-    const notificationsSent: string[] = [];
-
-    if (alerts.length > 0) {
-      // Check cooldowns unless force mode
-      const alertsToSend = forceCheck
-        ? alerts
-        : await filterByAlertCooldowns(supabase, alerts);
-
-      if (alertsToSend.length > 0) {
-        // Get notification credentials from vault
-        const slackWebhook = await getSecretSafe(supabase, "SLACK_WEBHOOK_URL");
-        const opsEmail = await getSecretSafe(supabase, "OPS_ALERT_EMAIL");
-
-        // Send Slack notification
-        if (slackWebhook) {
-          const slackSent = await sendSlackAlert(slackWebhook, alertsToSend);
-          if (slackSent) notificationsSent.push("slack");
-        }
-
-        // Send email notification for critical alerts
-        const criticalAlerts = alertsToSend.filter(
-          (a) => a.severity === "critical"
-        );
-        if (criticalAlerts.length > 0 && opsEmail) {
-          const emailSent = await sendEmailAlert(
-            supabase,
-            opsEmail,
-            criticalAlerts
-          );
-          if (emailSent) notificationsSent.push("email");
-        }
-
-        // Log alerts to database
-        await logAlerts(supabase, alertsToSend);
-      }
-    }
-
-    const result: AlertResult = {
-      checked_at: new Date().toISOString(),
-      alerts_triggered: alerts.length,
-      alerts,
-      notifications_sent: notificationsSent,
-    };
-
-    console.log(
-      `Alert check completed in ${Math.round(performance.now() - startTime)}ms`
-    );
-
-    return new Response(JSON.stringify(result), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    console.error("Error in check-alerts:", error);
-    return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : "Unknown error",
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
-  }
-});
 
 // =============================================================================
-// ALERT CHECKS
+// Request Schema
+// =============================================================================
+
+const checkAlertsSchema = z.object({
+  force: z.boolean().optional(),
+}).optional();
+
+type CheckAlertsRequest = z.infer<typeof checkAlertsSchema>;
+
+// =============================================================================
+// Alert Check Functions
 // =============================================================================
 
 async function checkErrorRate(
-  supabase: ReturnType<typeof createClient>,
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
   thresholds: AlertThresholds
 ): Promise<AlertCondition | null> {
   try {
-    const { data, error } = await supabase.rpc("get_error_rate", {
-      p_minutes: 5,
-    });
+    const { data, error } = await supabase.rpc("get_error_rate", { p_minutes: 5 });
+    if (error || !data) return null;
 
-    if (error || !data) {
-      console.error("Error checking error rate:", error);
-      return null;
-    }
-
-    const metrics = (Array.isArray(data) ? data[0] : data) as MetricsRow | undefined;
+    const metrics = Array.isArray(data) ? data[0] : data;
     if (!metrics) return null;
 
     const errorRate = parseFloat(String(metrics.error_rate || 0));
@@ -306,27 +123,20 @@ async function checkErrorRate(
         },
       };
     }
-
     return null;
   } catch (error) {
-    console.error("Error in checkErrorRate:", error);
+    logger.error("Error checking error rate", { error });
     return null;
   }
 }
 
 async function checkLatency(
-  supabase: ReturnType<typeof createClient>,
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
   thresholds: AlertThresholds
 ): Promise<AlertCondition | null> {
   try {
-    const { data, error } = await supabase.rpc("get_p95_latency", {
-      p_minutes: 5,
-    });
-
-    if (error) {
-      console.error("Error checking latency:", error);
-      return null;
-    }
+    const { data, error } = await supabase.rpc("get_p95_latency", { p_minutes: 5 });
+    if (error) return null;
 
     const p95 = typeof data === "number" ? data : 0;
 
@@ -340,16 +150,15 @@ async function checkLatency(
         details: { window_minutes: 5 },
       };
     }
-
     return null;
   } catch (error) {
-    console.error("Error in checkLatency:", error);
+    logger.error("Error checking latency", { error });
     return null;
   }
 }
 
 async function checkCircuitBreakers(
-  supabase: ReturnType<typeof createClient>
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>
 ): Promise<AlertCondition[]> {
   try {
     const { data, error } = await supabase
@@ -357,12 +166,9 @@ async function checkCircuitBreakers(
       .select("*")
       .eq("state", "open");
 
-    if (error || !data) {
-      console.error("Error checking circuit breakers:", error);
-      return [];
-    }
+    if (error || !data) return [];
 
-    return (data as CircuitRow[]).map((circuit) => ({
+    return data.map((circuit) => ({
       type: "circuit_breaker_open" as AlertType,
       severity: "critical" as AlertSeverity,
       message: `Circuit breaker '${circuit.circuit_name}' is OPEN`,
@@ -375,13 +181,13 @@ async function checkCircuitBreakers(
       },
     }));
   } catch (error) {
-    console.error("Error in checkCircuitBreakers:", error);
+    logger.error("Error checking circuit breakers", { error });
     return [];
   }
 }
 
 async function checkLoginSpike(
-  supabase: ReturnType<typeof createClient>,
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
   thresholds: AlertThresholds
 ): Promise<AlertCondition | null> {
   try {
@@ -390,12 +196,9 @@ async function checkLoginSpike(
       p_baseline_window_hours: 24,
     });
 
-    if (error || !data) {
-      console.error("Error checking login spike:", error);
-      return null;
-    }
+    if (error || !data) return null;
 
-    const stats = (Array.isArray(data) ? data[0] : data) as LoginStatsRow | undefined;
+    const stats = Array.isArray(data) ? data[0] : data;
     if (!stats) return null;
 
     const multiplier = stats.spike_multiplier || 0;
@@ -414,27 +217,20 @@ async function checkLoginSpike(
         },
       };
     }
-
     return null;
   } catch (error) {
-    console.error("Error in checkLoginSpike:", error);
+    logger.error("Error checking login spike", { error });
     return null;
   }
 }
 
 async function checkVaultFailures(
-  supabase: ReturnType<typeof createClient>,
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
   thresholds: AlertThresholds
 ): Promise<AlertCondition | null> {
   try {
-    const { data, error } = await supabase.rpc("get_vault_failure_count", {
-      p_hours: 1,
-    });
-
-    if (error) {
-      console.error("Error checking vault failures:", error);
-      return null;
-    }
+    const { data, error } = await supabase.rpc("get_vault_failure_count", { p_hours: 1 });
+    if (error) return null;
 
     const failures = typeof data === "number" ? data : 0;
 
@@ -448,27 +244,22 @@ async function checkVaultFailures(
         details: { window_hours: 1 },
       };
     }
-
     return null;
   } catch (error) {
-    console.error("Error in checkVaultFailures:", error);
+    logger.error("Error checking vault failures", { error });
     return null;
   }
 }
 
 async function checkConnectionPool(
-  supabase: ReturnType<typeof createClient>,
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
   thresholds: AlertThresholds
 ): Promise<AlertCondition | null> {
   try {
     const { data, error } = await supabase.rpc("get_connection_pool_stats");
+    if (error || !data) return null;
 
-    if (error || !data) {
-      console.error("Error checking connection pool:", error);
-      return null;
-    }
-
-    const stats = (Array.isArray(data) ? data[0] : data) as ConnectionPoolRow | undefined;
+    const stats = Array.isArray(data) ? data[0] : data;
     if (!stats) return null;
 
     const utilization = stats.utilization_percent || 0;
@@ -486,16 +277,15 @@ async function checkConnectionPool(
         },
       };
     }
-
     return null;
   } catch (error) {
-    console.error("Error in checkConnectionPool:", error);
+    logger.error("Error checking connection pool", { error });
     return null;
   }
 }
 
 // =============================================================================
-// NOTIFICATION FUNCTIONS
+// Notification Functions
 // =============================================================================
 
 async function sendSlackAlert(
@@ -518,9 +308,7 @@ async function sendSlackAlert(
           emoji: true,
         },
       },
-      {
-        type: "divider",
-      },
+      { type: "divider" },
       ...alerts.map((alert) => ({
         type: "section",
         text: {
@@ -530,71 +318,30 @@ async function sendSlackAlert(
       })),
       {
         type: "context",
-        elements: [
-          {
-            type: "mrkdwn",
-            text: `Timestamp: ${new Date().toISOString()}`,
-          },
-        ],
+        elements: [{ type: "mrkdwn", text: `Timestamp: ${new Date().toISOString()}` }],
       },
     ];
 
     const response = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        attachments: [
-          {
-            color,
-            blocks,
-          },
-        ],
-      }),
+      body: JSON.stringify({ attachments: [{ color, blocks }] }),
     });
 
     if (!response.ok) {
-      console.error("Failed to send Slack alert:", await response.text());
+      logger.error("Failed to send Slack alert", { status: response.status });
       return false;
     }
 
-    console.log("✅ Slack alert sent successfully");
     return true;
   } catch (error) {
-    console.error("Error sending Slack alert:", error);
-    return false;
-  }
-}
-
-async function sendEmailAlert(
-  supabase: ReturnType<typeof createClient>,
-  opsEmail: string,
-  alerts: AlertCondition[]
-): Promise<boolean> {
-  try {
-    // Use the resend function to send the email
-    const { error } = await supabase.functions.invoke("resend-alert", {
-      body: {
-        to: opsEmail,
-        subject: `[CRITICAL] Foodshare: ${alerts.length} critical alert(s)`,
-        alerts,
-      },
-    });
-
-    if (error) {
-      console.error("Failed to send email alert:", error);
-      return false;
-    }
-
-    console.log("✅ Email alert sent successfully");
-    return true;
-  } catch (error) {
-    console.error("Error sending email alert:", error);
+    logger.error("Error sending Slack alert", { error });
     return false;
   }
 }
 
 async function logAlerts(
-  supabase: ReturnType<typeof createClient>,
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
   alerts: AlertCondition[]
 ): Promise<void> {
   try {
@@ -609,27 +356,23 @@ async function logAlerts(
     }));
 
     const { error } = await supabase.from("metrics.alerts").insert(records);
-
     if (error) {
-      console.error("Failed to log alerts:", error);
-    } else {
-      console.log(`✅ Logged ${alerts.length} alerts to database`);
+      logger.error("Failed to log alerts", { error: error.message });
     }
   } catch (error) {
-    console.error("Error logging alerts:", error);
+    logger.error("Error logging alerts", { error });
   }
 }
 
 async function filterByAlertCooldowns(
-  supabase: ReturnType<typeof createClient>,
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
   alerts: AlertCondition[]
 ): Promise<AlertCondition[]> {
   try {
     const cooldownTime = new Date(
-      Date.now() - ALERT_COOLDOWN_MINUTES * 60 * 1000
+      Date.now() - CONFIG.alertCooldownMinutes * 60 * 1000
     ).toISOString();
 
-    // Get recent alerts of the same types
     const alertTypes = [...new Set(alerts.map((a) => a.type))];
 
     const { data: recentAlerts, error } = await supabase
@@ -638,28 +381,17 @@ async function filterByAlertCooldowns(
       .in("alert_type", alertTypes)
       .gte("created_at", cooldownTime);
 
-    if (error) {
-      console.error("Error checking alert cooldowns:", error);
-      return alerts; // If we can't check, send all
-    }
+    if (error) return alerts;
 
-    const recentTypes = new Set(
-      (recentAlerts || []).map((a: { alert_type: string }) => a.alert_type)
-    );
-
+    const recentTypes = new Set((recentAlerts || []).map((a) => a.alert_type));
     return alerts.filter((alert) => !recentTypes.has(alert.type));
-  } catch (error) {
-    console.error("Error in filterByAlertCooldowns:", error);
+  } catch {
     return alerts;
   }
 }
 
-// =============================================================================
-// HELPER FUNCTIONS
-// =============================================================================
-
 async function getSecretSafe(
-  supabase: ReturnType<typeof createClient>,
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
   secretName: string
 ): Promise<string | null> {
   try {
@@ -672,13 +404,130 @@ async function getSecretSafe(
       },
     });
 
-    if (error || !data) {
-      console.log(`Secret ${secretName} not configured`);
-      return null;
-    }
-
+    if (error || !data) return null;
     return data as string;
   } catch {
     return null;
   }
 }
+
+// =============================================================================
+// Handler Implementation
+// =============================================================================
+
+async function handleCheckAlerts(
+  ctx: HandlerContext<CheckAlertsRequest>
+): Promise<Response> {
+  const { supabase, body, ctx: requestCtx } = ctx;
+  const startTime = performance.now();
+  const forceCheck = body?.force === true;
+
+  logger.info("Checking alerts", {
+    force: forceCheck,
+    requestId: requestCtx?.requestId,
+  });
+
+  // Load thresholds from environment or use defaults
+  const thresholds: AlertThresholds = {
+    errorRatePercent: parseFloat(
+      Deno.env.get("ALERT_ERROR_RATE_PERCENT") || String(CONFIG.defaultThresholds.errorRatePercent)
+    ),
+    p95LatencyMs: parseInt(
+      Deno.env.get("ALERT_P95_LATENCY_MS") || String(CONFIG.defaultThresholds.p95LatencyMs)
+    ),
+    failedLoginMultiplier: parseFloat(
+      Deno.env.get("ALERT_LOGIN_SPIKE_MULTIPLIER") || String(CONFIG.defaultThresholds.failedLoginMultiplier)
+    ),
+    connectionPoolPercent: parseInt(
+      Deno.env.get("ALERT_CONNECTION_POOL_PERCENT") || String(CONFIG.defaultThresholds.connectionPoolPercent)
+    ),
+    vaultFailuresPerHour: parseInt(
+      Deno.env.get("ALERT_VAULT_FAILURES_HOUR") || String(CONFIG.defaultThresholds.vaultFailuresPerHour)
+    ),
+  };
+
+  // Run all checks in parallel
+  const [
+    errorRateAlert,
+    latencyAlert,
+    circuitBreakerAlerts,
+    loginSpikeAlert,
+    vaultFailuresAlert,
+    connectionPoolAlert,
+  ] = await Promise.all([
+    checkErrorRate(supabase, thresholds),
+    checkLatency(supabase, thresholds),
+    checkCircuitBreakers(supabase),
+    checkLoginSpike(supabase, thresholds),
+    checkVaultFailures(supabase, thresholds),
+    checkConnectionPool(supabase, thresholds),
+  ]);
+
+  // Collect all triggered alerts
+  const alerts: AlertCondition[] = [
+    errorRateAlert,
+    latencyAlert,
+    ...circuitBreakerAlerts,
+    loginSpikeAlert,
+    vaultFailuresAlert,
+    connectionPoolAlert,
+  ].filter((a): a is AlertCondition => a !== null);
+
+  logger.info("Alert check complete", {
+    total: 6,
+    triggered: alerts.length,
+  });
+
+  // Send notifications
+  const notificationsSent: string[] = [];
+
+  if (alerts.length > 0) {
+    const alertsToSend = forceCheck
+      ? alerts
+      : await filterByAlertCooldowns(supabase, alerts);
+
+    if (alertsToSend.length > 0) {
+      const slackWebhook = await getSecretSafe(supabase, "SLACK_WEBHOOK_URL");
+
+      if (slackWebhook) {
+        const slackSent = await sendSlackAlert(slackWebhook, alertsToSend);
+        if (slackSent) notificationsSent.push("slack");
+      }
+
+      await logAlerts(supabase, alertsToSend);
+    }
+  }
+
+  const result: AlertResult = {
+    checked_at: new Date().toISOString(),
+    alerts_triggered: alerts.length,
+    alerts,
+    notifications_sent: notificationsSent,
+  };
+
+  logger.info("Alert check completed", {
+    durationMs: Math.round(performance.now() - startTime),
+    alertsTriggered: alerts.length,
+  });
+
+  return ok(result, ctx);
+}
+
+// =============================================================================
+// Export Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: "check-alerts",
+  version: CONFIG.version,
+  requireAuth: false, // Cron job - service-level
+  routes: {
+    POST: {
+      schema: checkAlertsSchema,
+      handler: handleCheckAlerts,
+    },
+    GET: {
+      handler: handleCheckAlerts, // Support GET for cron
+    },
+  },
+});

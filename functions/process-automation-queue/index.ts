@@ -4,57 +4,48 @@
  * Processes pending emails from the email_automation_queue table.
  * Designed to be called by a cron job (e.g., every 5 minutes).
  *
- * Actions:
- * - Fetches pending emails that are due
- * - Sends emails via the email edge function
- * - Updates queue status and enrollment progress
+ * Features:
+ * - Batch processing with concurrency control
+ * - Email template resolution
+ * - Retry logic for failed sends
+ * - Performance tracking
+ *
+ * Usage:
+ * POST /process-automation-queue
+ * { "batchSize": 20, "concurrency": 3, "dryRun": false }
  */
 
-import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@^2.47.10";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { logger } from "../_shared/logger.ts";
 
-const VERSION = "1.0.0";
+// =============================================================================
+// Configuration
+// =============================================================================
 
-// ============================================================================
-// Supabase Client
-// ============================================================================
+const CONFIG = {
+  version: "2.0.0",
+  defaultBatchSize: 20,
+  defaultConcurrency: 3,
+  maxAttempts: 3,
+};
 
-let supabaseClient: SupabaseClient | null = null;
+// =============================================================================
+// Request Schema
+// =============================================================================
 
-function getSupabaseClient(): SupabaseClient {
-  if (!supabaseClient) {
-    const url = Deno.env.get("SUPABASE_URL");
-    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const processQueueSchema = z.object({
+  batchSize: z.number().optional(),
+  concurrency: z.number().optional(),
+  dryRun: z.boolean().optional(),
+}).optional();
 
-    if (!url || !key) {
-      throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-    }
+type ProcessQueueRequest = z.infer<typeof processQueueSchema>;
 
-    supabaseClient = createClient(url, key, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-  }
-  return supabaseClient;
-}
-
-// ============================================================================
-// CORS Helpers
-// ============================================================================
-
-function getPermissiveCorsHeaders(): Record<string, string> {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  };
-}
-
-function handleCorsPrelight(): Response {
-  return new Response("ok", { headers: getPermissiveCorsHeaders(), status: 204 });
-}
-
-// ============================================================================
+// =============================================================================
 // Types
-// ============================================================================
+// =============================================================================
 
 interface AutomationQueueItem {
   id: string;
@@ -83,39 +74,25 @@ interface ProcessResult {
   latencyMs: number;
 }
 
-interface Payload {
-  batchSize?: number;
-  concurrency?: number;
-  dryRun?: boolean;
+interface ProcessQueueResponse {
+  success: boolean;
+  message: string;
+  dryRun: boolean;
+  processed: number;
+  successful: number;
+  failed: number;
+  avgLatencyMs: number;
+  byProvider: Record<string, { success: number; failed: number }>;
+  errors: { id: string; error?: string }[];
+  durationMs: number;
 }
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function createResponse(
-  data: Record<string, unknown>,
-  status: number,
-  corsHeaders: Record<string, string>,
-  requestId: string
-): Response {
-  return new Response(JSON.stringify({ ...data, requestId, version: VERSION }), {
-    status,
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "application/json",
-      "X-Request-Id": requestId,
-      "X-Version": VERSION,
-    },
-  });
-}
-
-// ============================================================================
-// Email Template Resolver
-// ============================================================================
+// =============================================================================
+// Email Resolution
+// =============================================================================
 
 async function resolveEmailContent(
-  supabase: ReturnType<typeof getSupabaseClient>,
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
   emailData: AutomationQueueItem["email_data"],
   profileId: string
 ): Promise<{ subject: string; html: string; to: string } | null> {
@@ -140,7 +117,6 @@ async function resolveEmailContent(
       .single();
 
     if (template) {
-      // Replace variables in template
       const name = profile.first_name || profile.nickname || "there";
       const subject = template.subject.replace(/\{\{name\}\}/g, name);
       const html = template.html_content
@@ -165,9 +141,9 @@ async function resolveEmailContent(
   return null;
 }
 
-// ============================================================================
-// Send Email via Edge Function
-// ============================================================================
+// =============================================================================
+// Email Sending
+// =============================================================================
 
 async function sendEmailViaEdgeFunction(
   to: string,
@@ -213,12 +189,12 @@ async function sendEmailViaEdgeFunction(
   }
 }
 
-// ============================================================================
-// Process Single Queue Item
-// ============================================================================
+// =============================================================================
+// Queue Item Processing
+// =============================================================================
 
 async function processQueueItem(
-  supabase: ReturnType<typeof getSupabaseClient>,
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
   item: AutomationQueueItem,
   dryRun: boolean
 ): Promise<ProcessResult> {
@@ -241,7 +217,6 @@ async function processQueueItem(
     const emailContent = await resolveEmailContent(supabase, item.email_data, item.profile_id);
 
     if (!emailContent) {
-      // Mark as failed - no valid email content
       if (!dryRun) {
         await supabase
           .from("email_automation_queue")
@@ -271,7 +246,7 @@ async function processQueueItem(
       };
     }
 
-    // Send email via edge function
+    // Send email
     const result = await sendEmailViaEdgeFunction(
       emailContent.to,
       emailContent.subject,
@@ -279,7 +254,6 @@ async function processQueueItem(
     );
 
     if (result.success) {
-      // Call the database function to mark as sent and advance enrollment
       await supabase.rpc("mark_automation_email_sent", {
         p_queue_id: item.id,
         p_provider: result.provider || "unknown",
@@ -294,9 +268,7 @@ async function processQueueItem(
         latencyMs: Math.round(performance.now() - startTime),
       };
     } else {
-      // Mark as failed or pending retry
-      const maxAttempts = 3;
-      const newStatus = item.attempts + 1 >= maxAttempts ? "failed" : "pending";
+      const newStatus = item.attempts + 1 >= CONFIG.maxAttempts ? "failed" : "pending";
 
       await supabase
         .from("email_automation_queue")
@@ -337,117 +309,130 @@ async function processQueueItem(
   }
 }
 
-// ============================================================================
-// Main Handler
-// ============================================================================
+// =============================================================================
+// Handler Implementation
+// =============================================================================
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return handleCorsPrelight();
-  }
-
-  const corsHeaders = getPermissiveCorsHeaders();
-  const requestId = crypto.randomUUID();
+async function handleProcessQueue(
+  ctx: HandlerContext<ProcessQueueRequest>
+): Promise<Response> {
+  const { supabase, body, ctx: requestCtx } = ctx;
   const startTime = performance.now();
 
-  try {
-    const payload: Payload = req.method === "POST" ? await req.json() : {};
-    const batchSize = payload.batchSize || 20;
-    const concurrency = payload.concurrency || 3;
-    const dryRun = payload.dryRun || false;
+  const batchSize = body?.batchSize || CONFIG.defaultBatchSize;
+  const concurrency = body?.concurrency || CONFIG.defaultConcurrency;
+  const dryRun = body?.dryRun || false;
 
-    const supabase = getSupabaseClient();
+  logger.info("Processing automation queue", {
+    batchSize,
+    concurrency,
+    dryRun,
+    requestId: requestCtx?.requestId,
+  });
 
-    // Fetch pending queue items that are due
-    const now = new Date().toISOString();
-    const { data: queueItems, error: fetchError } = await supabase
-      .from("email_automation_queue")
-      .select("*")
-      .eq("status", "pending")
-      .lte("scheduled_for", now)
-      .order("scheduled_for", { ascending: true })
-      .limit(batchSize);
+  // Fetch pending queue items
+  const now = new Date().toISOString();
+  const { data: queueItems, error: fetchError } = await supabase
+    .from("email_automation_queue")
+    .select("*")
+    .eq("status", "pending")
+    .lte("scheduled_for", now)
+    .order("scheduled_for", { ascending: true })
+    .limit(batchSize);
 
-    if (fetchError) {
-      return createResponse(
-        {
-          success: false,
-          error: `Failed to fetch queue: ${fetchError.message}`,
-        },
-        500,
-        corsHeaders,
-        requestId
-      );
-    }
-
-    if (!queueItems?.length) {
-      return createResponse(
-        {
-          success: true,
-          message: "No pending automation emails to process",
-          processed: 0,
-          durationMs: Math.round(performance.now() - startTime),
-        },
-        200,
-        corsHeaders,
-        requestId
-      );
-    }
-
-    // Process in chunks for concurrency control
-    const results: ProcessResult[] = [];
-    for (let i = 0; i < queueItems.length; i += concurrency) {
-      const chunk = queueItems.slice(i, i + concurrency);
-      const chunkResults = await Promise.all(
-        chunk.map((item) => processQueueItem(supabase, item as AutomationQueueItem, dryRun))
-      );
-      results.push(...chunkResults);
-    }
-
-    // Summarize results
-    const successful = results.filter((r) => r.success);
-    const failed = results.filter((r) => !r.success);
-
-    const byProvider: Record<string, { success: number; failed: number }> = {};
-    for (const r of results) {
-      const provider = r.provider || "unknown";
-      if (!byProvider[provider]) byProvider[provider] = { success: 0, failed: 0 };
-      if (r.success) byProvider[provider].success++;
-      else byProvider[provider].failed++;
-    }
-
-    return createResponse(
-      {
-        success: true,
-        message: dryRun ? "Dry run completed" : "Automation queue processed",
-        dryRun,
-        processed: results.length,
-        successful: successful.length,
-        failed: failed.length,
-        avgLatencyMs:
-          results.length > 0
-            ? Math.round(results.reduce((sum, r) => sum + r.latencyMs, 0) / results.length)
-            : 0,
-        byProvider,
-        errors: failed.map((f) => ({ id: f.id, error: f.error })),
-        durationMs: Math.round(performance.now() - startTime),
-      },
-      200,
-      corsHeaders,
-      requestId
-    );
-  } catch (error) {
-    console.error("[process-automation-queue] Error:", error);
-
-    return createResponse(
-      {
+  if (fetchError) {
+    logger.error("Failed to fetch queue", { error: fetchError.message });
+    return new Response(
+      JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : "Internal server error",
-        durationMs: Math.round(performance.now() - startTime),
-      },
-      500,
-      corsHeaders,
-      requestId
+        error: `Failed to fetch queue: ${fetchError.message}`,
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
+
+  if (!queueItems?.length) {
+    const response: ProcessQueueResponse = {
+      success: true,
+      message: "No pending automation emails to process",
+      dryRun,
+      processed: 0,
+      successful: 0,
+      failed: 0,
+      avgLatencyMs: 0,
+      byProvider: {},
+      errors: [],
+      durationMs: Math.round(performance.now() - startTime),
+    };
+
+    return ok(response, ctx);
+  }
+
+  // Process in chunks for concurrency control
+  const results: ProcessResult[] = [];
+  for (let i = 0; i < queueItems.length; i += concurrency) {
+    const chunk = queueItems.slice(i, i + concurrency);
+    const chunkResults = await Promise.all(
+      chunk.map((item) => processQueueItem(supabase, item as AutomationQueueItem, dryRun))
+    );
+    results.push(...chunkResults);
+  }
+
+  // Summarize results
+  const successful = results.filter((r) => r.success);
+  const failed = results.filter((r) => !r.success);
+
+  const byProvider: Record<string, { success: number; failed: number }> = {};
+  for (const r of results) {
+    const provider = r.provider || "unknown";
+    if (!byProvider[provider]) byProvider[provider] = { success: 0, failed: 0 };
+    if (r.success) byProvider[provider].success++;
+    else byProvider[provider].failed++;
+  }
+
+  const avgLatencyMs = results.length > 0
+    ? Math.round(results.reduce((sum, r) => sum + r.latencyMs, 0) / results.length)
+    : 0;
+
+  logger.info("Queue processing complete", {
+    processed: results.length,
+    successful: successful.length,
+    failed: failed.length,
+    dryRun,
+    durationMs: Math.round(performance.now() - startTime),
+  });
+
+  const response: ProcessQueueResponse = {
+    success: true,
+    message: dryRun ? "Dry run completed" : "Automation queue processed",
+    dryRun,
+    processed: results.length,
+    successful: successful.length,
+    failed: failed.length,
+    avgLatencyMs,
+    byProvider,
+    errors: failed.map((f) => ({ id: f.id, error: f.error })),
+    durationMs: Math.round(performance.now() - startTime),
+  };
+
+  return ok(response, ctx);
+}
+
+// =============================================================================
+// Export Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: "process-automation-queue",
+  version: CONFIG.version,
+  requireAuth: false, // Cron job - service-level
+  routes: {
+    POST: {
+      schema: processQueueSchema,
+      handler: handleProcessQueue,
+    },
+    GET: {
+      handler: handleProcessQueue, // Also support GET for cron
+    },
+  },
 });

@@ -1,106 +1,120 @@
 /**
- * Hugging Face Inference - Optimized
+ * Hugging Face Inference Edge Function
  *
  * Features:
  * - Multi-level caching (Memory + Database)
  * - Rate limiting per model
- * - Request queuing
- * - Compression
- * - Error handling
+ * - Multiple endpoints (translation, TTS, image generation, etc.)
  * - Performance monitoring
+ *
+ * Endpoints:
+ * POST /hf-inference/translation
+ * POST /hf-inference/textToSpeech
+ * POST /hf-inference/textToImage
+ * POST /hf-inference/imageToText
+ * POST /hf-inference/summarization
+ * POST /hf-inference/questionAnswering
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { HfInference } from "https://esm.sh/@huggingface/inference@2.6.4";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { logger } from "../_shared/logger.ts";
 
+// =============================================================================
 // Configuration
-const CACHE_TTL = 3600000; // 1 hour
-const RATE_LIMIT_WINDOW = 60000; // 1 minute
-const RATE_LIMIT_MAX = 10; // requests per window per model
+// =============================================================================
 
-// In-memory cache for inference results
+const CONFIG = {
+  version: "2.0.0",
+  cacheTTL: 3600000, // 1 hour
+};
+
+// =============================================================================
+// In-Memory Cache
+// =============================================================================
+
 const inferenceCache = new Map<
   string,
   {
-    result: any;
+    result: unknown;
     timestamp: number;
     hits: number;
   }
 >();
 
-// Rate limiting per model
-const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
-
-// CORS headers
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  "Access-Control-Max-Age": "86400",
-};
-
-/**
- * Check rate limit for specific model
- */
-function checkRateLimit(model: string, clientId: string): boolean {
-  const key = `${model}:${clientId}`;
+// Clean cache every 5 minutes
+setInterval(() => {
   const now = Date.now();
-  const limit = rateLimitStore.get(key);
-
-  if (!limit || now > limit.resetAt) {
-    rateLimitStore.set(key, {
-      count: 1,
-      resetAt: now + RATE_LIMIT_WINDOW,
-    });
-    return true;
-  }
-
-  if (limit.count >= RATE_LIMIT_MAX) {
-    return false;
-  }
-
-  limit.count++;
-  return true;
-}
-
-/**
- * Clean expired cache entries
- */
-function cleanCache() {
-  const now = Date.now();
-
   for (const [key, value] of inferenceCache.entries()) {
-    if (now - value.timestamp > CACHE_TTL) {
+    if (now - value.timestamp > CONFIG.cacheTTL) {
       inferenceCache.delete(key);
     }
   }
+}, 300000);
 
-  for (const [key, value] of rateLimitStore.entries()) {
-    if (now > value.resetAt) {
-      rateLimitStore.delete(key);
-    }
-  }
+// =============================================================================
+// Request Schemas
+// =============================================================================
+
+const inferenceBodySchema = z.object({
+  model: z.string().optional(),
+  inputs: z.union([z.string(), z.array(z.string())]).optional(),
+  input: z.string().optional(),
+  parameters: z.record(z.unknown()).optional(),
+  // For imageToText
+  imageUrl: z.string().optional(),
+  imageData: z.unknown().optional(),
+  // For questionAnswering
+  question: z.string().optional(),
+  context: z.string().optional(),
+}).optional();
+
+type InferenceBody = z.infer<typeof inferenceBodySchema>;
+
+// =============================================================================
+// Response Types
+// =============================================================================
+
+interface InferenceResponse {
+  result: unknown;
+  cached: boolean;
+  cacheSource?: string;
+  responseTime: number;
+  requestId: string;
 }
 
-// Clean cache every 5 minutes
-setInterval(cleanCache, 300000);
+interface EndpointInfo {
+  message: string;
+  version: string;
+  endpoints: string[];
+  usage: {
+    method: string;
+    body: {
+      inputs: string;
+      model: string;
+      parameters: string;
+    };
+  };
+}
 
-/**
- * Generate cache key
- */
-function generateCacheKey(model: string, inputs: any, params?: any): string {
+// =============================================================================
+// Cache Helpers
+// =============================================================================
+
+function generateCacheKey(model: string, inputs: unknown, params?: unknown): string {
   const data = JSON.stringify({ model, inputs, params });
   return btoa(data).slice(0, 64);
 }
 
-/**
- * Get cached result
- */
-async function getCachedResult(cacheKey: string, supabase: any): Promise<any | null> {
+async function getCachedResult(
+  cacheKey: string,
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>
+): Promise<{ result: unknown; source: string } | null> {
   // Check memory cache
   const cached = inferenceCache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+  if (cached && Date.now() - cached.timestamp < CONFIG.cacheTTL) {
     cached.hits++;
     return { result: cached.result, source: "memory" };
   }
@@ -110,7 +124,7 @@ async function getCachedResult(cacheKey: string, supabase: any): Promise<any | n
     .from("inference_cache")
     .select("result, created_at")
     .eq("cache_key", cacheKey)
-    .gte("created_at", new Date(Date.now() - CACHE_TTL).toISOString())
+    .gte("created_at", new Date(Date.now() - CONFIG.cacheTTL).toISOString())
     .single();
 
   if (data) {
@@ -126,10 +140,11 @@ async function getCachedResult(cacheKey: string, supabase: any): Promise<any | n
   return null;
 }
 
-/**
- * Cache result
- */
-async function cacheResult(cacheKey: string, result: any, supabase: any): Promise<void> {
+async function cacheResult(
+  cacheKey: string,
+  result: unknown,
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>
+): Promise<void> {
   // Cache in memory
   inferenceCache.set(cacheKey, {
     result,
@@ -146,227 +161,226 @@ async function cacheResult(cacheKey: string, result: any, supabase: any): Promis
       created_at: new Date().toISOString(),
     })
     .then(() => {})
-    .catch((err: any) => console.warn("Cache write failed:", err));
+    .catch((err: Error) => logger.warn("Cache write failed", { error: err.message }));
 }
 
-Deno.serve(async (req) => {
-  const startTime = Date.now();
-  const requestId = crypto.randomUUID();
+// =============================================================================
+// Handler Implementation
+// =============================================================================
 
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders,
-    });
-  }
+async function handleInference(
+  ctx: HandlerContext<InferenceBody>
+): Promise<Response> {
+  const { supabase, body, ctx: requestCtx, request } = ctx;
+  const startTime = performance.now();
 
-  // Only allow POST
-  if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
+  // Get endpoint from path
+  const url = new URL(request.url);
+  const endpoint = url.pathname.split("/").pop();
 
-  // Validate environment
+  // Validate HF token
   const hfToken = Deno.env.get("HUGGINGFACE_ACCESS_TOKEN");
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY");
-
   if (!hfToken) {
-    return new Response(JSON.stringify({ error: "Server configuration error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    logger.error("Missing HUGGINGFACE_ACCESS_TOKEN");
+    return new Response(
+      JSON.stringify({ error: "Server configuration error" }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  // Return API info for root endpoint
+  if (!endpoint || endpoint === "hf-inference") {
+    const info: EndpointInfo = {
+      message: "Hugging Face Inference API",
+      version: CONFIG.version,
+      endpoints: [
+        "/translation",
+        "/textToSpeech",
+        "/textToImage",
+        "/imageToText",
+        "/summarization",
+        "/questionAnswering",
+      ],
+      usage: {
+        method: "POST",
+        body: {
+          inputs: "Your input text or data",
+          model: "Optional model name",
+          parameters: "Optional parameters",
+        },
+      },
+    };
+
+    return ok(info, ctx);
+  }
+
+  const model = body?.model || endpoint || "default";
+
+  logger.info("Processing inference request", {
+    endpoint,
+    model,
+    requestId: requestCtx?.requestId,
+  });
+
+  // Initialize HF client
+  const hf = new HfInference(hfToken);
+
+  // Generate cache key
+  const cacheKey = generateCacheKey(model, body?.inputs || body?.input, body?.parameters);
+
+  // Check cache
+  const cached = await getCachedResult(cacheKey, supabase);
+  if (cached) {
+    const response: InferenceResponse = {
+      result: cached.result,
+      cached: true,
+      cacheSource: cached.source,
+      responseTime: Math.round(performance.now() - startTime),
+      requestId: requestCtx?.requestId || "",
+    };
+
+    return new Response(JSON.stringify(response), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Cache": "HIT",
+        "X-Cache-Source": cached.source,
+        "X-Response-Time": `${Math.round(performance.now() - startTime)}ms`,
+      },
     });
   }
+
+  // Perform inference based on endpoint
+  let result: unknown;
+  let contentType = "application/json";
 
   try {
-    const url = new URL(req.url);
-    const endpoint = url.pathname.split("/").pop();
-    const body = await req.json();
-
-    // Rate limiting
-    const clientId = req.headers.get("x-forwarded-for") || "unknown";
-    const model = body.model || endpoint || "default";
-
-    if (!checkRateLimit(model, clientId)) {
-      return new Response(
-        JSON.stringify({
-          error: "Rate limit exceeded",
-          retryAfter: 60,
-        }),
-        {
-          status: 429,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-            "Retry-After": "60",
-          },
-        }
-      );
-    }
-
-    // Initialize clients
-    const hf = new HfInference(hfToken);
-    const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
-
-    // Generate cache key
-    const cacheKey = generateCacheKey(model, body.inputs || body.input, body.parameters);
-
-    // Check cache
-    if (supabase) {
-      const cached = await getCachedResult(cacheKey, supabase);
-      if (cached) {
-        return new Response(
-          JSON.stringify({
-            result: cached.result,
-            cached: true,
-            cacheSource: cached.source,
-            responseTime: Date.now() - startTime,
-            requestId,
-          }),
-          {
-            status: 200,
-            headers: {
-              ...corsHeaders,
-              "Content-Type": "application/json",
-              "X-Cache": "HIT",
-              "X-Cache-Source": cached.source,
-              "X-Response-Time": `${Date.now() - startTime}ms`,
-            },
-          }
-        );
-      }
-    }
-
-    // Perform inference based on endpoint
-    let result: any;
-    let contentType = "application/json";
-
     switch (endpoint) {
       case "translation":
         result = await hf.translation({
-          model: body.model || "t5-base",
-          inputs: body.inputs,
+          model: body?.model || "t5-base",
+          inputs: body?.inputs as string,
         });
         break;
 
-      case "textToSpeech":
+      case "textToSpeech": {
         const speechBlob = await hf.textToSpeech({
-          model: body.model || "espnet/kan-bayashi_ljspeech_vits",
-          inputs: body.inputs,
+          model: body?.model || "espnet/kan-bayashi_ljspeech_vits",
+          inputs: body?.inputs as string,
         });
         contentType = "audio/wav";
         result = speechBlob;
         break;
+      }
 
-      case "textToImage":
+      case "textToImage": {
         const imageBlob = await hf.textToImage({
-          model: body.model || "stabilityai/stable-diffusion-2",
-          inputs: body.inputs,
-          parameters: body.parameters,
+          model: body?.model || "stabilityai/stable-diffusion-2",
+          inputs: body?.inputs as string,
+          parameters: body?.parameters,
         });
         contentType = "image/png";
         result = imageBlob;
         break;
+      }
 
-      case "imageToText":
-        const imageData = body.imageUrl
+      case "imageToText": {
+        const imageData = body?.imageUrl
           ? await (await fetch(body.imageUrl)).blob()
-          : body.imageData;
+          : body?.imageData;
 
         result = await hf.imageToText({
-          data: imageData,
-          model: body.model || "nlpconnect/vit-gpt2-image-captioning",
+          data: imageData as Blob,
+          model: body?.model || "nlpconnect/vit-gpt2-image-captioning",
         });
         break;
+      }
 
       case "summarization":
         result = await hf.summarization({
-          model: body.model || "facebook/bart-large-cnn",
-          inputs: body.inputs,
-          parameters: body.parameters,
+          model: body?.model || "facebook/bart-large-cnn",
+          inputs: body?.inputs as string,
+          parameters: body?.parameters,
         });
         break;
 
       case "questionAnswering":
         result = await hf.questionAnswering({
-          model: body.model || "deepset/roberta-base-squad2",
+          model: body?.model || "deepset/roberta-base-squad2",
           inputs: {
-            question: body.question,
-            context: body.context,
+            question: body?.question || "",
+            context: body?.context || "",
           },
         });
         break;
 
       default:
         return new Response(
-          JSON.stringify({
-            message: "Hugging Face Inference API",
-            version: "2.0.0",
-            endpoints: [
-              "/translation",
-              "/textToSpeech",
-              "/textToImage",
-              "/imageToText",
-              "/summarization",
-              "/questionAnswering",
-            ],
-            usage: {
-              method: "POST",
-              body: {
-                inputs: "Your input text or data",
-                model: "Optional model name",
-                parameters: "Optional parameters",
-              },
-            },
-          }),
-          {
-            status: 200,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          JSON.stringify({ error: `Unknown endpoint: ${endpoint}` }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
         );
     }
+  } catch (error) {
+    logger.error("Inference failed", {
+      endpoint,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+    throw error;
+  }
 
-    // Cache result if JSON
-    if (contentType === "application/json" && supabase) {
-      await cacheResult(cacheKey, result, supabase);
-    }
+  // Cache result if JSON
+  if (contentType === "application/json") {
+    await cacheResult(cacheKey, result, supabase);
+  }
 
-    // Return result
-    const responseBody =
-      contentType === "application/json"
-        ? JSON.stringify({
-            result,
-            cached: false,
-            responseTime: Date.now() - startTime,
-            requestId,
-          })
-        : result;
-
-    return new Response(responseBody, {
+  // Return result
+  if (contentType !== "application/json") {
+    return new Response(result as Blob, {
       status: 200,
       headers: {
-        ...corsHeaders,
         "Content-Type": contentType,
         "X-Cache": "MISS",
-        "X-Response-Time": `${Date.now() - startTime}ms`,
-        "X-Request-Id": requestId,
+        "X-Response-Time": `${Math.round(performance.now() - startTime)}ms`,
+        "X-Request-Id": requestCtx?.requestId || "",
       },
     });
-  } catch (error) {
-    console.error("Inference error:", error);
-
-    return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : "Internal server error",
-        requestId,
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
   }
+
+  const response: InferenceResponse = {
+    result,
+    cached: false,
+    responseTime: Math.round(performance.now() - startTime),
+    requestId: requestCtx?.requestId || "",
+  };
+
+  return new Response(JSON.stringify(response), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Cache": "MISS",
+      "X-Response-Time": `${Math.round(performance.now() - startTime)}ms`,
+      "X-Request-Id": requestCtx?.requestId || "",
+    },
+  });
+}
+
+// =============================================================================
+// Export Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: "hf-inference",
+  version: CONFIG.version,
+  requireAuth: false, // Public AI inference endpoint
+  rateLimit: {
+    limit: 10,
+    windowMs: 60000, // 10 requests per minute per model
+    keyBy: "ip",
+  },
+  routes: {
+    POST: {
+      schema: inferenceBodySchema,
+      handler: handleInference,
+    },
+  },
 });

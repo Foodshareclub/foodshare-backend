@@ -1,12 +1,29 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+/**
+ * Notify New Post Edge Function
+ *
+ * Database webhook trigger that sends Telegram notifications
+ * when new food listings are created.
+ *
+ * Features:
+ * - Admin notification with post details
+ * - Post type emoji mapping
+ * - Author profile lookup
+ *
+ * Trigger: Database INSERT on posts table
+ */
 
-const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { logger } from "../_shared/logger.ts";
+
+// =============================================================================
+// Configuration
+// =============================================================================
+
 const botToken = Deno.env.get("BOT_TOKEN")!;
-const adminChatId = Deno.env.get("ADMIN_CHAT_ID")!; // Your personal Telegram chat ID
+const adminChatId = Deno.env.get("ADMIN_CHAT_ID")!;
 const appUrl = Deno.env.get("APP_URL") || "https://foodshare.club";
-
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 const postTypeEmoji: Record<string, string> = {
   food: "🍎",
@@ -19,7 +36,37 @@ const postTypeEmoji: Record<string, string> = {
   default: "📦",
 };
 
-async function sendTelegramMessage(chatId: string, text: string) {
+// =============================================================================
+// Request Schema (Database Webhook Payload)
+// =============================================================================
+
+const postSchema = z.object({
+  record: z.object({
+    id: z.union([z.number(), z.string()]),
+    post_name: z.string(),
+    post_type: z.string().optional().nullable(),
+    post_address: z.string().optional().nullable(),
+    post_description: z.string().optional().nullable(),
+    profile_id: z.string().optional().nullable(),
+  }).passthrough(),
+}).passthrough();
+
+type PostPayload = z.infer<typeof postSchema>;
+
+// =============================================================================
+// Response Types
+// =============================================================================
+
+interface NotifyResponse {
+  success: boolean;
+  message: string;
+}
+
+// =============================================================================
+// Telegram API
+// =============================================================================
+
+async function sendTelegramMessage(chatId: string, text: string): Promise<boolean> {
   try {
     const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: "POST",
@@ -34,17 +81,24 @@ async function sendTelegramMessage(chatId: string, text: string) {
 
     const result = await response.json();
     if (!result.ok) {
-      console.error("Telegram API error:", result);
+      logger.error("Telegram API error", { error: result });
       return false;
     }
     return true;
   } catch (error) {
-    console.error("Error sending Telegram message:", error);
+    logger.error("Error sending Telegram message", { error });
     return false;
   }
 }
 
-async function getProfile(profileId: string) {
+// =============================================================================
+// Profile Helper
+// =============================================================================
+
+async function getProfile(
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
+  profileId: string
+): Promise<{ nickname: string | null; first_name: string | null; second_name: string | null } | null> {
   const { data, error } = await supabase
     .from("profiles")
     .select("nickname, first_name, second_name")
@@ -52,21 +106,28 @@ async function getProfile(profileId: string) {
     .single();
 
   if (error) {
-    console.error("Error fetching profile:", error);
+    logger.error("Error fetching profile", { error: error.message });
     return null;
   }
   return data;
 }
 
-function formatPostMessage(post: any, profile: any) {
-  const emoji = postTypeEmoji[post.post_type] || postTypeEmoji.default;
+// =============================================================================
+// Message Formatting
+// =============================================================================
+
+function formatPostMessage(
+  post: PostPayload["record"],
+  profile: { nickname: string | null; first_name: string | null; second_name: string | null } | null
+): string {
+  const emoji = postTypeEmoji[post.post_type || "default"] || postTypeEmoji.default;
   const fullName = profile
     ? [profile.first_name, profile.second_name].filter(Boolean).join(" ")
     : "";
   const userName = fullName || profile?.nickname || "Someone";
   const postUrl = `${appUrl}/product/${post.id}`;
 
-  let message = `${emoji} <b>New ${post.post_type} listing!</b>\n\n`;
+  let message = `${emoji} <b>New ${post.post_type || "food"} listing!</b>\n\n`;
   message += `<b>${post.post_name}</b>\n`;
 
   if (post.post_address) {
@@ -87,39 +148,50 @@ function formatPostMessage(post: any, profile: any) {
   return message;
 }
 
-Deno.serve(async (req) => {
-  try {
-    const payload = await req.json();
-    console.log("Received webhook payload:", JSON.stringify(payload));
+// =============================================================================
+// Handler Implementation
+// =============================================================================
 
-    const post = payload.record || payload;
+async function handleNotifyNewPost(ctx: HandlerContext<PostPayload>): Promise<Response> {
+  const { supabase, body, ctx: requestCtx } = ctx;
+  const post = body.record;
 
-    if (!post.id || !post.post_name) {
-      return new Response(JSON.stringify({ error: "Invalid post data" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+  logger.info("Processing new post notification", {
+    postId: post.id,
+    postName: post.post_name,
+    postType: post.post_type,
+    requestId: requestCtx?.requestId,
+  });
 
-    const profile = post.profile_id ? await getProfile(post.profile_id) : null;
-    const message = formatPostMessage(post, profile);
-    const sent = await sendTelegramMessage(adminChatId, message);
+  // Get author profile
+  const profile = post.profile_id ? await getProfile(supabase, post.profile_id) : null;
 
-    return new Response(
-      JSON.stringify({
-        success: sent,
-        message: sent ? "Notification sent" : "Failed to send notification",
-      }),
-      {
-        status: sent ? 200 : 500,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-  } catch (error) {
-    console.error("Edge function error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  // Format and send message
+  const message = formatPostMessage(post, profile);
+  const sent = await sendTelegramMessage(adminChatId, message);
+
+  logger.info("Notification sent", { success: sent, postId: post.id });
+
+  const result: NotifyResponse = {
+    success: sent,
+    message: sent ? "Notification sent" : "Failed to send notification",
+  };
+
+  return ok(result, ctx, sent ? 200 : 500);
+}
+
+// =============================================================================
+// Export Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: "notify-new-post",
+  version: "2.0.0",
+  requireAuth: false, // Database webhook - no JWT auth
+  routes: {
+    POST: {
+      schema: postSchema,
+      handler: handleNotifyNewPost,
+    },
+  },
 });

@@ -42,11 +42,15 @@ deno test --allow-all
 ## Architecture
 
 ```
-functions/                  # Deno Edge Functions (40+)
+functions/                  # Deno Edge Functions (42 active)
 ├── _shared/               # Shared utilities (singleton patterns)
 │   ├── cors.ts           # CORS with origin validation
 │   ├── supabase.ts       # Connection-pooled Supabase client
 │   ├── cache.ts          # In-memory TTL cache (70-90% DB reduction)
+│   ├── logger.ts         # Structured JSON logging with context
+│   ├── errors.ts         # Standardized error types (AppError, NotFoundError, etc.)
+│   ├── context.ts        # Request context (requestId, userId, platform)
+│   ├── circuit-breaker.ts # Circuit breaker pattern for resilience
 │   ├── email/            # Multi-provider email system
 │   └── geocoding.ts      # Nominatim with caching/retry
 ├── email/                 # Unified email (4 providers)
@@ -84,13 +88,13 @@ migrations/                 # PostgreSQL migrations (enterprise security)
 ## Resilience Patterns
 
 ### Circuit Breaker
-Used in push notifications, WhatsApp bot, and email providers:
+Used in push notifications, WhatsApp bot, Telegram bot, and email providers:
 ```typescript
-import { withCircuitBreaker } from "./utils/circuit-breaker.ts";
+import { withCircuitBreaker } from "../_shared/circuit-breaker.ts";
 
 await withCircuitBreaker("serviceName", async () => {
   // operation that may fail
-}, { failureThreshold: 5, resetTimeout: 60000 });
+}, { failureThreshold: 5, resetTimeoutMs: 60000 });
 ```
 States: CLOSED → OPEN (after threshold) → HALF_OPEN (after timeout) → CLOSED (on success)
 
@@ -201,7 +205,9 @@ Deno.serve(async (req) => {
 
 | Category | Functions |
 |----------|-----------|
-| **Core (all)** | `email/`, `send-push-notification/`, `health/`, `geolocate-user/` |
+| **Core (all)** | `email/`, `send-push-notification/`, `health/`, `geolocate-user/`, `feature-flags/` |
+| **API v1 (REST)** | `api-v1-products/`, `api-v1-chat/`, `api-v1-metrics/` |
+| **Sync & Events** | `sync/`, `track-event/` |
 | **Web-only** | `telegram-bot-foodshare/`, `whatsapp-bot-foodshare/`, notifications |
 | **Mobile-only** | `verify-attestation/`, `get-certificate-pins/`, `check-login-rate/`, listing CRUD |
 
@@ -210,6 +216,7 @@ Deno.serve(async (req) => {
 - `whatsapp-bot-foodshare/` - Webhook
 - `email/` - Service-to-service
 - `health/` - Public endpoint
+- `api-v1-products/` (GET only) - Public listing access
 
 ## Database Patterns
 
@@ -315,21 +322,31 @@ await deduplicate("cache-key", expensiveOperation);
 await withTimeout(promise, 5000, "Request timed out");
 ```
 
-## Structured Logging
+## Structured Logging (`_shared/logger.ts`)
 
 ```typescript
-function log(level: string, message: string, context: Record<string, unknown> = {}): void {
-  console.log(JSON.stringify({
-    level,
-    message,
-    ...context,
-    timestamp: new Date().toISOString(),
-  }));
-}
+import { logger } from "../_shared/logger.ts";
 
-// Usage
-log("info", "Message handled", { requestId, phoneNumber: phone.substring(0, 4) + "***", durationMs });
+// Info logging with context
+logger.info("Message handled", { userId, durationMs: 45 });
+
+// Error logging with Error object
+logger.error("Failed to process", new Error("Connection timeout"));
+
+// Warning with sensitive data (auto-redacted)
+logger.warn("Rate limit exceeded", { email: "user@example.com" });
+
+// Timing helper
+const done = logger.time("database query");
+await db.query(...);
+done({ rowCount: 42 });  // Logs: "database query completed" with duration
+
+// Child logger with preset context
+const requestLogger = logger.child({ requestId, service: "api-v1" });
+requestLogger.info("Request started");
 ```
+
+Features: Auto-redaction of sensitive fields (tokens, passwords), request context injection, log levels.
 
 ## Environment Variables
 

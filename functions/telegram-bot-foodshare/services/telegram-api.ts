@@ -7,11 +7,11 @@ import {
   withCircuitBreaker,
   CircuitBreakerError,
   getCircuitStatus,
-} from "../utils/circuit-breaker.ts";
+} from "../../_shared/circuit-breaker.ts";
 
 const CIRCUIT_CONFIG = {
   failureThreshold: 5,
-  resetTimeout: 60000, // 1 minute
+  resetTimeoutMs: 60000, // 1 minute
 };
 
 const FETCH_TIMEOUT = 10000; // 10 seconds

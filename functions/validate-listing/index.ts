@@ -2,51 +2,44 @@
  * validate-listing Edge Function
  *
  * Server-side validation for listing creation with additional security checks.
- * Wraps the validate_listing RPC with:
- * - Profanity/spam detection
- * - URL/link detection
- * - Rate limiting integration
+ * - Profanity/spam detection (via RPC)
+ * - URL/link detection (via RPC)
+ * - Structural validation (via RPC)
  *
  * Usage from iOS/Android/Web:
  * POST /validate-listing
- * {
- *   "title": "Fresh Apples",
- *   "description": "Organic apples...",
- *   "images": ["url1", "url2"],
- *   "postType": "food",
- *   "latitude": 51.5074,
- *   "longitude": -0.1278,
- *   "pickupAddress": "123 Main St",
- *   "pickupTime": "Anytime today"
- * }
- *
- * Response:
- * {
- *   "valid": true/false,
- *   "errors": [{ "field": "title", "code": "VALIDATION_*", "message": "..." }],
- *   "sanitized": { ... } // Only if valid
- * }
+ * Body: { title, description?, images, postType, latitude, longitude, ... }
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { ValidationError } from "../_shared/errors.ts";
+import { logger } from "../_shared/logger.ts";
 
 // =============================================================================
-// Types
+// Request Schema
 // =============================================================================
 
-interface ValidateListingRequest {
-  title: string;
-  description?: string | null;
-  images: string[];
-  postType: string;
-  latitude: number;
-  longitude: number;
-  pickupAddress?: string | null;
-  pickupTime?: string | null;
-}
+const validateListingSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().max(2000).nullable().optional(),
+  images: z.array(z.string().url()).min(1).max(10),
+  postType: z.enum(["food", "non_food"]),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  pickupAddress: z.string().max(500).nullable().optional(),
+  pickupTime: z.string().max(200).nullable().optional(),
+});
 
-interface ValidationError {
+type ValidateListingRequest = z.infer<typeof validateListingSchema>;
+
+// =============================================================================
+// Response Types
+// =============================================================================
+
+interface ValidationErrorItem {
   field: string;
   code: string;
   message: string;
@@ -54,240 +47,103 @@ interface ValidationError {
 
 interface ValidationResult {
   valid: boolean;
-  errors: ValidationError[];
+  errors: ValidationErrorItem[];
   sanitized?: Record<string, unknown>;
 }
 
 // =============================================================================
-// Profanity Detection
+// Service Client (for RPC calls)
 // =============================================================================
 
-// Common profanity patterns (basic list - extend as needed)
-// This is a simplified approach; production should use a more comprehensive library
-const PROFANITY_PATTERNS: RegExp[] = [
-  // Add patterns here - keeping minimal for code review purposes
-  /\b(spam|scam|fake)\b/i,
-];
-
-// Spam/suspicious patterns
-const SPAM_PATTERNS: RegExp[] = [
-  // Multiple URLs
-  /(https?:\/\/[^\s]+\s*){2,}/i,
-  // Phone numbers with suspicious patterns
-  /\b\d{3}[-.]?\d{3}[-.]?\d{4}\b.*\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/,
-  // ALL CAPS (more than 50% of text)
-  /^[A-Z\s]{20,}$/,
-  // Excessive punctuation
-  /[!?]{3,}/,
-  // Common spam phrases
-  /\b(click here|limited time|act now|free money|earn \$|make \$\d+)\b/i,
-  // Cryptocurrency spam
-  /\b(crypto|bitcoin|ethereum|nft|airdrop)\b/i,
-  // External links (discouraged in food sharing app)
-  /https?:\/\/(?!.*supabase\.co)/i,
-];
-
-function containsProfanity(text: string): boolean {
-  const lowerText = text.toLowerCase();
-  return PROFANITY_PATTERNS.some((pattern) => pattern.test(lowerText));
-}
-
-function containsSpam(text: string): { isSpam: boolean; reason?: string } {
-  for (const pattern of SPAM_PATTERNS) {
-    if (pattern.test(text)) {
-      return { isSpam: true, reason: "Contains suspicious content" };
-    }
-  }
-
-  // Check for ALL CAPS (more than 50% uppercase letters)
-  const letters = text.replace(/[^a-zA-Z]/g, "");
-  if (letters.length > 10) {
-    const upperCount = (text.match(/[A-Z]/g) || []).length;
-    if (upperCount / letters.length > 0.5) {
-      return { isSpam: true, reason: "Excessive capitalization" };
-    }
-  }
-
-  return { isSpam: false };
+function createServiceClient() {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  return createClient(supabaseUrl, supabaseKey);
 }
 
 // =============================================================================
-// CORS Headers
+// Handler Implementation
 // =============================================================================
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+async function handleValidateListing(ctx: HandlerContext<ValidateListingRequest>): Promise<Response> {
+  const { body, corsHeaders } = ctx;
+  const supabase = createServiceClient();
 
-// =============================================================================
-// Main Handler
-// =============================================================================
-
-Deno.serve(async (req: Request) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  try {
-    // Initialize Supabase client
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!supabaseUrl || !supabaseKey) {
-      console.error("Missing Supabase configuration");
-      return new Response(
-        JSON.stringify({ error: "Server configuration error" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+  // -------------------------------------------------------------------------
+  // 1. Content moderation via server-side RPC
+  // -------------------------------------------------------------------------
+  const { data: contentValidation, error: contentError } = await supabase.rpc(
+    "validate_listing_content",
+    {
+      p_title: body.title,
+      p_description: body.description,
     }
+  );
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Parse request body
-    const payload: ValidateListingRequest = await req.json();
-
-    // Initialize errors array
-    const errors: ValidationError[] = [];
-
-    // =========================================================================
-    // Pre-validation: Content moderation (before RPC call)
-    // =========================================================================
-
-    // Check title for profanity
-    if (payload.title && containsProfanity(payload.title)) {
-      errors.push({
-        field: "title",
-        code: "VALIDATION_INAPPROPRIATE",
-        message: "Title contains inappropriate content",
-      });
-    }
-
-    // Check title for spam
-    if (payload.title) {
-      const spamCheck = containsSpam(payload.title);
-      if (spamCheck.isSpam) {
-        errors.push({
-          field: "title",
-          code: "VALIDATION_SPAM",
-          message: spamCheck.reason || "Title appears to be spam",
-        });
-      }
-    }
-
-    // Check description for profanity
-    if (payload.description && containsProfanity(payload.description)) {
-      errors.push({
-        field: "description",
-        code: "VALIDATION_INAPPROPRIATE",
-        message: "Description contains inappropriate content",
-      });
-    }
-
-    // Check description for spam
-    if (payload.description) {
-      const spamCheck = containsSpam(payload.description);
-      if (spamCheck.isSpam) {
-        errors.push({
-          field: "description",
-          code: "VALIDATION_SPAM",
-          message: spamCheck.reason || "Description appears to be spam",
-        });
-      }
-    }
-
-    // If content moderation failed, return early
-    if (errors.length > 0) {
-      return new Response(
-        JSON.stringify({
-          valid: false,
-          errors,
-          sanitized: null,
-        } satisfies ValidationResult),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    // =========================================================================
-    // Call RPC for structural validation
-    // =========================================================================
-
-    const { data, error: rpcError } = await supabase.rpc("validate_listing", {
-      p_title: payload.title,
-      p_description: payload.description,
-      p_images: payload.images,
-      p_post_type: payload.postType,
-      p_latitude: payload.latitude,
-      p_longitude: payload.longitude,
-      p_pickup_address: payload.pickupAddress,
-      p_pickup_time: payload.pickupTime,
-    });
-
-    if (rpcError) {
-      console.error("RPC error:", rpcError);
-      return new Response(
-        JSON.stringify({
-          valid: false,
-          errors: [
-            {
-              field: "server",
-              code: "SERVER_ERROR",
-              message: "Validation service unavailable",
-            },
-          ],
-          sanitized: null,
-        } satisfies ValidationResult),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    // RPC returns JSONB, parse if needed
-    const result =
-      typeof data === "string" ? JSON.parse(data) : (data as ValidationResult);
-
-    // Return validation result
-    return new Response(JSON.stringify(result), {
-      status: result.valid ? 200 : 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    console.error("Error in validate-listing:", error);
+  if (contentError) {
+    logger.error("Content validation RPC error", new Error(contentError.message));
+    // Fall through to structural validation
+  } else if (contentValidation && !contentValidation.valid) {
+    // Content moderation failed
     return new Response(
       JSON.stringify({
         valid: false,
-        errors: [
-          {
-            field: "server",
-            code: "SERVER_ERROR",
-            message:
-              error instanceof Error ? error.message : "Internal server error",
-          },
-        ],
+        errors: contentValidation.errors,
         sanitized: null,
       } satisfies ValidationResult),
       {
-        status: 500,
+        status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
   }
+
+  // -------------------------------------------------------------------------
+  // 2. Structural validation via RPC
+  // -------------------------------------------------------------------------
+  const { data, error: rpcError } = await supabase.rpc("validate_listing", {
+    p_title: body.title,
+    p_description: body.description,
+    p_images: body.images,
+    p_post_type: body.postType,
+    p_latitude: body.latitude,
+    p_longitude: body.longitude,
+    p_pickup_address: body.pickupAddress,
+    p_pickup_time: body.pickupTime,
+  });
+
+  if (rpcError) {
+    logger.error("RPC error validating listing", new Error(rpcError.message));
+    throw new ValidationError("Validation service unavailable");
+  }
+
+  // Parse RPC result
+  const result: ValidationResult = typeof data === "string" ? JSON.parse(data) : data;
+
+  // Return validation result
+  return new Response(JSON.stringify(result), {
+    status: result.valid ? 200 : 400,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+// =============================================================================
+// Export Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: "validate-listing",
+  version: "2.0.0",
+  requireAuth: false, // Public validation endpoint
+  rateLimit: {
+    limit: 60,
+    windowMs: 60000, // 60 validations per minute per IP
+    keyBy: "ip",
+  },
+  routes: {
+    POST: {
+      schema: validateListingSchema,
+      handler: handleValidateListing,
+    },
+  },
 });

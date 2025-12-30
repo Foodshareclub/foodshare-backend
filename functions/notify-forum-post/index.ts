@@ -1,17 +1,68 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+/**
+ * Notify Forum Post Edge Function
+ *
+ * Database webhook trigger that sends Telegram notifications
+ * when new forum posts are created.
+ *
+ * Features:
+ * - Admin notification for all posts
+ * - Channel posting for superadmin authors
+ * - Forum thread support
+ *
+ * Trigger: Database INSERT on forum table
+ */
 
-const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { logger } from "../_shared/logger.ts";
+import { ValidationError } from "../_shared/errors.ts";
+
+// =============================================================================
+// Configuration
+// =============================================================================
+
 const botToken = Deno.env.get("BOT_TOKEN")!;
 const adminChatId = Deno.env.get("ADMIN_CHAT_ID")!;
 const channelUsername = "@foodshare_club";
-// Topic/thread ID for forum-enabled channels (optional - posts to General if not set)
 const channelThreadId = Deno.env.get("CHANNEL_THREAD_ID");
 const appUrl = Deno.env.get("APP_URL") || "https://foodshare.club";
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+// =============================================================================
+// Request Schema (Database Webhook Payload)
+// =============================================================================
 
-async function sendTelegramMessage(chatId: string, text: string, threadId?: string) {
+const forumPostSchema = z.object({
+  record: z.object({
+    id: z.union([z.number(), z.string()]),
+    forum_post_name: z.string(),
+    forum_post_description: z.string().optional().nullable(),
+    forum_published: z.boolean().optional().nullable(),
+    slug: z.string().optional().nullable(),
+    profile_id: z.string().optional().nullable(),
+  }).passthrough(),
+}).passthrough();
+
+type ForumPostPayload = z.infer<typeof forumPostSchema>;
+
+// =============================================================================
+// Response Types
+// =============================================================================
+
+interface NotifyResponse {
+  adminNotification: boolean;
+  channelNotification: boolean;
+}
+
+// =============================================================================
+// Telegram API
+// =============================================================================
+
+async function sendTelegramMessage(
+  chatId: string,
+  text: string,
+  threadId?: string
+): Promise<boolean> {
   try {
     const payload: Record<string, unknown> = {
       chat_id: chatId,
@@ -20,7 +71,6 @@ async function sendTelegramMessage(chatId: string, text: string, threadId?: stri
       disable_web_page_preview: false,
     };
 
-    // Add thread ID for forum-enabled channels/groups
     if (threadId) {
       payload.message_thread_id = parseInt(threadId);
     }
@@ -33,17 +83,24 @@ async function sendTelegramMessage(chatId: string, text: string, threadId?: stri
 
     const result = await response.json();
     if (!result.ok) {
-      console.error("Telegram API error:", result);
+      logger.error("Telegram API error", { error: result });
       return false;
     }
     return true;
   } catch (error) {
-    console.error("Error sending Telegram message:", error);
+    logger.error("Error sending Telegram message", { error });
     return false;
   }
 }
 
-async function getProfile(profileId: string) {
+// =============================================================================
+// Profile & Role Helpers
+// =============================================================================
+
+async function getProfile(
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
+  profileId: string
+): Promise<{ nickname: string | null; first_name: string | null; second_name: string | null } | null> {
   const { data, error } = await supabase
     .from("profiles")
     .select("nickname, first_name, second_name")
@@ -51,26 +108,33 @@ async function getProfile(profileId: string) {
     .single();
 
   if (error) {
-    console.error("Error fetching profile:", error);
+    logger.error("Error fetching profile", { error: error.message });
     return null;
   }
   return data;
 }
 
-async function isSuperAdmin(profileId: string): Promise<boolean> {
+async function isSuperAdmin(
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
+  profileId: string
+): Promise<boolean> {
   const { data, error } = await supabase
     .from("user_roles")
     .select("roles!inner(name)")
     .eq("profile_id", profileId);
 
   if (error) {
-    console.error("Error checking superadmin status:", error);
+    logger.error("Error checking superadmin status", { error: error.message });
     return false;
   }
 
   const roles = data?.map((r: { roles: { name: string } }) => r.roles?.name).filter(Boolean) || [];
   return roles.includes("superadmin");
 }
+
+// =============================================================================
+// Message Formatting
+// =============================================================================
 
 function stripHtml(html: string): string {
   return html
@@ -84,13 +148,13 @@ function stripHtml(html: string): string {
 }
 
 function formatAdminMessage(
-  post: Record<string, unknown>,
-  _profile: Record<string, string> | null
+  post: ForumPostPayload["record"]
 ): string {
   const postUrl = `${appUrl}/forum/${post.slug || post.id}`;
-
   const description =
-    typeof post.forum_post_description === "string" ? stripHtml(post.forum_post_description) : "";
+    typeof post.forum_post_description === "string"
+      ? stripHtml(post.forum_post_description)
+      : "";
   const shortDesc = description.length > 150 ? description.substring(0, 150) + "..." : description;
 
   let message = `<b>New Forum Post!</b>\n\n`;
@@ -104,13 +168,13 @@ function formatAdminMessage(
 }
 
 function formatChannelMessage(
-  post: Record<string, unknown>,
-  _profile: Record<string, string> | null
+  post: ForumPostPayload["record"]
 ): string {
   const postUrl = `${appUrl}/forum/${post.slug || post.id}`;
-
   const description =
-    typeof post.forum_post_description === "string" ? stripHtml(post.forum_post_description) : "";
+    typeof post.forum_post_description === "string"
+      ? stripHtml(post.forum_post_description)
+      : "";
   const shortDesc = description.length > 300 ? description.substring(0, 300) + "..." : description;
 
   let message = `<b>${post.forum_post_name}</b>\n`;
@@ -122,62 +186,64 @@ function formatChannelMessage(
   return message;
 }
 
-Deno.serve(async (req) => {
-  try {
-    const payload = await req.json();
-    console.log("Received forum webhook payload:", JSON.stringify(payload));
+// =============================================================================
+// Handler Implementation
+// =============================================================================
 
-    const post = payload.record || payload;
+async function handleNotifyForumPost(ctx: HandlerContext<ForumPostPayload>): Promise<Response> {
+  const { supabase, body, ctx: requestCtx } = ctx;
+  const post = body.record;
 
-    if (!post.id || !post.forum_post_name) {
-      return new Response(JSON.stringify({ error: "Invalid forum post data" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+  logger.info("Processing forum post notification", {
+    postId: post.id,
+    postName: post.forum_post_name,
+    requestId: requestCtx?.requestId,
+  });
 
-    if (post.forum_published === false) {
-      return new Response(
-        JSON.stringify({ message: "Post not published, skipping notification" }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    const profileId = post.profile_id as string;
-    const profile = profileId ? await getProfile(profileId) : null;
-
-    const adminMessage = formatAdminMessage(post, profile);
-    const adminSent = await sendTelegramMessage(adminChatId, adminMessage);
-    console.log("Admin notification sent:", adminSent);
-
-    let channelSent = false;
-    if (profileId) {
-      const superAdmin = await isSuperAdmin(profileId);
-      console.log("Author is superadmin:", superAdmin);
-
-      if (superAdmin) {
-        const channelMessage = formatChannelMessage(post, profile);
-        channelSent = await sendTelegramMessage(channelUsername, channelMessage, channelThreadId);
-        console.log("Channel notification sent:", channelSent, "threadId:", channelThreadId);
-      }
-    }
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        adminNotification: adminSent,
-        channelNotification: channelSent,
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-  } catch (error) {
-    console.error("Edge function error:", error);
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+  // Skip unpublished posts
+  if (post.forum_published === false) {
+    logger.info("Post not published, skipping notification", { postId: post.id });
+    return ok({ message: "Post not published, skipping notification" }, ctx);
   }
+
+  // Send admin notification
+  const adminMessage = formatAdminMessage(post);
+  const adminSent = await sendTelegramMessage(adminChatId, adminMessage);
+  logger.info("Admin notification sent", { success: adminSent, postId: post.id });
+
+  // Check if author is superadmin and post to channel
+  let channelSent = false;
+  if (post.profile_id) {
+    const superAdmin = await isSuperAdmin(supabase, post.profile_id);
+    logger.info("Author superadmin check", { isSuperadmin: superAdmin, profileId: post.profile_id?.substring(0, 8) });
+
+    if (superAdmin) {
+      const channelMessage = formatChannelMessage(post);
+      channelSent = await sendTelegramMessage(channelUsername, channelMessage, channelThreadId);
+      logger.info("Channel notification sent", { success: channelSent, threadId: channelThreadId });
+    }
+  }
+
+  const result: NotifyResponse = {
+    adminNotification: adminSent,
+    channelNotification: channelSent,
+  };
+
+  return ok(result, ctx);
+}
+
+// =============================================================================
+// Export Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: "notify-forum-post",
+  version: "2.0.0",
+  requireAuth: false, // Database webhook - no JWT auth
+  routes: {
+    POST: {
+      schema: forumPostSchema,
+      handler: handleNotifyForumPost,
+    },
+  },
 });

@@ -21,224 +21,131 @@
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { logger } from "../_shared/logger.ts";
+import { NotFoundError, ForbiddenError, ServerError } from "../_shared/errors.ts";
 
 // =============================================================================
-// Types
+// Request Schema
 // =============================================================================
 
-interface UpdateListingRequest {
-  listingId: number;
-  title?: string | null;
-  description?: string | null;
-  isActive?: boolean | null;
-  pickupAddress?: string | null;
-  pickupTime?: string | null;
+const updateListingSchema = z.object({
+  listingId: z.number().int().positive(),
+  title: z.string().min(1).max(200).optional().nullable(),
+  description: z.string().max(2000).optional().nullable(),
+  isActive: z.boolean().optional().nullable(),
+  pickupAddress: z.string().max(500).optional().nullable(),
+  pickupTime: z.string().max(200).optional().nullable(),
+});
+
+type UpdateListingRequest = z.infer<typeof updateListingSchema>;
+
+// =============================================================================
+// Response Types
+// =============================================================================
+
+interface UpdatedListing {
+  id: number;
+  title: string;
+  description: string | null;
+  isActive: boolean;
+  pickupAddress: string | null;
+  pickupTime: string | null;
+  updatedAt: string;
 }
 
-interface APIError {
-  code: string;
-  message: string;
-  details?: unknown;
-}
-
-interface UpdateListingResponse {
-  success: boolean;
-  listing?: Record<string, unknown>;
-  error?: APIError;
-}
-
 // =============================================================================
-// CORS Headers
+// Handler Implementation
 // =============================================================================
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "PUT, POST, OPTIONS",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+async function handleUpdateListing(ctx: HandlerContext<UpdateListingRequest>): Promise<Response> {
+  const { supabase, userId, body, ctx: requestCtx } = ctx;
 
-// =============================================================================
-// Main Handler
-// =============================================================================
+  logger.info("Updating listing", {
+    listingId: body.listingId,
+    userId: userId?.substring(0, 8),
+    requestId: requestCtx?.requestId,
+  });
 
-Deno.serve(async (req: Request) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  if (req.method !== "PUT" && req.method !== "POST") {
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: { code: "METHOD_NOT_ALLOWED", message: "Use PUT or POST" },
-      } satisfies UpdateListingResponse),
-      {
-        status: 405,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
-  }
-
-  try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: { code: "SERVER_CONFIG_ERROR", message: "Server misconfigured" },
-        } satisfies UpdateListingResponse),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+  // Call transactional RPC
+  const { data: result, error: rpcError } = await supabase.rpc(
+    "update_listing_transactional",
+    {
+      p_listing_id: body.listingId,
+      p_title: body.title,
+      p_description: body.description,
+      p_is_active: body.isActive,
+      p_pickup_address: body.pickupAddress,
+      p_pickup_time: body.pickupTime,
     }
+  );
 
-    // =========================================================================
-    // 1. Authenticate user
-    // =========================================================================
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: { code: "AUTH_MISSING", message: "Authorization required" },
-        } satisfies UpdateListingResponse),
-        {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    const token = authHeader.replace("Bearer ", "");
-    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
-    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
-
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: { code: "AUTH_INVALID", message: "Invalid or expired token" },
-        } satisfies UpdateListingResponse),
-        {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    // =========================================================================
-    // 2. Parse request body
-    // =========================================================================
-    const payload: UpdateListingRequest = await req.json();
-
-    if (!payload.listingId || typeof payload.listingId !== "number") {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "listingId is required" },
-        } satisfies UpdateListingResponse),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    // =========================================================================
-    // 3. Call transactional RPC
-    // =========================================================================
-    const supabaseService = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-      global: {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
+  if (rpcError) {
+    logger.error("RPC error updating listing", {
+      error: rpcError.message,
+      listingId: body.listingId,
+      requestId: requestCtx?.requestId,
     });
-
-    const { data: result, error: rpcError } = await supabaseService.rpc(
-      "update_listing_transactional",
-      {
-        p_listing_id: payload.listingId,
-        p_title: payload.title,
-        p_description: payload.description,
-        p_is_active: payload.isActive,
-        p_pickup_address: payload.pickupAddress,
-        p_pickup_time: payload.pickupTime,
-      }
-    );
-
-    if (rpcError) {
-      console.error("RPC error:", rpcError);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: {
-            code: "SERVER_ERROR",
-            message: "Failed to update listing",
-            details: rpcError.message,
-          },
-        } satisfies UpdateListingResponse),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    const rpcResult = typeof result === "string" ? JSON.parse(result) : result;
-
-    if (!rpcResult.success) {
-      const statusCode = rpcResult.error?.code === "RESOURCE_NOT_FOUND" ? 404 :
-                         rpcResult.error?.code === "AUTH_FORBIDDEN" ? 403 : 400;
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: rpcResult.error,
-        } satisfies UpdateListingResponse),
-        {
-          status: statusCode,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        listing: rpcResult.listing,
-        error: undefined,
-      } satisfies UpdateListingResponse),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
-  } catch (error) {
-    console.error("Error in update-listing:", error);
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: {
-          code: "SERVER_ERROR",
-          message: error instanceof Error ? error.message : "Internal server error",
-        },
-      } satisfies UpdateListingResponse),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+    throw new ServerError("Failed to update listing");
   }
+
+  const rpcResult = typeof result === "string" ? JSON.parse(result) : result;
+
+  if (!rpcResult.success) {
+    const errorCode = rpcResult.error?.code;
+
+    if (errorCode === "RESOURCE_NOT_FOUND") {
+      throw new NotFoundError("Listing", body.listingId.toString());
+    }
+
+    if (errorCode === "AUTH_FORBIDDEN") {
+      throw new ForbiddenError("You do not have permission to update this listing");
+    }
+
+    throw new ServerError(rpcResult.error?.message || "Failed to update listing");
+  }
+
+  const listing: UpdatedListing = {
+    id: rpcResult.listing.id,
+    title: rpcResult.listing.post_name,
+    description: rpcResult.listing.post_description,
+    isActive: rpcResult.listing.is_active,
+    pickupAddress: rpcResult.listing.pickup_address,
+    pickupTime: rpcResult.listing.pickup_time,
+    updatedAt: rpcResult.listing.updated_at,
+  };
+
+  logger.info("Listing updated successfully", {
+    listingId: body.listingId,
+    userId: userId?.substring(0, 8),
+    requestId: requestCtx?.requestId,
+  });
+
+  return ok({ listing }, ctx);
+}
+
+// =============================================================================
+// Export Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: "update-listing",
+  version: "2.0.0",
+  requireAuth: true,
+  rateLimit: {
+    limit: 30,
+    windowMs: 60000, // 30 updates per minute
+    keyBy: "user",
+  },
+  routes: {
+    PUT: {
+      schema: updateListingSchema,
+      handler: handleUpdateListing,
+    },
+    POST: {
+      schema: updateListingSchema,
+      handler: handleUpdateListing, // Also support POST for compatibility
+    },
+  },
 });

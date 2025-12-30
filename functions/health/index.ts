@@ -5,8 +5,8 @@
  * Returns status of: database, Redis cache, storage, and Edge Functions.
  *
  * Endpoints:
- * - GET /health - Full health check (authenticated)
- * - GET /health?quick=true - Quick ping check (no auth)
+ * - GET /health - Full health check
+ * - GET /health?quick=true - Quick ping check (no database queries)
  *
  * Response includes:
  * - Overall status: healthy, degraded, unhealthy
@@ -18,25 +18,26 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { getSupabaseClient } from "../_shared/supabase.ts";
+import { logger } from "../_shared/logger.ts";
+import { getAllCircuitStatuses } from "../_shared/circuit-breaker.ts";
+import {
+  getMetricsSummary as getMetricsSummaryFromDB,
+  recordHealthCheck as recordHealthCheckToDB,
+} from "../_shared/metrics.ts";
 
+// =============================================================================
 // Types
+// =============================================================================
+
 interface ServiceHealth {
   service: string;
   status: "healthy" | "degraded" | "unhealthy";
   responseTimeMs: number;
   details?: Record<string, unknown>;
   error?: string;
-}
-
-interface HealthResponse {
-  status: "healthy" | "degraded" | "unhealthy";
-  timestamp: string;
-  version: string;
-  uptime: number;
-  services: ServiceHealth[];
-  circuitBreakers?: CircuitBreakerStatus[];
-  rateLimits?: RateLimitStatus;
-  metrics?: MetricsSummary;
 }
 
 interface CircuitBreakerStatus {
@@ -46,164 +47,68 @@ interface CircuitBreakerStatus {
   lastChange: string;
 }
 
-interface RateLimitStatus {
-  globalRemaining: number;
-  globalLimit: number;
-  windowResetSeconds: number;
-}
-
 interface MetricsSummary {
   requestsLast5Min: number;
   errorRateLast5Min: number;
   p95LatencyMs: number;
 }
 
-// CORS headers
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+interface FeatureFlagsStatus {
+  totalFlags: number;
+  enabledFlags: number;
+  activeExperiments: number;
+  lastUpdated?: string;
+}
+
+interface CacheStats {
+  feedCells: {
+    totalCells: number;
+    activeCells: number;
+    totalAccesses: number;
+    avgComputationMs: number;
+  };
+  materializedView: {
+    lastRefresh: string;
+    isStale: boolean;
+    stalenessMinutes: number;
+  };
+}
+
+interface HealthResponse {
+  status: "healthy" | "degraded" | "unhealthy";
+  timestamp: string;
+  version: string;
+  uptime: number;
+  services: ServiceHealth[];
+  circuitBreakers?: CircuitBreakerStatus[];
+  metrics?: MetricsSummary;
+  featureFlags?: FeatureFlagsStatus;
+  cacheStats?: CacheStats;
+}
+
+// =============================================================================
+// Schemas
+// =============================================================================
+
+const healthQuerySchema = z.object({
+  quick: z.string().transform((v) => v === "true").optional(),
+});
+
+type HealthQuery = z.infer<typeof healthQuerySchema>;
 
 // Start time for uptime calculation
 const startTime = Date.now();
 
-Deno.serve(async (req: Request) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+// =============================================================================
+// Health Check Functions
+// =============================================================================
 
-  if (req.method !== "GET") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  const url = new URL(req.url);
-  const isQuickCheck = url.searchParams.get("quick") === "true";
-
-  // Quick check doesn't require auth - just returns OK
-  if (isQuickCheck) {
-    return new Response(
-      JSON.stringify({
-        status: "ok",
-        timestamp: new Date().toISOString(),
-      }),
-      {
-        status: 200,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-        },
-      }
-    );
-  }
-
-  try {
-    // Initialize Supabase client
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!supabaseUrl || !supabaseKey) {
-      return new Response(
-        JSON.stringify({
-          status: "unhealthy",
-          error: "Missing Supabase configuration",
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Run all health checks in parallel
-    const [
-      databaseHealth,
-      storageHealth,
-      redisHealth,
-      circuitBreakers,
-      metrics,
-    ] = await Promise.all([
-      checkDatabase(supabase),
-      checkStorage(supabase),
-      checkRedis(supabase),
-      getCircuitBreakerStatus(supabase),
-      getMetricsSummary(supabase),
-    ]);
-
-    const services: ServiceHealth[] = [
-      databaseHealth,
-      storageHealth,
-      redisHealth,
-    ];
-
-    // Determine overall status
-    const hasUnhealthy = services.some((s) => s.status === "unhealthy");
-    const hasDegraded = services.some((s) => s.status === "degraded");
-
-    const overallStatus: "healthy" | "degraded" | "unhealthy" = hasUnhealthy
-      ? "unhealthy"
-      : hasDegraded
-        ? "degraded"
-        : "healthy";
-
-    // Record health check result
-    await recordHealthCheck(supabase, services);
-
-    const response: HealthResponse = {
-      status: overallStatus,
-      timestamp: new Date().toISOString(),
-      version: Deno.env.get("SUPABASE_FUNCTION_VERSION") || "1.0.0",
-      uptime: Math.floor((Date.now() - startTime) / 1000),
-      services,
-      circuitBreakers,
-      metrics,
-    };
-
-    // Set appropriate status code based on health
-    const statusCode = overallStatus === "healthy" ? 200 : overallStatus === "degraded" ? 200 : 503;
-
-    return new Response(JSON.stringify(response), {
-      status: statusCode,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json",
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-      },
-    });
-  } catch (error) {
-    console.error("Health check failed:", error);
-    return new Response(
-      JSON.stringify({
-        status: "unhealthy",
-        error: error instanceof Error ? error.message : "Unknown error",
-        timestamp: new Date().toISOString(),
-      }),
-      {
-        status: 503,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
-  }
-});
-
-/**
- * Check database connectivity and performance
- */
 async function checkDatabase(
   supabase: ReturnType<typeof createClient>
 ): Promise<ServiceHealth> {
   const start = performance.now();
 
   try {
-    // Simple query to check connectivity
     const { error } = await supabase
       .from("profiles")
       .select("id")
@@ -221,11 +126,8 @@ async function checkDatabase(
       };
     }
 
-    // Check response time - degraded if > 500ms
-    const status: "healthy" | "degraded" =
-      responseTimeMs > 500 ? "degraded" : "healthy";
+    const status: "healthy" | "degraded" = responseTimeMs > 500 ? "degraded" : "healthy";
 
-    // Get connection pool info if available
     const { data: poolInfo } = await supabase.rpc("pg_stat_activity_count").maybeSingle();
 
     return {
@@ -246,18 +148,13 @@ async function checkDatabase(
   }
 }
 
-/**
- * Check storage bucket accessibility
- */
 async function checkStorage(
   supabase: ReturnType<typeof createClient>
 ): Promise<ServiceHealth> {
   const start = performance.now();
 
   try {
-    // List buckets to check storage connectivity
     const { error } = await supabase.storage.listBuckets();
-
     const responseTimeMs = Math.round(performance.now() - start);
 
     if (error) {
@@ -269,8 +166,7 @@ async function checkStorage(
       };
     }
 
-    const status: "healthy" | "degraded" =
-      responseTimeMs > 1000 ? "degraded" : "healthy";
+    const status: "healthy" | "degraded" = responseTimeMs > 1000 ? "degraded" : "healthy";
 
     return {
       service: "storage",
@@ -287,16 +183,12 @@ async function checkStorage(
   }
 }
 
-/**
- * Check Redis cache connectivity via cache-operation function
- */
 async function checkRedis(
   supabase: ReturnType<typeof createClient>
 ): Promise<ServiceHealth> {
   const start = performance.now();
 
   try {
-    // Try to get a test key from Redis via our cache function
     const { data, error } = await supabase.functions.invoke("cache-operation", {
       body: {
         operation: "exists",
@@ -306,9 +198,7 @@ async function checkRedis(
 
     const responseTimeMs = Math.round(performance.now() - start);
 
-    // If the function returned an error, cache might be down
     if (error) {
-      // Check if it's a rate limit or actual connection issue
       if (error.message?.includes("rate")) {
         return {
           service: "redis",
@@ -326,8 +216,7 @@ async function checkRedis(
       };
     }
 
-    const status: "healthy" | "degraded" =
-      responseTimeMs > 200 ? "degraded" : "healthy";
+    const status: "healthy" | "degraded" = responseTimeMs > 200 ? "degraded" : "healthy";
 
     return {
       service: "redis",
@@ -335,7 +224,6 @@ async function checkRedis(
       responseTimeMs,
     };
   } catch (error) {
-    // Redis issues shouldn't fail the whole health check
     return {
       service: "redis",
       status: "degraded",
@@ -346,80 +234,171 @@ async function checkRedis(
   }
 }
 
-/**
- * Get current circuit breaker states
- */
-async function getCircuitBreakerStatus(
+async function checkFeatureFlags(
   supabase: ReturnType<typeof createClient>
-): Promise<CircuitBreakerStatus[]> {
+): Promise<FeatureFlagsStatus | null> {
   try {
-    const { data, error } = await supabase
-      .from("metrics.circuit_status")
-      .select("*");
+    const { data: flagsData } = await supabase
+      .from("feature_flags")
+      .select("enabled, updated_at")
+      .order("updated_at", { ascending: false });
 
-    if (error || !data) {
-      return [];
-    }
+    const { count: experimentsCount } = await supabase
+      .from("experiments")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "running");
 
-    return data.map((row: Record<string, unknown>) => ({
-      name: row.circuit_name as string,
-      state: row.state as string,
-      failureCount: row.failure_count as number,
-      lastChange: row.last_change as string,
-    }));
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Get metrics summary for the last 5 minutes
- */
-async function getMetricsSummary(
-  supabase: ReturnType<typeof createClient>
-): Promise<MetricsSummary | undefined> {
-  try {
-    // Get error rate
-    const { data: errorData } = await supabase.rpc("get_error_rate", {
-      p_minutes: 5,
-    });
-
-    // Get P95 latency
-    const { data: latencyData } = await supabase.rpc("get_p95_latency", {
-      p_minutes: 5,
-    });
-
-    const errorRow = Array.isArray(errorData) ? errorData[0] : errorData;
+    const flags = flagsData || [];
+    const enabledFlags = flags.filter((f) => f.enabled).length;
+    const lastUpdated = flags.length > 0 ? flags[0].updated_at : undefined;
 
     return {
-      requestsLast5Min: errorRow?.total_requests || 0,
-      errorRateLast5Min: parseFloat(errorRow?.error_rate || "0"),
-      p95LatencyMs: latencyData || 0,
+      totalFlags: flags.length,
+      enabledFlags,
+      activeExperiments: experimentsCount || 0,
+      lastUpdated,
     };
   } catch {
-    return undefined;
+    return null;
   }
 }
 
-/**
- * Record health check results for historical tracking
- */
-async function recordHealthCheck(
-  supabase: ReturnType<typeof createClient>,
-  services: ServiceHealth[]
-): Promise<void> {
+async function checkCacheStats(
+  supabase: ReturnType<typeof createClient>
+): Promise<CacheStats | null> {
   try {
-    const records = services.map((s) => ({
-      service: s.service,
-      status: s.status,
-      response_time_ms: s.responseTimeMs,
-      details: s.details || {},
-      error_message: s.error,
-    }));
+    const { data: feedStats } = await supabase.rpc("get_feed_cache_stats");
 
-    await supabase.from("metrics.health_checks").insert(records);
-  } catch (error) {
-    console.error("Failed to record health check:", error);
-    // Don't fail the health check if recording fails
+    const { data: mvStats } = await supabase
+      .from("mv_user_stats")
+      .select("refreshed_at")
+      .limit(1)
+      .maybeSingle();
+
+    const refreshedAt = mvStats?.refreshed_at ? new Date(mvStats.refreshed_at) : null;
+    const stalenessMinutes = refreshedAt
+      ? Math.floor((Date.now() - refreshedAt.getTime()) / 60000)
+      : 999;
+
+    return {
+      feedCells: {
+        totalCells: feedStats?.totalCells || 0,
+        activeCells: feedStats?.activeCells || 0,
+        totalAccesses: feedStats?.totalAccesses || 0,
+        avgComputationMs: feedStats?.avgComputationMs || 0,
+      },
+      materializedView: {
+        lastRefresh: refreshedAt?.toISOString() || "never",
+        isStale: stalenessMinutes > 30,
+        stalenessMinutes,
+      },
+    };
+  } catch {
+    return null;
   }
 }
+
+// =============================================================================
+// Handlers
+// =============================================================================
+
+async function handleQuickHealth(ctx: HandlerContext<unknown, HealthQuery>): Promise<Response> {
+  return ok({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+  }, ctx);
+}
+
+async function handleFullHealth(ctx: HandlerContext<unknown, HealthQuery>): Promise<Response> {
+  const supabase = getSupabaseClient();
+
+  // Run all health checks in parallel
+  const [databaseHealth, storageHealth, redisHealth, metrics, featureFlags, cacheStats] =
+    await Promise.all([
+      checkDatabase(supabase),
+      checkStorage(supabase),
+      checkRedis(supabase),
+      getMetricsSummaryFromDB(5),
+      checkFeatureFlags(supabase),
+      checkCacheStats(supabase),
+    ]);
+
+  // Get circuit breaker statuses
+  const circuitStatuses = getAllCircuitStatuses();
+  const circuitBreakers: CircuitBreakerStatus[] = Object.entries(circuitStatuses).map(
+    ([name, status]) => ({
+      name,
+      state: status.state,
+      failureCount: status.failures,
+      lastChange: new Date(status.lastFailureTime || Date.now()).toISOString(),
+    })
+  );
+
+  const services: ServiceHealth[] = [databaseHealth, storageHealth, redisHealth];
+
+  // Determine overall status
+  const hasUnhealthy = services.some((s) => s.status === "unhealthy");
+  const hasDegraded = services.some((s) => s.status === "degraded");
+
+  const overallStatus: "healthy" | "degraded" | "unhealthy" = hasUnhealthy
+    ? "unhealthy"
+    : hasDegraded
+      ? "degraded"
+      : "healthy";
+
+  // Record health check results
+  for (const service of services) {
+    await recordHealthCheckToDB(
+      service.service,
+      service.status,
+      service.responseTimeMs,
+      service.details,
+      service.error
+    );
+  }
+
+  const response: HealthResponse = {
+    status: overallStatus,
+    timestamp: new Date().toISOString(),
+    version: Deno.env.get("SUPABASE_FUNCTION_VERSION") || "2.0.0",
+    uptime: Math.floor((Date.now() - startTime) / 1000),
+    services,
+    circuitBreakers,
+    metrics: metrics
+      ? {
+          requestsLast5Min: metrics.totalRequests,
+          errorRateLast5Min: metrics.errorRate,
+          p95LatencyMs: metrics.p95Latency,
+        }
+      : undefined,
+    featureFlags: featureFlags || undefined,
+    cacheStats: cacheStats || undefined,
+  };
+
+  logger.info("Health check completed", { status: overallStatus });
+
+  return ok(response, ctx);
+}
+
+async function handleHealth(ctx: HandlerContext<unknown, HealthQuery>): Promise<Response> {
+  if (ctx.query.quick) {
+    return handleQuickHealth(ctx);
+  }
+  return handleFullHealth(ctx);
+}
+
+// =============================================================================
+// Export Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: "health",
+  version: "2.0.0",
+  requireAuth: false, // Health checks should be public
+  routes: {
+    GET: {
+      querySchema: healthQuerySchema,
+      handler: handleHealth,
+    },
+  },
+});

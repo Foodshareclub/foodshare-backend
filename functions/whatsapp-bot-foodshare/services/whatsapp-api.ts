@@ -4,7 +4,7 @@
 
 import { WHATSAPP_API_URL, WHATSAPP_ACCESS_TOKEN } from "../config/index.ts";
 import { WHATSAPP_API_TIMEOUT_MS, MAX_RETRIES, RETRY_DELAY_MS } from "../config/constants.ts";
-import { withCircuitBreaker, getCircuitStatus } from "../utils/circuit-breaker.ts";
+import { withCircuitBreaker, getCircuitStatus } from "../../_shared/circuit-breaker.ts";
 import type {
   TextMessage,
   ImageMessage,
@@ -125,7 +125,7 @@ async function sendWithRetry<T>(
 
       return { success: false, error: lastError };
     },
-    { failureThreshold: 5, resetTimeout: 60000 }
+    { failureThreshold: 5, resetTimeoutMs: 60000 }
   );
 }
 

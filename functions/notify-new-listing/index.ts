@@ -1,146 +1,191 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+/**
+ * notify-new-listing Edge Function
+ *
+ * Notifies nearby users about a new food listing.
+ * All notification logic moved to PostgreSQL RPC for thick server architecture.
+ *
+ * POST /notify-new-listing
+ * Authorization: Bearer <jwt>
+ *
+ * Request:
+ * {
+ *   "foodItemId": "uuid",
+ *   "title": "Fresh Apples",
+ *   "latitude": 51.5074,
+ *   "longitude": -0.1278,
+ *   "radiusKm": 10,
+ *   "useQueue": true,
+ *   "bypassQuietHours": false
+ * }
+ *
+ * Response:
+ * {
+ *   "success": true,
+ *   "message": "Notified 15 nearby users",
+ *   "foodItemId": "uuid",
+ *   "notificationCount": 15
+ * }
+ */
 
-interface NewListingPayload {
-  food_item_id: number;
-  user_id: string;
-  title: string;
-  latitude: number;
-  longitude: number;
-  radius_km?: number;
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { logger } from "../_shared/logger.ts";
+import { ValidationError } from "../_shared/errors.ts";
+
+// =============================================================================
+// Schemas
+// =============================================================================
+
+const notifyListingSchema = z.object({
+  foodItemId: z.string().uuid(),
+  title: z.string().min(1).max(200),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  radiusKm: z.number().min(1).max(50).default(10),
+  useQueue: z.boolean().default(true),
+  bypassQuietHours: z.boolean().default(false),
+});
+
+type NotifyListingRequest = z.infer<typeof notifyListingSchema>;
+
+// =============================================================================
+// Response Types
+// =============================================================================
+
+interface NotifyListingResponse {
+  success: boolean;
+  message?: string;
+  foodItemId?: string;
+  notificationCount?: number;
+  queuedCount?: number;
+  deferredCount?: number;
+  error?: string;
 }
 
-Deno.serve(async (req: Request) => {
-  try {
-    // CORS headers
-    if (req.method === "OPTIONS") {
-      return new Response(null, {
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "POST, OPTIONS",
-          "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-        },
-      });
-    }
+// =============================================================================
+// Handler
+// =============================================================================
 
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "No authorization header" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+async function handleNotifyListing(
+  ctx: HandlerContext<NotifyListingRequest>
+): Promise<Response> {
+  const { supabase, userId, body } = ctx;
 
-    // Initialize Supabase client
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Parse request body
-    const payload: NewListingPayload = await req.json();
-    const { food_item_id, user_id, title, latitude, longitude, radius_km = 10 } = payload;
-
-    // Validate required fields
-    if (!food_item_id || !user_id || !title || !latitude || !longitude) {
-      return new Response(
-        JSON.stringify({ error: "Missing required fields" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    // Find users within radius who have notifications enabled
-    const { data: nearbyUsers, error: usersError } = await supabase.rpc(
-      "nearby_food_items",
-      {
-        user_lat: latitude,
-        user_lng: longitude,
-        radius_km: radius_km,
-        limit_count: 100,
-      }
-    );
-
-    if (usersError) {
-      console.error("Error finding nearby users:", usersError);
-      return new Response(
-        JSON.stringify({ error: "Failed to find nearby users" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    // Get profiles with notification preferences
-    const { data: profiles, error: profilesError } = await supabase
-      .from("profiles_foodshare")
-      .select("id, email, notification_preferences")
-      .neq("id", user_id)
-      .eq("is_active", true);
-
-    if (profilesError) {
-      console.error("Error fetching profiles:", profilesError);
-    }
-
-    const notificationPromises = [];
-    let notificationCount = 0;
-
-    // Send notifications to users who have them enabled
-    if (profiles && profiles.length > 0) {
-      for (const profile of profiles) {
-        const prefs = profile.notification_preferences as Record<string, boolean>;
-
-        if (prefs?.new_listings === true) {
-          // Here you would integrate with your notification service
-          // For example: Firebase Cloud Messaging, OneSignal, etc.
-
-          // For now, we'll log that a notification would be sent
-          console.log(`Would send notification to user ${profile.id} about listing ${food_item_id}`);
-          notificationCount++;
-
-          // You can also create a notifications record in the database
-          const notificationPromise = supabase
-            .from("notifications")
-            .insert({
-              profile_id: profile.id,
-              notification_title: "New food available nearby! 🍎",
-              notification_text: `${title} is now available in your area`,
-              parameter_data: JSON.stringify({ food_item_id }),
-              initial_page_name: "FoodItemDetail",
-              status: "sent",
-              timestamp: new Date().toISOString(),
-            });
-
-          notificationPromises.push(notificationPromise);
-        }
-      }
-    }
-
-    // Wait for all notifications to be created
-    await Promise.all(notificationPromises);
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: `Notified ${notificationCount} nearby users`,
-        food_item_id,
-        notificationCount,
-      }),
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-      }
-    );
-  } catch (error) {
-    console.error("Error in notify-new-listing:", error);
-    return new Response(
-      JSON.stringify({
-        error: "Internal server error",
-        message: error instanceof Error ? error.message : "Unknown error",
-      }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+  if (!userId) {
+    throw new ValidationError("Authentication required");
   }
+
+  const {
+    foodItemId,
+    title,
+    latitude,
+    longitude,
+    radiusKm,
+    useQueue,
+    bypassQuietHours,
+  } = body;
+
+  let notificationCount = 0;
+  let queuedCount = 0;
+  let deferredCount = 0;
+
+  // =========================================================================
+  // Queue-based notification with consolidation support
+  // =========================================================================
+
+  if (useQueue) {
+    // Use queue_nearby_notifications for consolidation
+    // This groups "nearby_post" notifications: "5 new listings nearby"
+    const { data: queueResult, error: queueError } = await supabase.rpc(
+      "queue_nearby_notifications",
+      {
+        p_food_item_id: foodItemId,
+        p_sender_id: userId,
+        p_latitude: latitude,
+        p_longitude: longitude,
+        p_title: title,
+        p_notification_type: "nearby_post",
+        p_radius_km: radiusKm,
+        p_consolidation_key: `nearby_post_${latitude.toFixed(2)}_${longitude.toFixed(2)}`,
+        p_bypass_quiet_hours: bypassQuietHours,
+      }
+    );
+
+    if (queueError) {
+      logger.warn("Queue error, falling back to direct send", {
+        error: queueError.message,
+      });
+      // Fall back to direct send if queue fails
+    } else if (queueResult) {
+      queuedCount = queueResult.queued || 0;
+      deferredCount = queueResult.deferred || 0;
+      notificationCount = queueResult.immediate || 0;
+    }
+  }
+
+  // If queue wasn't used or failed, fall back to direct bulk notification
+  if (!useQueue || (queuedCount === 0 && notificationCount === 0)) {
+    const { data: directCount, error: rpcError } = await supabase.rpc(
+      "notify_nearby_users_bulk",
+      {
+        p_food_item_id: foodItemId,
+        p_sender_id: userId,
+        p_latitude: latitude,
+        p_longitude: longitude,
+        p_title: title,
+        p_notification_type: "new_listing",
+        p_radius_km: radiusKm,
+      }
+    );
+
+    if (rpcError) {
+      logger.error("RPC error sending notifications", new Error(rpcError.message));
+      return ok({
+        success: false,
+        error: "Failed to send notifications",
+      } as NotifyListingResponse, ctx);
+    }
+
+    notificationCount = directCount || 0;
+  }
+
+  const response: NotifyListingResponse = {
+    success: true,
+    message: `Notified ${notificationCount} users immediately, ${queuedCount} queued for consolidation, ${deferredCount} deferred`,
+    foodItemId,
+    notificationCount,
+    queuedCount,
+    deferredCount,
+  };
+
+  logger.info("Notifications sent", {
+    foodItemId,
+    notificationCount,
+    queuedCount,
+    deferredCount,
+  });
+
+  return ok(response, ctx);
+}
+
+// =============================================================================
+// Export Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: "notify-new-listing",
+  version: "2.0.0",
+  requireAuth: true,
+  rateLimit: {
+    limit: 20,
+    windowMs: 60000, // 20 notifications per minute
+    keyBy: "user",
+  },
+  routes: {
+    POST: {
+      schema: notifyListingSchema,
+      handler: handleNotifyListing,
+    },
+  },
 });

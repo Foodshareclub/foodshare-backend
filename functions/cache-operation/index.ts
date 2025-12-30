@@ -1,6 +1,3 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
-
 /**
  * Secure Cache Operation Edge Function
  *
@@ -18,394 +15,231 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
  * - Redis credentials fetched from Vault (service role only)
  * - All operations scoped to authenticated user
  * - Keys must be prefixed with user:{user_id}:
- * - Rate limiting prevents abuse
+ *
+ * Usage:
+ * POST /cache-operation
+ * { "operation": "get|set|delete|incr|expire|exists|ttl", "key": "user:xxx:...", "value": "...", "ttl": 3600 }
  */
 
-interface CacheRequest {
-  operation: "get" | "set" | "delete" | "incr" | "expire" | "exists" | "ttl";
-  key: string;
-  value?: string;
-  ttl?: number; // Time to live in seconds
-}
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { logger } from "../_shared/logger.ts";
+import { ValidationError, AuthError, ServerError } from "../_shared/errors.ts";
+
+// =============================================================================
+// Request Schema
+// =============================================================================
+
+const cacheOperationSchema = z.object({
+  operation: z.enum(["get", "set", "delete", "incr", "expire", "exists", "ttl"]),
+  key: z.string().min(1),
+  value: z.string().optional(),
+  ttl: z.number().optional().default(3600),
+});
+
+type CacheOperationRequest = z.infer<typeof cacheOperationSchema>;
+
+// =============================================================================
+// Response Types
+// =============================================================================
 
 interface CacheResponse {
   success: boolean;
   operation: string;
-  result: any;
-  user_id?: string;
+  result: unknown;
+  user_id: string;
 }
 
-interface ErrorResponse {
-  error: string;
-  details?: string;
-  status?: number;
-}
+// =============================================================================
+// Redis Operation Helpers
+// =============================================================================
 
-Deno.serve(async (req: Request): Promise<Response> => {
-  try {
-    // CORS preflight
-    if (req.method === "OPTIONS") {
-      return new Response(null, {
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "POST, OPTIONS",
-          "Access-Control-Allow-Headers":
-            "authorization, x-client-info, apikey, content-type",
-        },
-      });
-    }
-
-    // =========================================================================
-    // AUTHENTICATION
-    // =========================================================================
-
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return errorResponse("Unauthorized - No authorization header", 401);
-    }
-
-    // Initialize Supabase with service role key
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!supabaseUrl || !supabaseServiceKey) {
-      console.error("Missing Supabase environment variables");
-      return errorResponse("Service configuration error", 500);
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Verify user authentication
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: authError } = await supabase.auth.getUser(
-      token
-    );
-
-    if (authError || !user) {
-      console.error("Authentication failed:", authError?.message);
-      return errorResponse("Invalid authentication token", 401);
-    }
-
-    console.log(`Cache operation request from user: ${user.id}`);
-
-    // =========================================================================
-    // RATE LIMITING
-    // =========================================================================
-
-    const { data: withinLimit, error: rateLimitError } = await supabase.rpc(
-      "check_rate_limit",
-      {
-        user_id: user.id,
-        operation: "cache_operation",
-        max_requests: 60,
-        time_window_seconds: 60,
-      }
-    );
-
-    if (rateLimitError) {
-      console.error("Rate limit check failed:", rateLimitError);
-      // Continue anyway - don't block legitimate requests due to rate limit check failure
-    } else if (withinLimit === false) {
-      console.warn(`Rate limit exceeded for user: ${user.id}`);
-      return errorResponse(
-        "Rate limit exceeded. Maximum 60 requests per minute.",
-        429
-      );
-    }
-
-    // =========================================================================
-    // FETCH REDIS CREDENTIALS FROM VAULT
-    // =========================================================================
-
-    // Get request metadata for audit logging
-    const requestMetadata = {
-      ip_address: req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown",
-      user_agent: req.headers.get("user-agent") || "unknown",
-      request_id: crypto.randomUUID(),
-    };
-
-    // Fetch Redis URL from Vault (audited)
-    const { data: redisUrl, error: urlError } = await supabase.rpc(
-      "get_secret_audited",
-      {
-        secret_name: "UPSTASH_REDIS_URL",
-        requesting_user_id: user.id,
-        request_metadata: requestMetadata,
-      }
-    );
-
-    // Fetch Redis token from Vault (audited)
-    const { data: redisToken, error: tokenError } = await supabase.rpc(
-      "get_secret_audited",
-      {
-        secret_name: "UPSTASH_REDIS_TOKEN",
-        requesting_user_id: user.id,
-        request_metadata: requestMetadata,
-      }
-    );
-
-    // Check for errors
-    if (urlError || tokenError) {
-      console.error("Failed to retrieve Redis credentials from Vault:", {
-        urlError,
-        tokenError,
-      });
-      return errorResponse(
-        "Failed to retrieve cache service credentials",
-        500
-      );
-    }
-
-    if (!redisUrl || !redisToken) {
-      console.error("Redis credentials are null");
-      return errorResponse(
-        "Cache service credentials not configured",
-        500
-      );
-    }
-
-    console.log("✅ Redis credentials retrieved from Vault");
-
-    // =========================================================================
-    // PARSE AND VALIDATE REQUEST
-    // =========================================================================
-
-    let payload: CacheRequest;
-    try {
-      payload = await req.json();
-    } catch (error) {
-      return errorResponse("Invalid JSON in request body", 400);
-    }
-
-    const { operation, key, value, ttl = 3600 } = payload;
-
-    // Validate operation
-    const validOperations = ["get", "set", "delete", "incr", "expire", "exists", "ttl"];
-    if (!operation || !validOperations.includes(operation)) {
-      return errorResponse(
-        `Invalid operation. Must be one of: ${validOperations.join(", ")}`,
-        400
-      );
-    }
-
-    // Validate key
-    if (!key || typeof key !== "string" || key.length === 0) {
-      return errorResponse("Missing or invalid cache key", 400);
-    }
-
-    // Security: Ensure key is scoped to user to prevent cross-user access
-    const userPrefix = `user:${user.id}:`;
-    if (!key.startsWith(userPrefix)) {
-      return errorResponse(
-        `Invalid cache key. Must be scoped to user: ${userPrefix}`,
-        403
-      );
-    }
-
-    console.log(`Operation: ${operation}, Key: ${key}`);
-
-    // =========================================================================
-    // EXECUTE REDIS OPERATION
-    // =========================================================================
-
-    const redisHeaders = {
+async function executeRedisCommand(
+  redisUrl: string,
+  redisToken: string,
+  command: string[]
+): Promise<unknown> {
+  const response = await fetch(redisUrl, {
+    method: "POST",
+    headers: {
       Authorization: `Bearer ${redisToken}`,
       "Content-Type": "application/json",
-    };
+    },
+    body: JSON.stringify(command),
+  });
 
-    let result: any;
+  const data = await response.json();
 
-    try {
-      switch (operation) {
-        case "get": {
-          const response = await fetch(redisUrl, {
-            method: "POST",
-            headers: redisHeaders,
-            body: JSON.stringify(["GET", key]),
-          });
-          const data = await response.json();
+  if (!response.ok) {
+    throw new ServerError(`Redis command failed: ${JSON.stringify(data)}`);
+  }
 
-          if (!response.ok) {
-            throw new Error(`Redis GET failed: ${JSON.stringify(data)}`);
-          }
+  return data.result;
+}
 
-          result = { value: data.result };
-          break;
-        }
+// =============================================================================
+// Handler Implementation
+// =============================================================================
 
-        case "set": {
-          if (value === undefined) {
-            return errorResponse("Missing value for set operation", 400);
-          }
+async function handleCacheOperation(
+  ctx: HandlerContext<CacheOperationRequest>
+): Promise<Response> {
+  const { supabase, body, userId, ctx: requestCtx } = ctx;
+  const { operation, key, value, ttl } = body;
 
-          // Use SETEX to set with expiration
-          const response = await fetch(redisUrl, {
-            method: "POST",
-            headers: redisHeaders,
-            body: JSON.stringify(["SETEX", key, ttl, value]),
-          });
-          const data = await response.json();
+  // Validate user is authenticated
+  if (!userId) {
+    throw new AuthError("Authentication required");
+  }
 
-          if (!response.ok) {
-            throw new Error(`Redis SET failed: ${JSON.stringify(data)}`);
-          }
+  logger.info("Cache operation request", {
+    operation,
+    key: key.substring(0, 30),
+    userId: userId.substring(0, 8),
+    requestId: requestCtx?.requestId,
+  });
 
-          result = { success: data.result === "OK", ttl };
-          break;
-        }
+  // Security: Ensure key is scoped to user
+  const userPrefix = `user:${userId}:`;
+  if (!key.startsWith(userPrefix)) {
+    throw new ValidationError(`Invalid cache key. Must be scoped to user: ${userPrefix}`);
+  }
 
-        case "delete": {
-          const response = await fetch(redisUrl, {
-            method: "POST",
-            headers: redisHeaders,
-            body: JSON.stringify(["DEL", key]),
-          });
-          const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(`Redis DEL failed: ${JSON.stringify(data)}`);
-          }
-
-          result = { deleted: data.result };
-          break;
-        }
-
-        case "incr": {
-          const response = await fetch(redisUrl, {
-            method: "POST",
-            headers: redisHeaders,
-            body: JSON.stringify(["INCR", key]),
-          });
-          const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(`Redis INCR failed: ${JSON.stringify(data)}`);
-          }
-
-          result = { value: data.result };
-          break;
-        }
-
-        case "expire": {
-          if (!ttl || ttl <= 0) {
-            return errorResponse("Invalid TTL for expire operation", 400);
-          }
-
-          const response = await fetch(redisUrl, {
-            method: "POST",
-            headers: redisHeaders,
-            body: JSON.stringify(["EXPIRE", key, ttl]),
-          });
-          const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(`Redis EXPIRE failed: ${JSON.stringify(data)}`);
-          }
-
-          result = { success: data.result === 1, ttl };
-          break;
-        }
-
-        case "exists": {
-          const response = await fetch(redisUrl, {
-            method: "POST",
-            headers: redisHeaders,
-            body: JSON.stringify(["EXISTS", key]),
-          });
-          const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(`Redis EXISTS failed: ${JSON.stringify(data)}`);
-          }
-
-          result = { exists: data.result === 1 };
-          break;
-        }
-
-        case "ttl": {
-          const response = await fetch(redisUrl, {
-            method: "POST",
-            headers: redisHeaders,
-            body: JSON.stringify(["TTL", key]),
-          });
-          const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(`Redis TTL failed: ${JSON.stringify(data)}`);
-          }
-
-          // TTL returns:
-          // - positive number: seconds until expiration
-          // - -1: key exists but has no expiration
-          // - -2: key does not exist
-          result = { ttl: data.result };
-          break;
-        }
-
-        default:
-          return errorResponse("Invalid operation", 400);
-      }
-    } catch (error) {
-      console.error("Redis operation failed:", error);
-      return errorResponse(
-        "Cache operation failed",
-        500,
-        error instanceof Error ? error.message : undefined
-      );
+  // Check rate limit via database
+  const { data: withinLimit, error: rateLimitError } = await supabase.rpc(
+    "check_rate_limit",
+    {
+      user_id: userId,
+      operation: "cache_operation",
+      max_requests: 60,
+      time_window_seconds: 60,
     }
+  );
 
-    // =========================================================================
-    // SUCCESS RESPONSE
-    // =========================================================================
-
-    const response: CacheResponse = {
-      success: true,
-      operation,
-      result,
-      user_id: user.id,
-    };
-
-    console.log(`✅ Cache operation successful: ${operation}`);
-
-    return new Response(JSON.stringify(response), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
-    });
-  } catch (error) {
-    console.error("Unexpected error in cache-operation:", error);
-    return errorResponse(
-      "Internal server error",
-      500,
-      error instanceof Error ? error.message : undefined
+  if (rateLimitError) {
+    logger.error("Rate limit check failed", { error: rateLimitError.message });
+    // Continue anyway - don't block legitimate requests
+  } else if (withinLimit === false) {
+    logger.warn("Rate limit exceeded", { userId: userId.substring(0, 8) });
+    return new Response(
+      JSON.stringify({
+        error: "Rate limit exceeded. Maximum 60 requests per minute.",
+        status: 429,
+      }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": "60",
+        },
+      }
     );
   }
-});
 
-/**
- * Helper function to create error responses
- */
-function errorResponse(
-  message: string,
-  status: number = 500,
-  details?: string
-): Response {
-  const errorBody: ErrorResponse = {
-    error: message,
-    status,
+  // Get request metadata for audit
+  const requestMetadata = {
+    ip_address: requestCtx?.ip || "unknown",
+    user_agent: requestCtx?.userAgent || "unknown",
+    request_id: requestCtx?.requestId,
   };
 
-  if (details) {
-    errorBody.details = details;
+  // Fetch Redis credentials from Vault
+  const { data: redisUrl, error: urlError } = await supabase.rpc(
+    "get_secret_audited",
+    {
+      secret_name: "UPSTASH_REDIS_URL",
+      requesting_user_id: userId,
+      request_metadata: requestMetadata,
+    }
+  );
+
+  const { data: redisToken, error: tokenError } = await supabase.rpc(
+    "get_secret_audited",
+    {
+      secret_name: "UPSTASH_REDIS_TOKEN",
+      requesting_user_id: userId,
+      request_metadata: requestMetadata,
+    }
+  );
+
+  if (urlError || tokenError || !redisUrl || !redisToken) {
+    logger.error("Failed to retrieve Redis credentials from Vault", {
+      urlError: urlError?.message,
+      tokenError: tokenError?.message,
+    });
+    throw new ServerError("Failed to retrieve cache service credentials");
   }
 
-  return new Response(JSON.stringify(errorBody), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-    },
+  // Execute Redis operation
+  let result: unknown;
+
+  switch (operation) {
+    case "get":
+      result = { value: await executeRedisCommand(redisUrl, redisToken, ["GET", key]) };
+      break;
+
+    case "set":
+      if (value === undefined) {
+        throw new ValidationError("Missing value for set operation");
+      }
+      const setResult = await executeRedisCommand(redisUrl, redisToken, ["SETEX", key, String(ttl), value]);
+      result = { success: setResult === "OK", ttl };
+      break;
+
+    case "delete":
+      result = { deleted: await executeRedisCommand(redisUrl, redisToken, ["DEL", key]) };
+      break;
+
+    case "incr":
+      result = { value: await executeRedisCommand(redisUrl, redisToken, ["INCR", key]) };
+      break;
+
+    case "expire":
+      if (!ttl || ttl <= 0) {
+        throw new ValidationError("Invalid TTL for expire operation");
+      }
+      const expireResult = await executeRedisCommand(redisUrl, redisToken, ["EXPIRE", key, String(ttl)]);
+      result = { success: expireResult === 1, ttl };
+      break;
+
+    case "exists":
+      const existsResult = await executeRedisCommand(redisUrl, redisToken, ["EXISTS", key]);
+      result = { exists: existsResult === 1 };
+      break;
+
+    case "ttl":
+      result = { ttl: await executeRedisCommand(redisUrl, redisToken, ["TTL", key]) };
+      break;
+  }
+
+  logger.info("Cache operation successful", {
+    operation,
+    userId: userId.substring(0, 8),
   });
+
+  const response: CacheResponse = {
+    success: true,
+    operation,
+    result,
+    user_id: userId,
+  };
+
+  return ok(response, ctx);
 }
+
+// =============================================================================
+// Export Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: "cache-operation",
+  version: "2.0.0",
+  requireAuth: true, // Must be authenticated
+  routes: {
+    POST: {
+      schema: cacheOperationSchema,
+      handler: handleCacheOperation,
+    },
+  },
+});
