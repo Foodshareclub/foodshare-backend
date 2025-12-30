@@ -12,6 +12,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 -- Uses ST_MakeEnvelope for efficient bounding box queries with spatial index
 -- Returns posts within the specified viewport bounds
 
+DROP FUNCTION IF EXISTS get_posts_in_bounds(DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, TEXT, INTEGER);
 CREATE OR REPLACE FUNCTION get_posts_in_bounds(
   min_lng DOUBLE PRECISION,
   min_lat DOUBLE PRECISION,
@@ -62,6 +63,7 @@ GRANT EXECUTE ON FUNCTION get_posts_in_bounds TO authenticated, anon;
 -- RPC: Get posts count in bounds (for showing totals)
 -- ============================================================================
 
+DROP FUNCTION IF EXISTS get_posts_count_in_bounds(DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, TEXT);
 CREATE OR REPLACE FUNCTION get_posts_count_in_bounds(
   min_lng DOUBLE PRECISION,
   min_lat DOUBLE PRECISION,

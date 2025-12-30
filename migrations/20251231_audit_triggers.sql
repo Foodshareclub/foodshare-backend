@@ -261,7 +261,7 @@ CREATE POLICY audit_logs_admin_read ON audit.logged_actions
     EXISTS (
       SELECT 1 FROM user_roles ur
       JOIN roles r ON ur.role_id = r.id
-      WHERE ur.user_id = auth.uid()
+      WHERE ur.profile_id = auth.uid()
         AND r.name = 'admin'
     )
   );

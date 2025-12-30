@@ -6,6 +6,7 @@
 -- Replaces N+1 pattern in challenge-leaderboard.ts
 -- ============================================================================
 
+DROP FUNCTION IF EXISTS get_challenge_leaderboard(integer);
 CREATE OR REPLACE FUNCTION get_challenge_leaderboard(limit_count integer DEFAULT 100)
 RETURNS TABLE(
   profile_id uuid,
@@ -38,7 +39,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
-COMMENT ON FUNCTION get_challenge_leaderboard IS
+COMMENT ON FUNCTION get_challenge_leaderboard(integer) IS
   'Optimized leaderboard query - replaces N+1 JS aggregation pattern';
 
 -- ============================================================================
@@ -46,6 +47,7 @@ COMMENT ON FUNCTION get_challenge_leaderboard IS
 -- Replaces 7-8 queries + JS aggregation in crm.ts:265-444
 -- ============================================================================
 
+DROP FUNCTION IF EXISTS get_crm_dashboard_stats();
 CREATE OR REPLACE FUNCTION get_crm_dashboard_stats()
 RETURNS TABLE(
   total_customers bigint,
@@ -87,7 +89,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
-COMMENT ON FUNCTION get_crm_dashboard_stats IS
+COMMENT ON FUNCTION get_crm_dashboard_stats() IS
   'Single query CRM dashboard stats - replaces 7-8 queries + JS aggregation';
 
 -- ============================================================================
@@ -95,6 +97,7 @@ COMMENT ON FUNCTION get_crm_dashboard_stats IS
 -- Replaces 12 parallel COUNT queries in admin-reports.ts:228-289
 -- ============================================================================
 
+DROP FUNCTION IF EXISTS get_admin_reports_stats(integer);
 CREATE OR REPLACE FUNCTION get_admin_reports_stats(p_days_window integer DEFAULT 30)
 RETURNS TABLE(
   total_listings bigint,
@@ -137,7 +140,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
-COMMENT ON FUNCTION get_admin_reports_stats IS
+COMMENT ON FUNCTION get_admin_reports_stats(integer) IS
   'Single query admin reports - replaces 12 parallel COUNT queries';
 
 -- ============================================================================
@@ -145,6 +148,7 @@ COMMENT ON FUNCTION get_admin_reports_stats IS
 -- Replaces JS loop aggregation in post-activity.ts:170-206
 -- ============================================================================
 
+DROP FUNCTION IF EXISTS get_post_activity_counts(integer);
 CREATE OR REPLACE FUNCTION get_post_activity_counts(p_post_id integer)
 RETURNS TABLE(activity_type text, count bigint) AS $$
 BEGIN
@@ -159,10 +163,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
-COMMENT ON FUNCTION get_post_activity_counts IS
+COMMENT ON FUNCTION get_post_activity_counts(integer) IS
   'Aggregated activity counts by type - replaces JS loop aggregation';
 
 -- Activity dashboard stats (for getActivityDashboardStats)
+DROP FUNCTION IF EXISTS get_activity_dashboard_stats();
 CREATE OR REPLACE FUNCTION get_activity_dashboard_stats()
 RETURNS TABLE(
   today_activities bigint,
@@ -179,7 +184,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
-COMMENT ON FUNCTION get_activity_dashboard_stats IS
+COMMENT ON FUNCTION get_activity_dashboard_stats() IS
   'Dashboard activity counts - replaces 3 separate COUNT queries';
 
 -- ============================================================================
@@ -187,6 +192,7 @@ COMMENT ON FUNCTION get_activity_dashboard_stats IS
 -- Replaces JS reduce operations in admin-email.ts:175-180
 -- ============================================================================
 
+DROP FUNCTION IF EXISTS get_email_dashboard_stats();
 CREATE OR REPLACE FUNCTION get_email_dashboard_stats()
 RETURNS TABLE(
   total_sent bigint,
@@ -243,7 +249,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
-COMMENT ON FUNCTION get_email_dashboard_stats IS
+COMMENT ON FUNCTION get_email_dashboard_stats() IS
   'Single query email dashboard stats - replaces multiple queries + JS aggregation';
 
 -- ============================================================================

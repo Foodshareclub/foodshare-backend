@@ -326,7 +326,7 @@ CREATE POLICY user_impact_stats_select ON user_impact_stats
   FOR SELECT TO authenticated
   USING (user_id = auth.uid() OR EXISTS (
     SELECT 1 FROM user_roles ur JOIN roles r ON ur.role_id = r.id
-    WHERE ur.user_id = auth.uid() AND r.name = 'admin'
+    WHERE ur.profile_id = auth.uid() AND r.name = 'admin'
   ));
 
 CREATE POLICY user_badges_select ON user_badges
@@ -337,5 +337,5 @@ CREATE POLICY user_badges_insert ON user_badges
   FOR INSERT TO authenticated
   WITH CHECK (EXISTS (
     SELECT 1 FROM user_roles ur JOIN roles r ON ur.role_id = r.id
-    WHERE ur.user_id = auth.uid() AND r.name = 'admin'
+    WHERE ur.profile_id = auth.uid() AND r.name = 'admin'
   ));
