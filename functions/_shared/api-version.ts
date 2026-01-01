@@ -10,7 +10,7 @@
 // - Client telemetry integration
 // ============================================================================
 
-import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 // ============================================================================
 // Types

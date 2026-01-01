@@ -1,0 +1,17 @@
+# Supabase Edge Functions Configuration
+# See: https://supabase.com/docs/guides/functions/function-configuration
+
+# Disable JWT verification for resize-tinify-upload-image
+# This function is called by cron jobs without authentication
+[functions.resize-tinify-upload-image]
+verify_jwt = false
+
+# Disable JWT verification for geolocate-user
+# This is an auth hook called by Supabase Auth service
+[functions.geolocate-user]
+verify_jwt = false
+
+# Disable JWT verification for get-translations
+# Public endpoint for fetching translations
+[functions.get-translations]
+verify_jwt = false

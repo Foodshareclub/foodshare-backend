@@ -10,7 +10,6 @@
  * @module response-adapter
  */
 
-import { corsHeaders } from "./cors.ts";
 import { getContext, getElapsedMs } from "./context.ts";
 import { logger } from "./logger.ts";
 import type { AppError } from "./errors.ts";
@@ -403,7 +402,6 @@ export function buildErrorResponse(
 export function detectClientType(request: Request): "legacy" | "unified" | "unknown" {
   const accept = request.headers.get("accept") || "";
   const clientVersion = request.headers.get("x-client-version") || "";
-  const platform = request.headers.get("x-client-platform") || "";
 
   // Check for explicit unified format request
   if (accept.includes("vnd.foodshare.v2")) {

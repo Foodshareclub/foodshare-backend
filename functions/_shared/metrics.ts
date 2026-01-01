@@ -11,7 +11,7 @@
  * - Integration with request context
  */
 
-import { getContext, getElapsedMs } from "./context.ts";
+import { getContext } from "./context.ts";
 import { getSupabaseClient } from "./supabase.ts";
 import { CircuitState, getCircuitStatus, getAllCircuitStatuses } from "./circuit-breaker.ts";
 
@@ -126,21 +126,24 @@ export async function flushMetrics(): Promise<void> {
     for (const event of events) {
       const durationMs = Math.round(performance.now() - event.startTime);
 
-      await supabase.rpc("record_function_call", {
-        p_function_name: event.functionName,
-        p_request_id: event.requestId,
-        p_duration_ms: durationMs,
-        p_status_code: event.statusCode || 0,
-        p_correlation_id: event.correlationId,
-        p_user_id: event.userId,
-        p_platform: event.platform,
-        p_error_code: event.errorCode,
-        p_error_message: event.errorMessage?.substring(0, 500),
-        p_metadata: event.metadata || {},
-      }).catch((e) => {
+      try {
+        await supabase.rpc("record_function_call", {
+          p_function_name: event.functionName,
+          p_request_id: event.requestId,
+          p_duration_ms: durationMs,
+          p_status_code: event.statusCode || 0,
+          p_correlation_id: event.correlationId,
+          p_user_id: event.userId,
+          p_platform: event.platform,
+          p_error_code: event.errorCode,
+          p_error_message: event.errorMessage?.substring(0, 500),
+          p_metadata: event.metadata || {},
+        });
+      } catch (e: unknown) {
         // Log but don't fail
-        console.error("Failed to record metric:", e.message);
-      });
+        const message = e instanceof Error ? e.message : String(e);
+        console.error("Failed to record metric:", message);
+      }
     }
   } catch (error) {
     console.error("Failed to flush metrics:", error);
@@ -151,7 +154,7 @@ export async function flushMetrics(): Promise<void> {
 /**
  * Sync circuit breaker status to database
  */
-export async function syncCircuitStatus(circuitName: string, state: CircuitState): Promise<void> {
+export async function syncCircuitStatus(circuitName: string, _state: CircuitState): Promise<void> {
   try {
     const status = getCircuitStatus(circuitName);
     if (!status) return;

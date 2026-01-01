@@ -34,7 +34,7 @@
  * ```
  */
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
 import { createContext, clearContext, setUserId, type RequestContext } from "./context.ts";
 import { getCorsHeadersWithMobile, handleMobileCorsPrelight } from "./cors.ts";
 import {
@@ -69,7 +69,8 @@ export interface HandlerContext<TBody = unknown, TQuery = Record<string, string>
   /** Authenticated user ID (if requireAuth is true) */
   userId: string | null;
   /** Supabase client (authenticated if userId is set) */
-  supabase: ReturnType<typeof createClient>;
+  // deno-lint-ignore no-explicit-any
+  supabase: SupabaseClient<any, any, any>;
   /** Parsed and validated request body */
   body: TBody;
   /** URL query parameters */
@@ -174,8 +175,9 @@ function createSupabaseClient(authHeader?: string | null) {
 // Authentication
 // =============================================================================
 
+// deno-lint-ignore no-explicit-any
 async function authenticateRequest(
-  supabase: ReturnType<typeof createClient>
+  supabase: SupabaseClient<any, any, any>
 ): Promise<string | null> {
   try {
     const { data: { user }, error } = await supabase.auth.getUser();
@@ -194,8 +196,9 @@ async function authenticateRequest(
 // Idempotency
 // =============================================================================
 
+// deno-lint-ignore no-explicit-any
 async function checkIdempotencyKey(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient<any, any, any>,
   key: string,
   operation: string
 ): Promise<{ cached: boolean; response?: unknown }> {
@@ -213,8 +216,9 @@ async function checkIdempotencyKey(
   return data as { cached: boolean; response?: unknown };
 }
 
+// deno-lint-ignore no-explicit-any
 async function storeIdempotencyKey(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient<any, any, any>,
   key: string,
   operation: string,
   response: unknown
@@ -434,7 +438,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
     rateLimit,
     checkRateLimit,
     additionalOrigins,
-    supportedVersions,
+    supportedVersions: _supportedVersions,
     deprecatedVersions,
   } = config;
 
