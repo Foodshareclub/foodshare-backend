@@ -1,0 +1,113 @@
+[package]
+name = "motherduck-sync"
+version = "0.1.0"
+edition = "2024"
+authors = ["Foodshare Team"]
+description = "A robust CLI and library for syncing data from Supabase to MotherDuck"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Foodshareclub/motherduck-sync"
+documentation = "https://docs.rs/motherduck-sync"
+readme = "README.md"
+keywords = ["duckdb", "motherduck", "supabase", "sync", "analytics"]
+categories = ["command-line-utilities", "database"]
+rust-version = "1.85"
+
+[lib]
+name = "motherduck_sync"
+path = "src/lib.rs"
+
+[[bin]]
+name = "motherduck-sync"
+path = "src/bin/main.rs"
+
+[features]
+default = ["cli", "tls-native"]
+cli = ["dep:clap", "dep:indicatif", "dep:console"]
+tls-native = ["dep:postgres-native-tls", "dep:native-tls"]
+tls-rustls = ["dep:tokio-postgres-rustls", "dep:rustls", "dep:webpki-roots"]
+
+[dependencies]
+# DuckDB with bundled build (includes MotherDuck support)
+duckdb = { version = "1.1", features = ["bundled"] }
+
+# PostgreSQL client
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-serde_json-1", "with-uuid-1"] }
+
+# TLS options (feature-gated)
+postgres-native-tls = { version = "0.5", optional = true }
+native-tls = { version = "0.2", optional = true }
+tokio-postgres-rustls = { version = "0.12", optional = true }
+rustls = { version = "0.23", optional = true }
+webpki-roots = { version = "0.26", optional = true }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID
+uuid = { version = "1", features = ["serde", "v4"] }
+
+# CLI (optional)
+clap = { version = "4", features = ["derive", "env"], optional = true }
+indicatif = { version = "0.17", optional = true }
+console = { version = "0.15", optional = true }
+
+# Error handling
+thiserror = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Retry logic
+backoff = { version = "0.4", features = ["tokio"] }
+
+# URL parsing
+url = "2"
+
+# TOML parsing
+toml = "0.8"
+
+# Human-readable durations
+humantime = "2"
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+
+# Metrics (optional, for observability)
+metrics = "0.23"
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3"
+wiremock = "0.6"
+fake = { version = "2", features = ["chrono", "uuid"] }
+proptest = "1"
+criterion = { version = "0.5", features = ["async_tokio"] }
+assert_cmd = "2"
+predicates = "3"
+
+[[bench]]
+name = "sync_benchmark"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

@@ -1,0 +1,23 @@
+# Build artifacts
+/target/
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config with secrets
+motherduck-sync.toml
+.motherduck-sync.toml
+.env
+.env.local
+
+# Test artifacts
+*.log
+sync-result.json

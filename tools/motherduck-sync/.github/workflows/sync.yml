@@ -1,0 +1,125 @@
+name: Sync to MotherDuck
+
+on:
+  schedule:
+    # Run daily at 3 AM UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      full_sync:
+        description: 'Full sync (resync all records)'
+        type: boolean
+        default: false
+      refresh_staging:
+        description: 'Refresh staging tables before sync'
+        type: boolean
+        default: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Test connectivity
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        run: ./target/release/motherduck-sync test
+
+      - name: Refresh staging tables
+        if: ${{ inputs.refresh_staging != false }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          # Use psql to refresh staging tables from source views
+          psql "$DATABASE_URL" <<EOF
+          -- Refresh users staging
+          INSERT INTO analytics_staging_users 
+          SELECT id, nickname, email, avatar_url, bio, is_active, is_verified, 
+                 last_seen_at, created_at, updated_at, false
+          FROM analytics_full_users
+          ON CONFLICT (id) DO UPDATE SET
+              nickname = EXCLUDED.nickname,
+              email = EXCLUDED.email,
+              is_active = EXCLUDED.is_active,
+              last_seen_at = EXCLUDED.last_seen_at,
+              updated_at = EXCLUDED.updated_at,
+              synced_to_motherduck = false;
+          
+          -- Refresh listings staging
+          INSERT INTO analytics_staging_listings
+          SELECT id, profile_id, post_name, post_description, post_type, post_address,
+                 latitude, longitude, is_active, is_arranged, post_arranged_to, 
+                 post_arranged_at, post_views, post_like_counter, created_at, updated_at, false
+          FROM analytics_full_listings
+          ON CONFLICT (id) DO UPDATE SET
+              post_name = EXCLUDED.post_name,
+              is_active = EXCLUDED.is_active,
+              is_arranged = EXCLUDED.is_arranged,
+              post_views = EXCLUDED.post_views,
+              updated_at = EXCLUDED.updated_at,
+              synced_to_motherduck = false;
+          EOF
+
+      - name: Run sync
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        run: |
+          ARGS="sync"
+          if [ "${{ inputs.full_sync }}" = "true" ]; then
+            ARGS="$ARGS --full"
+          fi
+          ./target/release/motherduck-sync $ARGS --json | tee sync-result.json
+
+      - name: Verify sync
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        run: ./target/release/motherduck-sync query --counts
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sync-result-${{ github.run_id }}
+          path: sync-result.json
+          retention-days: 30
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Sync Results" >> $GITHUB_STEP_SUMMARY
+          if [ -f sync-result.json ]; then
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat sync-result.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No results file found" >> $GITHUB_STEP_SUMMARY
+          fi
