@@ -30,14 +30,15 @@ import {
 } from "../_shared/api-handler.ts";
 import { NotFoundError, ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
+import { PROFILE } from "../_shared/validation-rules.ts";
 
 // =============================================================================
-// Schemas
+// Schemas (using shared validation constants from Swift FoodshareCore)
 // =============================================================================
 
 const updateProfileSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  bio: z.string().max(500).optional(),
+  name: z.string().min(PROFILE.nickname.minLength).max(PROFILE.nickname.maxLength).optional(),
+  bio: z.string().max(PROFILE.bio.maxLength).optional(),
   phone: z.string().max(20).optional(),
   location: z.string().max(200).optional(),
   isVolunteer: z.boolean().optional(),

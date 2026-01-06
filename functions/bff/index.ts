@@ -26,6 +26,10 @@ import feedHandler from "./handlers/feed.ts";
 import dashboardHandler from "./handlers/dashboard.ts";
 import messagesHandler from "./handlers/messages.ts";
 import profileHandler from "./handlers/profile.ts";
+import listingDetailHandler from "./handlers/listing-detail.ts";
+import searchHandler, { suggestionsHandler } from "./handlers/search.ts";
+import challengesHandler from "./handlers/challenges.ts";
+import notificationsHandler from "./handlers/notifications.ts";
 
 // =============================================================================
 // Route Detection
@@ -55,6 +59,16 @@ async function routeRequest(ctx: HandlerContext): Promise<Response> {
 
   logger.debug("BFF routing", { subPath, method: ctx.request.method });
 
+  // Handle listing detail routes with ID in path
+  if (subPath.startsWith("listings/")) {
+    return listingDetailHandler(ctx.request);
+  }
+
+  // Handle search suggestions sub-route
+  if (subPath === "search/suggestions" || subPath === "search/suggestions/") {
+    return suggestionsHandler(ctx.request);
+  }
+
   switch (subPath) {
     case "feed":
     case "feed/":
@@ -76,6 +90,21 @@ async function routeRequest(ctx: HandlerContext): Promise<Response> {
       // Delegate to profile handler
       return profileHandler(ctx.request);
 
+    case "search":
+    case "search/":
+      // Delegate to search handler
+      return searchHandler(ctx.request);
+
+    case "challenges":
+    case "challenges/":
+      // Delegate to challenges handler
+      return challengesHandler(ctx.request);
+
+    case "notifications":
+    case "notifications/":
+      // Delegate to notifications handler
+      return notificationsHandler(ctx.request);
+
     case "":
     case "/":
       // Root BFF endpoint - return available endpoints
@@ -87,6 +116,11 @@ async function routeRequest(ctx: HandlerContext): Promise<Response> {
           { path: "/bff/dashboard", method: "GET", description: "User dashboard" },
           { path: "/bff/messages", method: "GET", description: "Chat rooms with messages" },
           { path: "/bff/profile", method: "GET", description: "User profile with listings" },
+          { path: "/bff/listings/:id", method: "GET", description: "Listing detail with seller" },
+          { path: "/bff/search", method: "GET", description: "Search with filters and facets" },
+          { path: "/bff/search/suggestions", method: "GET", description: "Search autocomplete" },
+          { path: "/bff/challenges", method: "GET/POST", description: "Gamification challenges" },
+          { path: "/bff/notifications", method: "GET/POST/PATCH", description: "User notifications" },
         ],
       }, ctx);
 
@@ -110,6 +144,10 @@ async function handleHealth(ctx: HandlerContext): Promise<Response> {
       dashboard: "available",
       messages: "available",
       profile: "available",
+      listings: "available",
+      search: "available",
+      challenges: "available",
+      notifications: "available",
     },
   }, ctx);
 }

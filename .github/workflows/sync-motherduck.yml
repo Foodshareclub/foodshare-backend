@@ -1,0 +1,135 @@
+# Sync Analytics to MotherDuck
+#
+# This workflow syncs analytics data from PostgreSQL staging tables to MotherDuck.
+# It runs daily and can also be triggered manually.
+#
+# Prerequisites:
+# 1. Run the sync-analytics Edge Function to populate staging tables
+# 2. Set repository secrets: DATABASE_URL, MOTHERDUCK_TOKEN
+
+name: Sync to MotherDuck
+
+on:
+  # Run daily at 3 AM UTC (after Edge Function runs at 2 AM)
+  schedule:
+    - cron: '0 3 * * *'
+
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      full_sync:
+        description: 'Full sync (resync all records)'
+        required: false
+        default: 'false'
+        type: boolean
+      log_level:
+        description: 'Log level'
+        required: false
+        default: 'info'
+        type: choice
+        options:
+          - trace
+          - debug
+          - info
+          - warn
+          - error
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  sync:
+    name: Sync Analytics
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            tools/motherduck-sync/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('tools/motherduck-sync/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build motherduck-sync
+        working-directory: tools/motherduck-sync
+        run: cargo build --release
+
+      - name: Test connectivity
+        working-directory: tools/motherduck-sync
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        run: ./target/release/motherduck-sync test
+
+      - name: Run sync
+        working-directory: tools/motherduck-sync
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+          LOG_LEVEL: ${{ inputs.log_level || 'info' }}
+        run: |
+          ARGS=""
+          if [ "${{ inputs.full_sync }}" = "true" ]; then
+            ARGS="--full"
+          fi
+          ./target/release/motherduck-sync $ARGS --json | tee sync-result.json
+
+      - name: Upload sync result
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sync-result
+          path: tools/motherduck-sync/sync-result.json
+          retention-days: 30
+
+      - name: Post summary
+        if: always()
+        run: |
+          if [ -f tools/motherduck-sync/sync-result.json ]; then
+            echo "## Sync Results" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            SUCCESS=$(jq -r '.success' tools/motherduck-sync/sync-result.json)
+            DURATION=$(jq -r '.duration_ms' tools/motherduck-sync/sync-result.json)
+            
+            if [ "$SUCCESS" = "true" ]; then
+              echo "✅ **Sync completed successfully**" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ **Sync completed with errors**" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- Duration: ${DURATION}ms" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Tables" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Source | Target | Records | Duration | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|--------|---------|----------|--------|" >> $GITHUB_STEP_SUMMARY
+            
+            jq -r '.tables | to_entries[] | "| \(.value.source_table) | \(.value.target_table) | \(.value.records_synced) | \(.value.duration_ms)ms | \(if .value.success then "✅" else "❌" end) |"' tools/motherduck-sync/sync-result.json >> $GITHUB_STEP_SUMMARY
+          fi
+
+  notify-failure:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: sync
+    if: failure()
+    steps:
+      - name: Send failure notification
+        run: |
+          echo "::error::MotherDuck sync failed. Check the workflow logs for details."
+          # Add Slack/Discord/email notification here if needed

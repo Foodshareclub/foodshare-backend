@@ -26,16 +26,17 @@ import {
 } from "../_shared/api-handler.ts";
 import { ValidationError, ConflictError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
+import { REVIEW, ERROR_MESSAGES } from "../_shared/validation-rules.ts";
 
 // =============================================================================
-// Schemas
+// Schemas (using shared validation constants from Swift FoodshareCore)
 // =============================================================================
 
 const submitReviewSchema = z.object({
   revieweeId: z.string().uuid(), // Profile being reviewed
   postId: z.number().int().positive(),
-  rating: z.number().int().min(1).max(5),
-  feedback: z.string().max(2000).optional(),
+  rating: z.number().int().min(REVIEW.rating.min).max(REVIEW.rating.max),
+  feedback: z.string().max(REVIEW.comment.maxLength).optional(),
 });
 
 const querySchema = z.object({
@@ -122,7 +123,7 @@ async function submitReview(ctx: HandlerContext<SubmitReviewBody>): Promise<Resp
 
   // Prevent self-review
   if (body.revieweeId === userId) {
-    throw new ValidationError("You cannot review yourself");
+    throw new ValidationError(ERROR_MESSAGES.cannotReviewSelf);
   }
 
   // Check for existing review (unique constraint: reviewer + reviewee + post)
@@ -135,7 +136,7 @@ async function submitReview(ctx: HandlerContext<SubmitReviewBody>): Promise<Resp
     .single();
 
   if (existing) {
-    throw new ConflictError("You have already reviewed this exchange");
+    throw new ConflictError(ERROR_MESSAGES.alreadyReviewed);
   }
 
   // Insert review

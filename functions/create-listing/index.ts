@@ -20,14 +20,20 @@ import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, created, type HandlerContext } from "../_shared/api-handler.ts";
 import { ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
+import { LISTING, ERROR_MESSAGES } from "../_shared/validation-rules.ts";
 
 // =============================================================================
-// Request Schema
+// Request Schema (using shared validation constants from Swift FoodshareCore)
 // =============================================================================
 
 const createListingSchema = z.object({
-  title: z.string().min(1, "Title is required").max(200, "Title too long"),
-  description: z.string().max(2000, "Description too long").nullable().optional(),
+  title: z.string()
+    .min(LISTING.title.minLength, ERROR_MESSAGES.titleTooShort(LISTING.title.minLength))
+    .max(LISTING.title.maxLength, ERROR_MESSAGES.titleTooLong(LISTING.title.maxLength)),
+  description: z.string()
+    .max(LISTING.description.maxLength, ERROR_MESSAGES.descriptionTooLong(LISTING.description.maxLength))
+    .nullable()
+    .optional(),
   images: z.array(z.string().url("Invalid image URL")).min(1, "At least one image required"),
   postType: z.enum(["food", "non_food"]),
   latitude: z.number().min(-90).max(90),
