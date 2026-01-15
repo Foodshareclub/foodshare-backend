@@ -7,7 +7,7 @@
 ✅ **$0/month** cost (saves $324-1,440/year)  
 ✅ **Complete privacy** - content never leaves your infrastructure  
 
-**Endpoint**: https://ollama.foodshare.club/api/translate  
+**Endpoint**: https://translate.foodshare.club/api/translate ✅ **LIVE**  
 **API Key**: a0561ed547369f3d094f66d1bf5ce5974bf13cae4e6c481feabff1033b521b9b
 
 ---
@@ -31,9 +31,9 @@ npx supabase db push
 
 # Add secrets to Vault (run in Supabase SQL Editor)
 SELECT vault.create_secret(
-  'https://ollama.foodshare.club/api/translate',
+  'https://translate.foodshare.club/api/translate',
   'LLM_TRANSLATION_ENDPOINT',
-  'Self-hosted translation service endpoint'
+  'Production translation service endpoint'
 );
 
 SELECT vault.create_secret(

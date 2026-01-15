@@ -144,8 +144,8 @@ class LLMTranslationService {
 
 // Export singleton with configuration
 export const llmTranslationService = new LLMTranslationService({
-  endpoint: Deno.env.get("LLM_TRANSLATION_ENDPOINT") || "https://ollama.foodshare.club/api/translate",
+  endpoint: Deno.env.get("LLM_TRANSLATION_ENDPOINT") || "https://translate.foodshare.club/api/translate",
   apiKey: Deno.env.get("LLM_TRANSLATION_API_KEY") || "a0561ed547369f3d094f66d1bf5ce5974bf13cae4e6c481feabff1033b521b9b",
-  cfAccessClientId: Deno.env.get("CF_ACCESS_CLIENT_ID") || "546b88a3efd36b53f35cd8508ba25560.access",
-  cfAccessClientSecret: Deno.env.get("CF_ACCESS_CLIENT_SECRET") || "e483bb03a4d8916403693ed072a73b22343b901f11e79f383996fbe2dbe0192e",
+  cfAccessClientId: Deno.env.get("CF_ACCESS_CLIENT_ID") || "",
+  cfAccessClientSecret: Deno.env.get("CF_ACCESS_CLIENT_SECRET") || "",
 });
