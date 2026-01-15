@@ -1,32 +1,37 @@
 -- Add LLM translation secrets to Supabase Vault
 -- Run this manually after migration is applied
 
--- LLM Translation Endpoint (dedicated translation service)
+-- Ollama Chat API Endpoint (working)
 SELECT vault.create_secret(
-  'https://ollama.foodshare.club/api/translate',
+  'https://ollama.foodshare.club/api/chat',
   'LLM_TRANSLATION_ENDPOINT',
-  'Self-hosted translation service endpoint'
+  'Ollama chat API endpoint for translations'
 );
 
--- LLM Translation API Key
+-- Ollama Model Name
 SELECT vault.create_secret(
-  'a0561ed547369f3d094f66d1bf5ce5974bf13cae4e6c481feabff1033b521b9b',
-  'LLM_TRANSLATION_API_KEY',
-  'API key for translation service'
+  'qwen2.5-coder:7b',
+  'LLM_MODEL',
+  'Ollama model for translation'
 );
 
 -- Cloudflare Access Client ID
 SELECT vault.create_secret(
   '546b88a3efd36b53f35cd8508ba25560.access',
   'CF_ACCESS_CLIENT_ID',
-  'Cloudflare Access client ID for translation service'
+  'Cloudflare Access client ID'
 );
 
 -- Cloudflare Access Client Secret
 SELECT vault.create_secret(
   'e483bb03a4d8916403693ed072a73b22343b901f11e79f383996fbe2dbe0192e',
   'CF_ACCESS_CLIENT_SECRET',
-  'Cloudflare Access client secret for translation service'
+  'Cloudflare Access client secret'
 );
 
-COMMENT ON SCHEMA vault IS 'Supabase Vault stores LLM translation credentials and Cloudflare Access tokens';
+COMMENT ON SCHEMA vault IS 'Supabase Vault stores Ollama credentials and Cloudflare Access tokens';
+
+-- Note: To use dedicated translation service in the future:
+-- 1. Activate Cloudflare Tunnel route #5 (ollama.foodshare.club/api/translate)
+-- 2. Update LLM_TRANSLATION_ENDPOINT to https://ollama.foodshare.club/api/translate
+-- 3. Add LLM_TRANSLATION_API_KEY secret with value: a0561ed547369f3d094f66d1bf5ce5974bf13cae4e6c481feabff1033b521b9b
