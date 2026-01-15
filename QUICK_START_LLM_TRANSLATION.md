@@ -7,8 +7,8 @@
 ✅ **$0/month** cost (saves $324-1,440/year)  
 ✅ **Complete privacy** - content never leaves your infrastructure  
 
-**Endpoint**: https://ollama.foodshare.club  
-**Model**: qwen2.5-coder:7b
+**Endpoint**: https://ollama.foodshare.club/api/translate  
+**API Key**: a0561ed547369f3d094f66d1bf5ce5974bf13cae4e6c481feabff1033b521b9b
 
 ---
 
@@ -31,15 +31,15 @@ npx supabase db push
 
 # Add secrets to Vault (run in Supabase SQL Editor)
 SELECT vault.create_secret(
-  'https://ollama.foodshare.club/v1/chat/completions',
+  'https://ollama.foodshare.club/api/translate',
   'LLM_TRANSLATION_ENDPOINT',
-  'Self-hosted LLM translation endpoint'
+  'Self-hosted translation service endpoint'
 );
 
 SELECT vault.create_secret(
-  'qwen2.5-coder:7b',
-  'LLM_TRANSLATION_MODEL',
-  'LLM model name'
+  'a0561ed547369f3d094f66d1bf5ce5974bf13cae4e6c481feabff1033b521b9b',
+  'LLM_TRANSLATION_API_KEY',
+  'API key for translation service'
 );
 
 # Deploy BFF function

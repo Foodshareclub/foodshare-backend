@@ -1,19 +1,18 @@
 -- Add LLM translation secrets to Supabase Vault
 -- Run this manually after migration is applied
 
--- LLM Translation Endpoint
+-- LLM Translation Endpoint (dedicated translation service)
 SELECT vault.create_secret(
-  'https://ollama.foodshare.club/v1/chat/completions',
+  'https://ollama.foodshare.club/api/translate',
   'LLM_TRANSLATION_ENDPOINT',
-  'Self-hosted LLM translation endpoint (Ollama)'
+  'Self-hosted translation service endpoint'
 );
 
--- LLM Model Name
+-- LLM Translation API Key
 SELECT vault.create_secret(
-  'qwen2.5-coder:7b',
-  'LLM_TRANSLATION_MODEL',
-  'LLM model name for translation'
+  'a0561ed547369f3d094f66d1bf5ce5974bf13cae4e6c481feabff1033b521b9b',
+  'LLM_TRANSLATION_API_KEY',
+  'API key for translation service'
 );
 
--- Note: No API key needed for Ollama
-COMMENT ON SCHEMA vault IS 'Supabase Vault stores LLM_TRANSLATION_ENDPOINT and LLM_TRANSLATION_MODEL';
+COMMENT ON SCHEMA vault IS 'Supabase Vault stores LLM_TRANSLATION_ENDPOINT and LLM_TRANSLATION_API_KEY';

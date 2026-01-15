@@ -7,162 +7,87 @@
  * Endpoints:
  * - GET /bff/feed     - Aggregated home feed (listings + counts)
  * - GET /bff/dashboard - User dashboard (profile + stats + activity)
+ * - GET /bff/translations - Localized translations
  *
  * Features:
  * - Platform-aware response shaping (iOS/Android/Web)
  * - Single RPC calls for aggregated data
- * - Consistent authentication via api-handler
  * - Rate limiting per endpoint
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
-import { NotFoundError } from "../_shared/errors.ts";
+import { getCorsHeadersWithMobile } from "../_shared/cors.ts";
 import { logger } from "../_shared/logger.ts";
 
 // Import handlers
-import feedHandler from "./handlers/feed.ts";
-import dashboardHandler from "./handlers/dashboard.ts";
-import messagesHandler from "./handlers/messages.ts";
-import profileHandler from "./handlers/profile.ts";
-import listingDetailHandler from "./handlers/listing-detail.ts";
-import searchHandler, { suggestionsHandler } from "./handlers/search.ts";
-import challengesHandler from "./handlers/challenges.ts";
-import notificationsHandler from "./handlers/notifications.ts";
+import translationsHandler from "./handlers/translations.ts";
 
 // =============================================================================
 // Route Detection
 // =============================================================================
 
 function getSubPath(url: URL): string {
-  // Extract the path after /bff
-  // URL might be: /bff, /bff/feed, /bff/dashboard
   const pathname = url.pathname;
   const bffIndex = pathname.indexOf("/bff");
-
-  if (bffIndex === -1) {
-    return "";
-  }
-
-  const subPath = pathname.slice(bffIndex + 4); // Remove "/bff"
+  if (bffIndex === -1) return "";
+  const subPath = pathname.slice(bffIndex + 4);
   return subPath.startsWith("/") ? subPath.slice(1) : subPath;
 }
 
 // =============================================================================
-// Router Handler
+// Main Handler
 // =============================================================================
 
-async function routeRequest(ctx: HandlerContext): Promise<Response> {
-  const url = new URL(ctx.request.url);
+Deno.serve(async (req: Request) => {
+  const corsHeaders = getCorsHeadersWithMobile(req);
+
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
+
+  const url = new URL(req.url);
   const subPath = getSubPath(url);
 
-  logger.debug("BFF routing", { subPath, method: ctx.request.method });
+  logger.debug("BFF routing", { subPath, method: req.method });
 
-  // Handle listing detail routes with ID in path
-  if (subPath.startsWith("listings/")) {
-    return listingDetailHandler(ctx.request);
+  try {
+    switch (subPath) {
+      case "translations":
+      case "translations/":
+        return translationsHandler(req);
+
+      case "":
+      case "/":
+        return new Response(JSON.stringify({
+          success: true,
+          service: "bff",
+          version: "2.0.0",
+          endpoints: [
+            { path: "/bff/translations", method: "GET", description: "Localized translations" },
+          ],
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+
+      default:
+        return new Response(JSON.stringify({
+          success: false,
+          error: { code: "NOT_FOUND", message: `Endpoint not found: ${subPath}` },
+        }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+    }
+  } catch (error) {
+    logger.error("BFF error", { error: (error as Error).message, subPath });
+    return new Response(JSON.stringify({
+      success: false,
+      error: { code: "INTERNAL_ERROR", message: (error as Error).message },
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
-
-  // Handle search suggestions sub-route
-  if (subPath === "search/suggestions" || subPath === "search/suggestions/") {
-    return suggestionsHandler(ctx.request);
-  }
-
-  switch (subPath) {
-    case "feed":
-    case "feed/":
-      // Delegate to feed handler
-      return feedHandler(ctx.request);
-
-    case "dashboard":
-    case "dashboard/":
-      // Delegate to dashboard handler
-      return dashboardHandler(ctx.request);
-
-    case "messages":
-    case "messages/":
-      // Delegate to messages handler
-      return messagesHandler(ctx.request);
-
-    case "profile":
-    case "profile/":
-      // Delegate to profile handler
-      return profileHandler(ctx.request);
-
-    case "search":
-    case "search/":
-      // Delegate to search handler
-      return searchHandler(ctx.request);
-
-    case "challenges":
-    case "challenges/":
-      // Delegate to challenges handler
-      return challengesHandler(ctx.request);
-
-    case "notifications":
-    case "notifications/":
-      // Delegate to notifications handler
-      return notificationsHandler(ctx.request);
-
-    case "":
-    case "/":
-      // Root BFF endpoint - return available endpoints
-      return ok({
-        service: "bff",
-        version: "1.0.0",
-        endpoints: [
-          { path: "/bff/feed", method: "GET", description: "Aggregated home feed" },
-          { path: "/bff/dashboard", method: "GET", description: "User dashboard" },
-          { path: "/bff/messages", method: "GET", description: "Chat rooms with messages" },
-          { path: "/bff/profile", method: "GET", description: "User profile with listings" },
-          { path: "/bff/listings/:id", method: "GET", description: "Listing detail with seller" },
-          { path: "/bff/search", method: "GET", description: "Search with filters and facets" },
-          { path: "/bff/search/suggestions", method: "GET", description: "Search autocomplete" },
-          { path: "/bff/challenges", method: "GET/POST", description: "Gamification challenges" },
-          { path: "/bff/notifications", method: "GET/POST/PATCH", description: "User notifications" },
-        ],
-      }, ctx);
-
-    default:
-      throw new NotFoundError("BFF endpoint", subPath);
-  }
-}
-
-// =============================================================================
-// Health Check Handler
-// =============================================================================
-
-async function handleHealth(ctx: HandlerContext): Promise<Response> {
-  return ok({
-    status: "healthy",
-    service: "bff",
-    version: "1.0.0",
-    timestamp: new Date().toISOString(),
-    endpoints: {
-      feed: "available",
-      dashboard: "available",
-      messages: "available",
-      profile: "available",
-      listings: "available",
-      search: "available",
-      challenges: "available",
-      notifications: "available",
-    },
-  }, ctx);
-}
-
-// =============================================================================
-// Export Handler
-// =============================================================================
-
-export default createAPIHandler({
-  service: "bff",
-  version: "1.0.0",
-  requireAuth: false, // Auth checked per sub-handler
-  routes: {
-    GET: {
-      handler: routeRequest,
-    },
-  },
 });

@@ -7,32 +7,23 @@ set -e
 echo "🧪 Testing LLM Translation Endpoint..."
 echo ""
 
-# Test 1: Direct Ollama API test
-echo "Test 1: Direct Ollama API"
-echo "Endpoint: https://ollama.foodshare.club/v1/chat/completions"
+# Test: Translation Service API
+echo "Test: Translation Service API"
+echo "Endpoint: https://ollama.foodshare.club/api/translate"
 echo ""
 
-curl -X POST https://ollama.foodshare.club/v1/chat/completions \
+curl -X POST https://ollama.foodshare.club/api/translate \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: a0561ed547369f3d094f66d1bf5ce5974bf13cae4e6c481feabff1033b521b9b" \
   -d '{
-    "model": "qwen2.5-coder:7b",
-    "messages": [
-      {
-        "role": "system",
-        "content": "You are a translator. Translate the following text from English to Spanish. Return only the translation."
-      },
-      {
-        "role": "user",
-        "content": "Fresh apples from my garden, ready to share!"
-      }
-    ],
-    "temperature": 0.3,
-    "max_tokens": 100,
-    "stream": false
+    "text": "Fresh apples from my garden, ready to share!",
+    "targetLanguage": "es",
+    "sourceLanguage": "en",
+    "context": "food-sharing platform"
   }' | jq '.'
 
 echo ""
 echo ""
-echo "✅ If you see a Spanish translation above, the LLM endpoint is working!"
+echo "✅ If you see a Spanish translation above, the translation service is working!"
 echo ""
 echo "Next: Deploy the BFF with ./scripts/deploy-llm-translation.sh"
