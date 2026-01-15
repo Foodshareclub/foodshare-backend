@@ -1,11 +1,14 @@
 /**
  * Self-Hosted LLM Translation Service
  * Uses dedicated translation service at ollama.foodshare.club/api/translate
+ * Protected by Cloudflare Access
  */
 
 interface LLMConfig {
   endpoint: string;
   apiKey: string;
+  cfAccessClientId: string;
+  cfAccessClientSecret: string;
 }
 
 interface TranslationResult {
@@ -44,12 +47,14 @@ class LLMTranslationService {
     }
 
     try {
-      // Call dedicated translation service
+      // Call dedicated translation service with Cloudflare Access auth
       const response = await fetch(this.config.endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-API-Key": this.config.apiKey,
+          "CF-Access-Client-Id": this.config.cfAccessClientId,
+          "CF-Access-Client-Secret": this.config.cfAccessClientSecret,
         },
         body: JSON.stringify({
           text: text,
@@ -140,4 +145,6 @@ class LLMTranslationService {
 export const llmTranslationService = new LLMTranslationService({
   endpoint: Deno.env.get("LLM_TRANSLATION_ENDPOINT") || "https://ollama.foodshare.club/api/translate",
   apiKey: Deno.env.get("LLM_TRANSLATION_API_KEY") || "a0561ed547369f3d094f66d1bf5ce5974bf13cae4e6c481feabff1033b521b9b",
+  cfAccessClientId: Deno.env.get("CF_ACCESS_CLIENT_ID") || "546b88a3efd36b53f35cd8508ba25560.access",
+  cfAccessClientSecret: Deno.env.get("CF_ACCESS_CLIENT_SECRET") || "e483bb03a4d8916403693ed072a73b22343b901f11e79f383996fbe2dbe0192e",
 });

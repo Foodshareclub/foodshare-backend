@@ -7,14 +7,16 @@ set -e
 echo "🧪 Testing LLM Translation Endpoint..."
 echo ""
 
-# Test: Translation Service API
-echo "Test: Translation Service API"
+# Test: Translation Service API with Cloudflare Access
+echo "Test: Translation Service API (with Cloudflare Access)"
 echo "Endpoint: https://ollama.foodshare.club/api/translate"
 echo ""
 
 curl -X POST https://ollama.foodshare.club/api/translate \
   -H "Content-Type: application/json" \
   -H "X-API-Key: a0561ed547369f3d094f66d1bf5ce5974bf13cae4e6c481feabff1033b521b9b" \
+  -H "CF-Access-Client-Id: 546b88a3efd36b53f35cd8508ba25560.access" \
+  -H "CF-Access-Client-Secret: e483bb03a4d8916403693ed072a73b22343b901f11e79f383996fbe2dbe0192e" \
   -d '{
     "text": "Fresh apples from my garden, ready to share!",
     "targetLanguage": "es",
