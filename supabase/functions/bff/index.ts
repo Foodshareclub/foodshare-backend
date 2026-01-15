@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { llmTranslationService } from "./llm-translation-service.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -91,6 +92,8 @@ serve(async (req) => {
       const lat = parseFloat(url.searchParams.get("lat") || "0");
       const lng = parseFloat(url.searchParams.get("lng") || "0");
       const radiusKm = parseFloat(url.searchParams.get("radius") || "25");
+      const autoTranslate = url.searchParams.get("translate") === "true";
+      const targetLocale = url.searchParams.get("locale") || "en";
 
       let query = supabaseClient
         .from("posts")
@@ -100,7 +103,7 @@ serve(async (req) => {
           expiry_date, status, created_at, updated_at,
           photos,
           user_id,
-          profiles!posts_user_id_fkey(id, display_name, avatar_url, rating)
+          profiles!posts_user_id_fkey(id, display_name, avatar_url, rating, preferred_locale)
         `)
         .eq("status", "available")
         .order("created_at", { ascending: false })
@@ -142,13 +145,49 @@ serve(async (req) => {
       }
 
       // Transform response
-      const feedItems = listings?.map((listing) => ({
+      let feedItems = listings?.map((listing) => ({
         ...listing,
         is_favorited: favoriteIds.includes(listing.id),
         distance_km: lat && lng && listing.latitude && listing.longitude
           ? calculateDistance(lat, lng, listing.latitude, listing.longitude)
           : null,
       }));
+
+      // Auto-translate titles if requested
+      if (autoTranslate && feedItems && feedItems.length > 0) {
+        const itemsNeedingTranslation = feedItems.filter(
+          item => item.profiles?.preferred_locale !== targetLocale && item.title
+        );
+        
+        if (itemsNeedingTranslation.length > 0) {
+          try {
+            // Batch translate titles
+            const titlesToTranslate = itemsNeedingTranslation.map(item => item.title);
+            const translatedTitles = await llmTranslationService.batchTranslate(
+              titlesToTranslate,
+              "auto",
+              targetLocale,
+              "food listing post"
+            );
+            
+            // Merge translations back
+            let translationIndex = 0;
+            feedItems = feedItems.map(item => {
+              if (item.profiles?.preferred_locale !== targetLocale && item.title) {
+                return {
+                  ...item,
+                  title_translated: translatedTitles[translationIndex++],
+                  translation_available: true,
+                };
+              }
+              return item;
+            });
+          } catch (error) {
+            console.error("Translation error:", error);
+            // Continue without translations on error
+          }
+        }
+      }
 
       const nextCursor = listings && listings.length === limit
         ? listings[listings.length - 1].created_at
@@ -158,6 +197,7 @@ serve(async (req) => {
         listings: feedItems,
         next_cursor: nextCursor,
         has_more: nextCursor !== null,
+        translations_enabled: autoTranslate,
       });
     }
 
@@ -493,20 +533,228 @@ serve(async (req) => {
     // =====================================================
     if (endpoint === "translations" && req.method === "GET") {
       const locale = url.searchParams.get("locale") || "en";
-      const namespace = url.searchParams.get("namespace") || "common";
+      const namespace = url.searchParams.get("namespace");
+      const version = url.searchParams.get("version");
+      const etag = req.headers.get("if-none-match");
 
-      const { data, error } = await supabaseClient.rpc("get_translations", {
+      // Get translations from database or file
+      const { data: translations, error } = await supabaseClient.rpc("get_translations_v2", {
         p_locale: locale,
         p_namespace: namespace,
+        p_version: version,
       });
 
       if (error) throw error;
 
+      // Generate ETag for caching
+      const currentEtag = `"${locale}-${translations?.version || "1"}"`;
+      
+      // Return 304 if not modified
+      if (etag && etag === currentEtag) {
+        return new Response(null, {
+          status: 304,
+          headers: {
+            ...corsHeaders,
+            "ETag": currentEtag,
+            "Cache-Control": "public, max-age=3600, stale-while-revalidate=7200",
+          },
+        });
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        data: {
+          locale,
+          version: translations?.version || "1",
+          messages: translations?.messages || {},
+          last_updated: translations?.last_updated || new Date().toISOString(),
+        },
+        meta: {
+          api_version: "v2",
+          request_id: crypto.randomUUID(),
+          cached: true,
+          cache_ttl: 3600,
+        },
+      }), {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+          "ETag": currentEtag,
+          "Cache-Control": "public, max-age=3600, stale-while-revalidate=7200",
+        },
+      });
+    }
+
+    // =====================================================
+    // BFF-TRANSLATIONS-REPORT: Report missing translation keys
+    // =====================================================
+    if (endpoint === "translations" && req.method === "POST") {
+      const user = await getUser();
+      const body = await req.json();
+      const { missing_keys, locale, app_version, platform: reportPlatform } = body;
+
+      if (!missing_keys || !Array.isArray(missing_keys)) {
+        return createErrorResponse("INVALID_REQUEST", "missing_keys array required", 400);
+      }
+
+      // Store missing keys for analysis
+      const { error } = await supabaseClient.from("translation_missing_keys").insert(
+        missing_keys.map((key: string) => ({
+          key,
+          locale: locale || "en",
+          platform: reportPlatform || platform,
+          app_version: app_version || appVersion,
+          user_id: user?.id,
+          reported_at: new Date().toISOString(),
+        }))
+      );
+
+      if (error) {
+        console.error("Error storing missing keys:", error);
+        // Don't fail the request if we can't store the keys
+      }
+
+      return createResponse({
+        received: missing_keys.length,
+        message: "Missing keys reported successfully",
+      });
+    }
+
+    // =====================================================
+    // BFF-TRANSLATIONS-STATS: Get translation coverage stats
+    // =====================================================
+    if (endpoint === "translations-stats" && req.method === "GET") {
+      const locale = url.searchParams.get("locale") || "en";
+
+      // Get translation stats
+      const { data: stats, error } = await supabaseClient.rpc("get_translation_stats", {
+        p_locale: locale,
+      });
+
+      if (error) throw error;
+
+      // Get most reported missing keys
+      const { data: missingKeys } = await supabaseClient
+        .from("translation_missing_keys")
+        .select("key, count")
+        .eq("locale", locale)
+        .order("count", { ascending: false })
+        .limit(50);
+
       return createResponse({
         locale,
-        namespace,
-        translations: data || {},
-      }, { cached: true, cache_ttl: 3600 });
+        total_keys: stats?.total_keys || 0,
+        translated_keys: stats?.translated_keys || 0,
+        coverage_percent: stats?.coverage_percent || 0,
+        missing_keys: missingKeys || [],
+        last_updated: stats?.last_updated,
+      });
+    }
+
+    // =====================================================
+    // BFF-TRANSLATE: Translate user content on-the-fly
+    // =====================================================
+    if (endpoint === "translate" && req.method === "POST") {
+      const user = await getUser();
+      const body = await req.json();
+      const { content_type, content_id, target_locale, fields } = body;
+
+      if (!content_type || !content_id || !target_locale) {
+        return createErrorResponse("INVALID_REQUEST", "Missing required fields", 400);
+      }
+
+      // Get original content
+      let content: any;
+      let contentContext: string;
+      
+      if (content_type === "post") {
+        const { data } = await supabaseClient
+          .from("posts")
+          .select("post_name, post_description, profile_id, profiles!posts_profile_id_fkey(preferred_locale)")
+          .eq("id", content_id)
+          .single();
+        content = data;
+        contentContext = "food listing post";
+      } else if (content_type === "challenge") {
+        const { data } = await supabaseClient
+          .from("challenges")
+          .select("title, description, profile_id, profiles!challenges_profile_id_fkey(preferred_locale)")
+          .eq("id", content_id)
+          .single();
+        content = data;
+        contentContext = "community challenge";
+      } else if (content_type === "forum_post") {
+        const { data } = await supabaseClient
+          .from("forum_posts")
+          .select("title, content, profile_id, profiles!forum_posts_profile_id_fkey(preferred_locale)")
+          .eq("id", content_id)
+          .single();
+        content = data;
+        contentContext = "forum discussion post";
+      }
+
+      if (!content) {
+        return createErrorResponse("NOT_FOUND", "Content not found", 404);
+      }
+
+      const sourceLang = content.profiles?.preferred_locale || "en";
+      const fieldsToTranslate = fields || ["post_name", "post_description"];
+      
+      const translations: Record<string, any> = {};
+      
+      for (const field of fieldsToTranslate) {
+        const sourceText = content[field];
+        if (!sourceText) continue;
+
+        // Check database cache first
+        const { data: cached } = await supabaseClient.rpc("get_or_translate", {
+          p_content_type: content_type,
+          p_content_id: content_id,
+          p_field_name: field,
+          p_source_locale: sourceLang,
+          p_target_locale: target_locale,
+          p_source_text: sourceText,
+        });
+
+        if (cached && cached[0]?.translated_text) {
+          translations[field] = {
+            text: cached[0].translated_text,
+            cached: true,
+            quality: cached[0].quality_score,
+          };
+        } else {
+          // Call LLM translation service
+          const result = await llmTranslationService.translate(
+            sourceText,
+            sourceLang,
+            target_locale,
+            contentContext
+          );
+
+          // Store in database
+          await supabaseClient.rpc("store_translation", {
+            p_content_type: content_type,
+            p_content_id: content_id,
+            p_field_name: field,
+            p_source_locale: sourceLang,
+            p_target_locale: target_locale,
+            p_source_text: sourceText,
+            p_translated_text: result.text,
+            p_quality_score: result.quality,
+          });
+
+          translations[field] = result;
+        }
+      }
+
+      return createResponse({
+        content_type,
+        content_id,
+        source_locale: sourceLang,
+        target_locale,
+        translations,
+        service: "self-hosted-llm",
+      });
     }
 
     // =====================================================
