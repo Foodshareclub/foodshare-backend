@@ -1,20 +1,14 @@
 /**
  * Self-Hosted LLM Translation Service
- * Uses Ollama API at ollama.foodshare.club/api/chat
+ * Uses dedicated translation service at ollama.foodshare.club/api/translate
  * Protected by Cloudflare Access
- * 
- * TODO: Switch to dedicated translation service once activated:
- * - Endpoint: https://ollama.foodshare.club/api/translate
- * - Requires Cloudflare Tunnel route #5 activation
  */
 
 interface LLMConfig {
   endpoint: string;
-  model: string;
+  apiKey: string;
   cfAccessClientId: string;
   cfAccessClientSecret: string;
-  maxTokens: number;
-  temperature: number;
 }
 
 interface TranslationResult {
@@ -36,7 +30,7 @@ class LLMTranslationService {
   }
 
   /**
-   * Translate text using Ollama chat API
+   * Translate text using dedicated translation service
    */
   async translate(
     text: string,
@@ -53,38 +47,30 @@ class LLMTranslationService {
     }
 
     try {
-      // Build translation prompt
-      const systemPrompt = this.buildSystemPrompt(sourceLang, targetLang, context);
-      
-      // Call Ollama chat API with Cloudflare Access auth
+      // Call dedicated translation service
       const response = await fetch(this.config.endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-API-Key": this.config.apiKey,
           "CF-Access-Client-Id": this.config.cfAccessClientId,
           "CF-Access-Client-Secret": this.config.cfAccessClientSecret,
         },
         body: JSON.stringify({
-          model: this.config.model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: text },
-          ],
-          stream: false,
-          options: {
-            temperature: this.config.temperature,
-            num_predict: this.config.maxTokens,
-          },
+          text: text,
+          targetLanguage: targetLang,
+          sourceLanguage: sourceLang,
+          context: context || "food-sharing platform",
         }),
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Ollama API error: ${response.status} - ${errorText}`);
+        throw new Error(`Translation API error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
-      const translatedText = data.message?.content?.trim() || text;
+      const translatedText = data.translatedText || data.text || text;
 
       // Update memory cache (with LRU eviction)
       if (this.memoryCache.size >= this.MAX_CACHE_SIZE) {
@@ -100,7 +86,7 @@ class LLMTranslationService {
         text: translatedText,
         cached: false,
         quality: 0.95,
-        tokensUsed: data.eval_count || 0,
+        tokensUsed: data.tokensUsed,
       };
     } catch (error) {
       console.error("Translation service error:", error);
@@ -111,65 +97,6 @@ class LLMTranslationService {
         quality: 0.0,
       };
     }
-  }
-
-  /**
-   * Build context-aware system prompt
-   */
-  private buildSystemPrompt(
-    sourceLang: string,
-    targetLang: string,
-    context?: string
-  ): string {
-    const langNames = this.getLanguageNames();
-    const sourceLanguage = langNames[sourceLang] || sourceLang.toUpperCase();
-    const targetLanguage = langNames[targetLang] || targetLang.toUpperCase();
-
-    return `You are a professional translator specializing in food-sharing and community platforms.
-
-TASK: Translate the following text from ${sourceLanguage} to ${targetLanguage}.
-
-RULES:
-1. Preserve the original meaning and tone
-2. Keep emojis, hashtags, and formatting exactly as they are
-3. Preserve measurements (kg, lbs, L, etc.) - convert if culturally appropriate
-4. Keep proper nouns (names, places) unchanged
-5. Maintain casual/friendly tone typical of food-sharing communities
-6. If text contains food items, use culturally appropriate terms
-7. Return ONLY the translated text, no explanations or notes
-
-${context ? `CONTEXT: This is a ${context}` : ""}
-
-Translate naturally and idiomatically. Output only the translation.`;
-  }
-
-  /**
-   * Get language name from code
-   */
-  private getLanguageNames(): Record<string, string> {
-    return {
-      en: "English",
-      es: "Spanish",
-      fr: "French",
-      de: "German",
-      it: "Italian",
-      pt: "Portuguese",
-      ru: "Russian",
-      zh: "Chinese",
-      ja: "Japanese",
-      ko: "Korean",
-      ar: "Arabic",
-      hi: "Hindi",
-      nl: "Dutch",
-      pl: "Polish",
-      tr: "Turkish",
-      vi: "Vietnamese",
-      th: "Thai",
-      id: "Indonesian",
-      cs: "Czech",
-      uk: "Ukrainian",
-      sv: "Swedish",
-    };
   }
 
   /**
@@ -217,10 +144,8 @@ Translate naturally and idiomatically. Output only the translation.`;
 
 // Export singleton with configuration
 export const llmTranslationService = new LLMTranslationService({
-  endpoint: Deno.env.get("LLM_TRANSLATION_ENDPOINT") || "https://ollama.foodshare.club/api/chat",
-  model: Deno.env.get("LLM_MODEL") || "qwen2.5-coder:7b",
+  endpoint: Deno.env.get("LLM_TRANSLATION_ENDPOINT") || "https://ollama.foodshare.club/api/translate",
+  apiKey: Deno.env.get("LLM_TRANSLATION_API_KEY") || "a0561ed547369f3d094f66d1bf5ce5974bf13cae4e6c481feabff1033b521b9b",
   cfAccessClientId: Deno.env.get("CF_ACCESS_CLIENT_ID") || "546b88a3efd36b53f35cd8508ba25560.access",
   cfAccessClientSecret: Deno.env.get("CF_ACCESS_CLIENT_SECRET") || "e483bb03a4d8916403693ed072a73b22343b901f11e79f383996fbe2dbe0192e",
-  maxTokens: 500,
-  temperature: 0.3,
 });
