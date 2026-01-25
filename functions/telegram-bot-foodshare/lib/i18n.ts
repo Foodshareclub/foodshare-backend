@@ -5,6 +5,7 @@
 import { en } from "../locales/en.ts";
 import { ru } from "../locales/ru.ts";
 import { de } from "../locales/de.ts";
+import { getSupabaseClient } from "../services/supabase.ts";
 
 type Translations = typeof en;
 type Language = "en" | "ru" | "de";
@@ -78,32 +79,24 @@ export function detectLanguage(languageCode?: string): Language {
  * Get user's language from database or detect from Telegram
  */
 export async function getUserLanguage(userId: number, languageCode?: string): Promise<Language> {
-  // Try to get stored preference from profile
   if (userId) {
     try {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL");
-      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      const supabase = getSupabaseClient();
 
-      if (supabaseUrl && supabaseKey) {
-        const { createClient } = await import("jsr:@supabase/supabase-js@^2.47.10");
-        const supabase = createClient(supabaseUrl, supabaseKey);
+      const { data } = await supabase
+        .from("profiles")
+        .select("language")
+        .eq("telegram_id", userId)
+        .single();
 
-        const { data } = await supabase
-          .from("profiles")
-          .select("language")
-          .eq("telegram_id", userId)
-          .single();
-
-        if (data?.language) {
-          return data.language as Language;
-        }
+      if (data?.language) {
+        return data.language as Language;
       }
     } catch (error) {
       console.error("Error fetching user language preference:", error);
     }
   }
 
-  // Fallback to Telegram language detection
   return detectLanguage(languageCode);
 }
 
@@ -112,17 +105,9 @@ export async function getUserLanguage(userId: number, languageCode?: string): Pr
  */
 export async function saveUserLanguage(userId: number, language: Language): Promise<void> {
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (supabaseUrl && supabaseKey) {
-      const { createClient } = await import("jsr:@supabase/supabase-js@^2.47.10");
-      const supabase = createClient(supabaseUrl, supabaseKey);
-
-      await supabase.from("profiles").update({ language }).eq("telegram_id", userId);
-
-      console.log(`✅ Saved language preference: ${language} for user ${userId}`);
-    }
+    const supabase = getSupabaseClient();
+    await supabase.from("profiles").update({ language }).eq("telegram_id", userId);
+    console.log(`Saved language preference: ${language} for user ${userId}`);
   } catch (error) {
     console.error("Error saving user language preference:", error);
   }

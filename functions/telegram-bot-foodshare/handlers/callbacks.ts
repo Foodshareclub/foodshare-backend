@@ -8,6 +8,7 @@ import { getProfileByTelegramId, requiresEmailVerification } from "../services/p
 import * as emoji from "../lib/emojis.ts";
 import * as msg from "../lib/messages.ts";
 import { getUserLanguage } from "../lib/i18n.ts";
+import { safeExecute } from "../utils/errors.ts";
 import type { TelegramCallbackQuery } from "../types/index.ts";
 import {
   handleStartCommand,
@@ -134,7 +135,10 @@ async function handleLanguageSelection(
 
   // Show main menu in new language
   setTimeout(() => {
-    handleStartCommand(chatId, userId, telegramUser, language);
+    safeExecute(
+      () => handleStartCommand(chatId, userId, telegramUser, language),
+      "post-language-selection-start"
+    );
   }, 1000);
 }
 
