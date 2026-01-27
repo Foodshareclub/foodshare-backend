@@ -13,7 +13,7 @@ foodshare/
 ├── foodshare-backend/     ← This repo (source of truth)
 ├── foodshare-ios/
 │   └── supabase → ../foodshare-backend  (symlink)
-└── foodshare/  (web)
+└── foodshare-web/
     └── supabase → ../foodshare-backend  (symlink)
 ```
 
@@ -42,17 +42,20 @@ deno test --allow-all
 ## Architecture
 
 ```
-functions/                  # Deno Edge Functions (42 active)
+functions/                  # Deno Edge Functions (50+ active)
 ├── _shared/               # Shared utilities (singleton patterns)
+│   ├── api-handler.ts    # Unified API handler (Zod + Valibot support)
 │   ├── cors.ts           # CORS with origin validation
 │   ├── supabase.ts       # Connection-pooled Supabase client
 │   ├── cache.ts          # In-memory TTL cache (70-90% DB reduction)
 │   ├── logger.ts         # Structured JSON logging with context
-│   ├── errors.ts         # Standardized error types (AppError, NotFoundError, etc.)
+│   ├── errors.ts         # Standardized error types
 │   ├── context.ts        # Request context (requestId, userId, platform)
 │   ├── circuit-breaker.ts # Circuit breaker pattern for resilience
+│   ├── response-adapter.ts # Unified response format with backwards compatibility
 │   ├── email/            # Multi-provider email system
 │   └── geocoding.ts      # Nominatim with caching/retry
+├── bff/                   # Backend-for-Frontend aggregation endpoints
 ├── email/                 # Unified email (4 providers)
 ├── send-push-notification/ # Cross-platform push (APNs/FCM/VAPID)
 ├── verify-attestation/    # iOS App Attest + DeviceCheck
@@ -60,6 +63,140 @@ functions/                  # Deno Edge Functions (42 active)
 └── */                     # Individual functions
 
 migrations/                 # PostgreSQL migrations (enterprise security)
+```
+
+## Key Patterns
+
+### API Handler (Unified)
+All functions should use the unified API handler from `_shared/api-handler.ts`:
+
+```typescript
+import { createAPIHandler, ok } from "../_shared/api-handler.ts";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+
+const schema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+});
+
+export default createAPIHandler({
+  service: "my-service",
+  requireAuth: true,
+  routes: {
+    POST: {
+      schema,
+      handler: async (ctx) => {
+        const { name, email } = ctx.body;
+        // ... logic
+        return ok({ success: true }, ctx);
+      },
+    },
+  },
+});
+```
+
+The handler supports both Zod and Valibot schemas automatically and includes:
+- Automatic error tracking and alerting
+- Performance monitoring
+- Memory usage checks
+- Request/response logging
+
+### Performance Monitoring
+Track performance of critical operations:
+
+```typescript
+import { measureAsync, PerformanceTimer } from "../_shared/performance.ts";
+
+// Async operation
+const result = await measureAsync("fetch-user-data", async () => {
+  return await fetchUserData(userId);
+}, { userId });
+
+// Manual timing
+const timer = new PerformanceTimer("complex-operation");
+// ... do work
+const durationMs = timer.end({ itemsProcessed: 100 });
+```
+
+### Query Optimization
+Prevent N+1 queries with batch loading:
+
+```typescript
+import { createBatchLoader } from "../_shared/query-optimizer.ts";
+
+const userLoader = createBatchLoader(async (userIds) => {
+  const { data } = await supabase
+    .from('users')
+    .select('*')
+    .in('id', userIds);
+  return userIds.map(id => data.find(u => u.id === id));
+});
+
+// These will be batched into a single query
+const user1 = await userLoader.load('id1');
+const user2 = await userLoader.load('id2');
+```
+
+### Error Tracking
+Automatic error tracking with severity classification:
+
+```typescript
+import { trackError } from "../_shared/error-tracking.ts";
+
+try {
+  await riskyOperation();
+} catch (error) {
+  trackError(error, {
+    operation: "riskyOperation",
+    userId,
+    additionalContext: "...",
+  });
+  throw error;
+}
+```
+
+Errors are automatically:
+- Fingerprinted and deduplicated
+- Classified by severity (low/medium/high/critical)
+- Aggregated over time
+- Alerted when thresholds are reached
+
+### Structured Logging
+Always use the structured logger, never console.log:
+
+```typescript
+import { logger } from "../_shared/logger.ts";
+
+logger.info("Operation completed", { userId, itemCount: 5 });
+logger.error("Operation failed", error);
+logger.warn("Rate limit approaching", { remaining: 10 });
+```
+
+### Response Format
+Use the unified response format via `response-adapter.ts`:
+
+```typescript
+import { buildSuccessResponse, buildErrorResponse } from "../_shared/response-adapter.ts";
+
+// Success
+return buildSuccessResponse(data, corsHeaders, { 
+  pagination: { offset, limit, total, hasMore },
+  version: "1"
+});
+
+// Error
+return buildErrorResponse(error, corsHeaders, { version: "1" });
+```
+
+### Circuit Breaker
+Use circuit breakers for external services:
+
+```typescript
+import { withCircuitBreaker } from "../_shared/circuit-breaker.ts";
+
+await withCircuitBreaker("email-provider", async () => {
+  return await sendEmail(params);
+}, { failureThreshold: 5, resetTimeoutMs: 60000 });
 ```
 
 ## Security Patterns
@@ -88,15 +225,222 @@ migrations/                 # PostgreSQL migrations (enterprise security)
 ## Resilience Patterns
 
 ### Circuit Breaker
-Used in push notifications, WhatsApp bot, Telegram bot, and email providers:
-```typescript
-import { withCircuitBreaker } from "../_shared/circuit-breaker.ts";
-
-await withCircuitBreaker("serviceName", async () => {
-  // operation that may fail
-}, { failureThreshold: 5, resetTimeoutMs: 60000 });
-```
+Used in push notifications, WhatsApp bot, Telegram bot, and email providers.
 States: CLOSED → OPEN (after threshold) → HALF_OPEN (after timeout) → CLOSED (on success)
+
+### Retry Logic
+Exponential backoff with jitter for external API calls:
+```typescript
+import { retryWithBackoff } from "../_shared/retry.ts";
+
+await retryWithBackoff(async () => {
+  return await externalApiCall();
+}, { maxRetries: 3, baseDelayMs: 1000 });
+```
+
+### Caching Strategy
+Three-tier caching:
+1. **Memory**: In-process cache for hot data (TTL: 5 min)
+2. **Redis**: Distributed cache for shared data (TTL: 1 hour)
+3. **Database**: Persistent storage with materialized views
+
+## Database Patterns
+
+### BFF Aggregation Endpoints
+Single-call endpoints that return all data for a screen:
+- `get_user_dashboard()` - Profile, notifications, listings, stats
+- `get_user_feed()` - Nearby listings with distance calculation
+- `get_listing_detail()` - Listing with owner profile and reviews
+
+### Performance Indexes
+All indexes created with `CONCURRENTLY` to avoid blocking:
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_posts_profile_active_created
+  ON posts(profile_id, is_active, created_at DESC)
+  WHERE deleted_at IS NULL;
+```
+
+### Audit Logging
+All sensitive operations logged to `audit.logged_actions`:
+```sql
+INSERT INTO audit.logged_actions (
+  schema_name, table_name, action, row_data, changed_fields, user_id
+) VALUES (...);
+```
+
+## Testing
+
+### Unit Tests
+```bash
+cd functions
+deno test --allow-all __tests__/my-function.test.ts
+```
+
+### Integration Tests
+```bash
+deno test --allow-all __tests__/bff-integration.test.ts
+```
+
+### Run All Tests
+```bash
+cd functions
+deno test --allow-all __tests__/*.test.ts
+```
+
+### Test Coverage
+- API Handler: Comprehensive tests for validation, auth, CORS, pagination
+- Response Format: Ensures consistent response structure
+- Circuit Breaker: Tests state transitions and failure handling
+- Performance: Benchmarks for critical operations
+
+### Test Utilities
+Use shared test utilities from `__tests__/test-utils.ts`:
+```typescript
+import { createTestContext, mockSupabaseClient } from "./__tests__/test-utils.ts";
+
+const ctx = createTestContext({ userId: "test-user-id" });
+const supabase = mockSupabaseClient();
+```
+
+## Monitoring & Observability
+
+### Health Check
+Advanced health endpoint at `/health-advanced`:
+```bash
+curl https://your-project.supabase.co/functions/v1/health-advanced
+```
+
+Returns:
+- System metrics (memory, uptime)
+- Database connectivity and latency
+- Performance metrics and slow queries
+- Error statistics and recent alerts
+- Circuit breaker status
+- Overall health status (healthy/degraded/unhealthy)
+
+### Performance Metrics
+Access performance data:
+```typescript
+import { getMetricsSummary, getSlowQueries } from "../_shared/performance.ts";
+
+const metrics = getMetricsSummary(); // All operations
+const slowQueries = getSlowQueries(10); // Last 10 slow queries
+```
+
+### Error Tracking
+Access error data:
+```typescript
+import { getTrackedErrors, getErrorStats } from "../_shared/error-tracking.ts";
+
+const errors = getTrackedErrors({ severity: "critical", limit: 20 });
+const stats = getErrorStats();
+```
+
+## Best Practices
+
+1. **Always use structured logging** - Never use console.log
+2. **Use the unified API handler** - Consistent error handling and validation
+3. **Add circuit breakers for external services** - Prevent cascading failures
+4. **Create indexes CONCURRENTLY** - Avoid blocking production queries
+5. **Use BFF endpoints for complex queries** - Reduce N+1 queries
+6. **Enable RLS on all tables** - Security by default
+7. **Add audit logging for sensitive operations** - Compliance and debugging
+8. **Use soft deletes** - Data recovery and audit trail
+9. **Cache aggressively** - Reduce database load
+10. **Test edge cases** - Especially auth, rate limiting, and validation
+
+## Common Issues
+
+### Function Not Deploying
+- Check `deno.json` for correct permissions
+- Verify environment variables are set
+- Check function logs: `supabase functions logs <name>`
+
+### Database Connection Issues
+- Use the shared Supabase client from `_shared/supabase.ts`
+- Don't create multiple clients per request
+- Connection pooling is handled automatically
+
+### CORS Errors
+- Use `getCorsHeadersWithMobile()` for all responses
+- Handle OPTIONS preflight with `handleMobileCorsPrelight()`
+- Add custom origins to `additionalOrigins` in API handler config
+
+### Rate Limiting Not Working
+- Use distributed rate limiting for multi-instance deployments
+- Check Redis connection if using distributed mode
+- Verify rate limit keys are unique per user/IP
+
+### Webhook Functions Returning 401 Unauthorized
+- **Root cause**: Function missing from root `config.toml` with `verify_jwt = false`
+- Supabase enables JWT verification by default for all functions
+- External webhooks (Telegram, WhatsApp, Meta) don't include JWT tokens
+- **Fix**: Add function to root `config.toml`:
+  ```toml
+  [functions.telegram-bot-foodshare]
+  verify_jwt = false
+  ```
+- Then redeploy: `supabase functions deploy <name> --no-verify-jwt`
+- Verify with health check: `curl <function-url>/health`
+
+## Migration Guide
+
+### From Old API Handler to Unified Handler
+1. Replace `import { createAPIHandler } from "../_shared/api-handler-v2.ts"` with `import { createAPIHandler } from "../_shared/api-handler.ts"`
+2. Update response builders to use `ok()`, `created()`, `paginated()` helpers
+3. Ensure error handling uses typed errors from `_shared/errors.ts`
+4. Test thoroughly - response format is backwards compatible
+
+### From Console.log to Structured Logger
+1. Replace `console.log()` with `logger.info()`
+2. Replace `console.error()` with `logger.error()`
+3. Replace `console.warn()` with `logger.warn()`
+4. Add structured context: `logger.info("message", { key: value })`
+
+## Performance Optimization
+
+### Query Optimization
+- Use BFF endpoints for complex queries
+- Add covering indexes for common query patterns
+- Use `EXPLAIN ANALYZE` to identify slow queries
+- Consider materialized views for expensive aggregations
+
+### Caching Strategy
+- Cache frequently accessed data in memory
+- Use Redis for shared cache across instances
+- Set appropriate TTLs based on data freshness requirements
+- Invalidate cache on data mutations
+
+### Function Optimization
+- Minimize cold start time by reducing dependencies
+- Use connection pooling for database connections
+- Batch operations when possible
+- Use streaming for large responses
+
+## Monitoring & Observability
+
+### Metrics
+- Function execution time tracked automatically
+- Error rates logged to `metrics.function_calls`
+- Circuit breaker states exposed via health endpoints
+
+### Logging
+- All requests logged with requestId and correlationId
+- Errors include stack traces and context
+- Sensitive data automatically redacted
+
+### Alerts
+- Email alerts for critical errors
+- Telegram notifications for rate limit violations
+- Sentry integration for error tracking
+
+## Support
+
+For questions or issues:
+1. Check this CLAUDE.md file
+2. Review function README files
+3. Check migration comments for database schema
+4. Review test files for usage examples
 
 ### Retry with Exponential Backoff
 ```typescript
@@ -173,6 +517,16 @@ cache.getStats();  // { hits, misses, hitRate }
 
 ## Edge Function Pattern
 
+**⚠️ DO NOT use JSR imports in Edge Functions:**
+```typescript
+// ❌ NEVER use this - causes cold start timeouts
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+
+// ✅ Deno runtime provides types automatically - no import needed
+```
+
+The JSR package `@supabase/functions-js` has a broken OpenAI dependency that causes functions to hang indefinitely on cold start. Deno's runtime already provides all necessary types for `Deno.serve()` and `Deno.env`.
+
 ```typescript
 import { getCorsHeaders, handleCorsPrelight } from "../_shared/cors.ts";
 import { getSupabaseClient } from "../_shared/supabase.ts";
@@ -218,6 +572,18 @@ Deno.serve(async (req) => {
 - `health/` - Public endpoint
 - `api-v1-products/` (GET only) - Public listing access
 
+**⚠️ CRITICAL: Webhook functions MUST be configured in root `config.toml`:**
+```toml
+# config.toml (root level - NOT in function subdirectory)
+[functions.telegram-bot-foodshare]
+verify_jwt = false
+
+[functions.whatsapp-bot-foodshare]
+verify_jwt = false
+```
+
+Without this configuration, Supabase enables JWT verification by default, causing all webhook requests to fail with 401 Unauthorized. Per-function `config.toml` files are NOT used - only the root config matters.
+
 ## Database Patterns
 
 ### Audit Logging
@@ -236,7 +602,31 @@ Tables with `deleted_at`: posts, profiles, forum, challenges, rooms, comments
 
 ## Webhook Patterns
 
-### WhatsApp/Telegram Webhook Verification
+### Telegram Webhook Security
+Telegram uses a secret token for webhook verification (simpler than HMAC):
+```typescript
+import { verifyTelegramWebhook } from "../_shared/webhook-security.ts";
+
+// Telegram sends secret in X-Telegram-Bot-Api-Secret-Token header
+const result = verifyTelegramWebhook(req.headers, WEBHOOK_SECRET);
+if (!result.valid) {
+  return new Response("Unauthorized", { status: 401 });
+}
+```
+
+**Setup**: When calling `setWebhook`, include the secret token:
+```typescript
+await fetch(`${TELEGRAM_API}/setWebhook`, {
+  method: "POST",
+  body: JSON.stringify({
+    url: webhookUrl,
+    secret_token: TELEGRAM_WEBHOOK_SECRET,  // Telegram will send this back
+    allowed_updates: ["message", "callback_query"],
+  }),
+});
+```
+
+### WhatsApp/Meta Webhook Verification
 ```typescript
 // GET: Meta webhook verification (hub.challenge)
 if (req.method === "GET") {
@@ -285,6 +675,50 @@ const lang = detectLanguage("de");  // → "de"
 // Get user preference from database
 const userLang = await getUserLanguage(phoneNumber);
 ```
+
+### i18n CLI Tool (`foodshare-i18n`)
+
+Enterprise translation management CLI located in `tools/bins/foodshare-i18n/`.
+
+```bash
+# Build the CLI
+cd tools && cargo build --release --package foodshare-i18n
+
+# Basic commands
+foodshare-i18n status                    # Translation system status
+foodshare-i18n health --timing           # Health check with response times
+foodshare-i18n locales                   # List supported locales (21 languages)
+foodshare-i18n audit de --missing        # Audit German translations
+
+# Testing
+foodshare-i18n test en --delta --cache   # Test delta sync and ETag caching
+foodshare-i18n test-llm --target es      # Test LLM translation endpoint
+foodshare-i18n test-translation --locale ru  # End-to-end post translation test
+
+# Deployment
+foodshare-i18n deploy                    # Deploy migrations + edge functions
+foodshare-i18n deploy --no-migrations    # Deploy only edge functions
+
+# Translation updates
+foodshare-i18n translate de --apply      # Auto-translate missing German keys
+foodshare-i18n sync --apply              # Sync all locales
+foodshare-i18n update-from-file de ./translations.json  # Update from file
+foodshare-i18n update-batch de,fr,es     # Batch update multiple locales
+
+# Backfill existing content
+foodshare-i18n backfill --dry-run        # Preview posts to translate
+foodshare-i18n backfill --limit 100      # Translate first 100 posts
+foodshare-i18n backfill -b 20 -d 3000    # Custom batch size and delay
+
+# Performance
+foodshare-i18n bench --count 100         # Benchmark with 100 requests
+```
+
+Environment variables:
+- `SUPABASE_URL` - Supabase project URL
+- `SUPABASE_SERVICE_ROLE_KEY` - Service role key for admin operations
+- `LLM_TRANSLATION_ENDPOINT` - LLM API endpoint (optional)
+- `LLM_TRANSLATION_API_KEY` - LLM API key (optional)
 
 ## Location Privacy
 
@@ -357,4 +791,46 @@ Required secrets (Supabase dashboard):
 - **Web Push**: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`
 - **Email**: `RESEND_API_KEY`, `BREVO_API_KEY`, `AWS_*` (SES), `MAILERSEND_API_KEY`
 - **WhatsApp**: `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`
-- **Telegram**: `TELEGRAM_BOT_TOKEN`
+- **Telegram**: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`
+
+## Bot Health Monitoring
+
+### Telegram Bot Health Check
+```bash
+# Health endpoint (no auth required)
+curl https://***REMOVED***/functions/v1/telegram-bot-foodshare/health
+
+# Metrics endpoint
+curl https://***REMOVED***/functions/v1/telegram-bot-foodshare/metrics
+
+# Re-register webhook (if bot stops responding)
+curl "https://***REMOVED***/functions/v1/telegram-bot-foodshare/setup-webhook?url=https://***REMOVED***/functions/v1/telegram-bot-foodshare"
+```
+
+### Health Response Fields
+```json
+{
+  "status": "healthy",           // healthy | degraded
+  "version": "3.4.0",
+  "dependencies": {
+    "telegram": {
+      "status": "CLOSED",        // Circuit breaker: CLOSED (ok) | OPEN (failing)
+      "failures": 0
+    }
+  },
+  "metrics": {
+    "requestsTotal": 100,
+    "requestsSuccess": 98,
+    "requestsError": 2,
+    "requests429": 0,            // Rate limited requests
+    "avgLatencyMs": 45
+  }
+}
+```
+
+### Troubleshooting Bot Issues
+1. **Check health**: `curl <bot-url>/health` - should return `status: "healthy"`
+2. **Verify JWT disabled**: Check root `config.toml` has `verify_jwt = false`
+3. **Re-register webhook**: Hit `/setup-webhook` endpoint
+4. **Check circuit breaker**: If `telegram.status: "OPEN"`, Telegram API is failing
+5. **Check secrets**: Verify `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` are set
