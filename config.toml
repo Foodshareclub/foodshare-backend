@@ -15,3 +15,13 @@ verify_jwt = false
 # Public endpoint for fetching translations
 [functions.get-translations]
 verify_jwt = false
+
+# Disable JWT verification for telegram-bot-foodshare
+# Webhook endpoint called by Telegram servers
+[functions.telegram-bot-foodshare]
+verify_jwt = false
+
+# Disable JWT verification for whatsapp-bot-foodshare
+# Webhook endpoint called by Meta servers
+[functions.whatsapp-bot-foodshare]
+verify_jwt = false
