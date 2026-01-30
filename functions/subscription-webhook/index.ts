@@ -40,7 +40,7 @@ import { stripeHandler } from "./handlers/stripe.ts";
 // Configuration
 // =============================================================================
 
-const VERSION = "2.1.0";
+const VERSION = "3.0.0";
 const SERVICE = "subscription-webhook";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -54,12 +54,28 @@ const RETRY_CONFIG = {
   backoffMultiplier: 2,
 };
 
-// Rate limiting
+// Platform-specific rate limiting (more lenient for high-volume platforms)
+const PLATFORM_RATE_LIMITS: Record<SubscriptionPlatform, { maxRequests: number; windowMs: number }> = {
+  apple: { maxRequests: 200, windowMs: 60000 },
+  google_play: { maxRequests: 200, windowMs: 60000 },
+  stripe: { maxRequests: 500, windowMs: 60000 }, // Higher for batch processing
+};
+
+// Global rate limiting (fallback)
 const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
 const RATE_LIMIT_MAX_REQUESTS = 100; // per window
 
-// Deduplication cache
+// Deduplication cache with LRU eviction
 const DEDUP_TTL_MS = 300000; // 5 minutes
+const DEDUP_MAX_SIZE = 10000; // Maximum entries before eviction
+
+// Revenue-impacting event types that require alerts
+const REVENUE_CRITICAL_EVENTS: SubscriptionEventType[] = [
+  "billing_issue",
+  "grace_period_expired",
+  "refunded",
+  "revoked",
+];
 
 // Platform handlers in priority order
 const handlers: PlatformHandler[] = [
@@ -78,10 +94,21 @@ interface WebhookMetrics {
   requestsError: number;
   requestsDuplicate: number;
   requestsRateLimited: number;
-  byPlatform: Record<SubscriptionPlatform, { success: number; error: number }>;
+  byPlatform: Record<SubscriptionPlatform, { success: number; error: number; lastEventAt: string | null }>;
   avgLatencyMs: number;
   p95LatencyMs: number;
   lastProcessedAt: string | null;
+  // Revenue tracking
+  revenueEvents: {
+    subscriptions: number;
+    renewals: number;
+    cancellations: number;
+    refunds: number;
+    billingIssues: number;
+    graceRecoveries: number;
+  };
+  // DLQ stats
+  dlqAdded: number;
 }
 
 const metrics: WebhookMetrics = {
@@ -91,13 +118,22 @@ const metrics: WebhookMetrics = {
   requestsDuplicate: 0,
   requestsRateLimited: 0,
   byPlatform: {
-    apple: { success: 0, error: 0 },
-    google_play: { success: 0, error: 0 },
-    stripe: { success: 0, error: 0 },
+    apple: { success: 0, error: 0, lastEventAt: null },
+    google_play: { success: 0, error: 0, lastEventAt: null },
+    stripe: { success: 0, error: 0, lastEventAt: null },
   },
   avgLatencyMs: 0,
   p95LatencyMs: 0,
   lastProcessedAt: null,
+  revenueEvents: {
+    subscriptions: 0,
+    renewals: 0,
+    cancellations: 0,
+    refunds: 0,
+    billingIssues: 0,
+    graceRecoveries: 0,
+  },
+  dlqAdded: 0,
 };
 
 // Recent latencies for percentile calculation
@@ -132,6 +168,64 @@ configureCircuit("subscription-db", {
 // =============================================================================
 // Utility Functions
 // =============================================================================
+
+/**
+ * Track revenue-impacting events for monitoring and alerting
+ */
+function trackRevenueEvent(eventType: SubscriptionEventType): void {
+  switch (eventType) {
+    case "subscription_created":
+      metrics.revenueEvents.subscriptions++;
+      break;
+    case "subscription_renewed":
+      metrics.revenueEvents.renewals++;
+      break;
+    case "subscription_canceled":
+    case "subscription_expired":
+      metrics.revenueEvents.cancellations++;
+      break;
+    case "refunded":
+    case "revoked":
+      metrics.revenueEvents.refunds++;
+      break;
+    case "billing_issue":
+    case "grace_period_expired":
+      metrics.revenueEvents.billingIssues++;
+      break;
+    case "billing_recovered":
+      metrics.revenueEvents.graceRecoveries++;
+      break;
+  }
+
+  // Alert on revenue-critical events
+  if (REVENUE_CRITICAL_EVENTS.includes(eventType)) {
+    logger.warn("Revenue-critical event detected", {
+      eventType,
+      alertLevel: "high",
+      metrics: metrics.revenueEvents,
+    });
+  }
+}
+
+/**
+ * Evict oldest entries from dedup cache when it exceeds max size
+ */
+function evictDedupCache(): void {
+  if (dedupCache.size <= DEDUP_MAX_SIZE) return;
+
+  // Convert to array, sort by timestamp (oldest first), delete oldest 20%
+  const entries = [...dedupCache.entries()].sort((a, b) => a[1] - b[1]);
+  const deleteCount = Math.floor(entries.length * 0.2);
+
+  for (let i = 0; i < deleteCount; i++) {
+    dedupCache.delete(entries[i][0]);
+  }
+
+  logger.info("Evicted dedup cache entries", {
+    deletedCount: deleteCount,
+    newSize: dedupCache.size,
+  });
+}
 
 function updateLatencyMetrics(latencyMs: number): void {
   latencyBuffer.push(latencyMs);
@@ -191,16 +285,23 @@ async function retryWithBackoff<T>(
   throw lastError;
 }
 
-function checkRateLimit(clientIp: string): boolean {
+function checkRateLimit(clientIp: string, platform?: SubscriptionPlatform): boolean {
   const now = Date.now();
-  const existing = rateLimitCache.get(clientIp);
+  const key = platform ? `${platform}:${clientIp}` : clientIp;
 
-  if (!existing || now - existing.windowStart > RATE_LIMIT_WINDOW_MS) {
-    rateLimitCache.set(clientIp, { count: 1, windowStart: now });
+  // Use platform-specific limits if available
+  const limits = platform
+    ? PLATFORM_RATE_LIMITS[platform]
+    : { maxRequests: RATE_LIMIT_MAX_REQUESTS, windowMs: RATE_LIMIT_WINDOW_MS };
+
+  const existing = rateLimitCache.get(key);
+
+  if (!existing || now - existing.windowStart > limits.windowMs) {
+    rateLimitCache.set(key, { count: 1, windowStart: now });
     return true;
   }
 
-  if (existing.count >= RATE_LIMIT_MAX_REQUESTS) {
+  if (existing.count >= limits.maxRequests) {
     return false;
   }
 
@@ -211,16 +312,21 @@ function checkRateLimit(clientIp: string): boolean {
 function checkDedup(eventId: string): boolean {
   const now = Date.now();
 
-  // Clean old entries
-  for (const [key, timestamp] of dedupCache.entries()) {
-    if (now - timestamp > DEDUP_TTL_MS) {
-      dedupCache.delete(key);
+  // Clean old entries periodically (every 100 checks)
+  if (dedupCache.size > 0 && dedupCache.size % 100 === 0) {
+    for (const [key, timestamp] of dedupCache.entries()) {
+      if (now - timestamp > DEDUP_TTL_MS) {
+        dedupCache.delete(key);
+      }
     }
   }
 
   if (dedupCache.has(eventId)) {
     return false; // Duplicate
   }
+
+  // Evict if cache is too large
+  evictDedupCache();
 
   dedupCache.set(eventId, now);
   return true;
@@ -612,6 +718,8 @@ async function handleWebhook(req: Request): Promise<Response> {
 
     metrics.requestsSuccess++;
     metrics.byPlatform[platform].success++;
+    metrics.byPlatform[platform].lastEventAt = new Date().toISOString();
+    trackRevenueEvent(event.eventType);
     const durationMs = timer.end({ platform, action: "user_not_found" });
     updateLatencyMetrics(durationMs);
     metrics.lastProcessedAt = new Date().toISOString();
@@ -660,7 +768,11 @@ async function handleWebhook(req: Request): Promise<Response> {
 
   metrics.requestsSuccess++;
   metrics.byPlatform[platform].success++;
+  metrics.byPlatform[platform].lastEventAt = new Date().toISOString();
   metrics.lastProcessedAt = new Date().toISOString();
+
+  // Track revenue metrics
+  trackRevenueEvent(event.eventType);
 
   logger.info("Successfully processed subscription event", {
     requestId,
@@ -694,15 +806,50 @@ function handleHealthCheck(req: Request): Response {
   const circuitStatuses = getAllCircuitStatuses();
   const dbCircuitHealthy = isCircuitHealthy("subscription-db");
 
-  const status = dbCircuitHealthy ? "healthy" : "degraded";
+  // Check for stale data (no events in last 24 hours could indicate issues)
+  const lastEventAge = metrics.lastProcessedAt
+    ? Date.now() - new Date(metrics.lastProcessedAt).getTime()
+    : null;
+  const isStale = lastEventAge && lastEventAge > 24 * 60 * 60 * 1000; // 24 hours
+
+  // Check for high error rate (>10% in last window)
+  const errorRate = metrics.requestsTotal > 10
+    ? (metrics.requestsError / metrics.requestsTotal) * 100
+    : 0;
+  const highErrorRate = errorRate > 10;
+
+  // Determine status
+  let status: "healthy" | "degraded" | "unhealthy" = "healthy";
+  const issues: string[] = [];
+
+  if (!dbCircuitHealthy) {
+    status = "unhealthy";
+    issues.push("database_circuit_open");
+  }
+  if (highErrorRate) {
+    status = status === "unhealthy" ? "unhealthy" : "degraded";
+    issues.push("high_error_rate");
+  }
+  if (isStale) {
+    status = status === "unhealthy" ? "unhealthy" : "degraded";
+    issues.push("stale_data");
+  }
 
   return new Response(
     JSON.stringify({
       status,
+      issues,
       service: SERVICE,
       version: VERSION,
       timestamp: new Date().toISOString(),
       platforms: handlers.map((h) => h.platform),
+      checks: {
+        database: dbCircuitHealthy,
+        errorRate: Math.round(errorRate * 100) / 100,
+        lastEventAge: lastEventAge ? Math.round(lastEventAge / 1000) : null,
+        dedupCacheSize: dedupCache.size,
+        rateLimitCacheSize: rateLimitCache.size,
+      },
       circuits: Object.entries(circuitStatuses).reduce((acc, [name, state]) => {
         acc[name] = {
           state: state.state,
@@ -716,7 +863,7 @@ function handleHealthCheck(req: Request): Response {
       }, {} as Record<string, unknown>),
     }),
     {
-      status: status === "healthy" ? 200 : 503,
+      status: status === "healthy" ? 200 : status === "degraded" ? 200 : 503,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     }
   );
@@ -732,12 +879,34 @@ function handleMetrics(req: Request): Response {
   const performanceMetrics = getMetricsSummary();
   const healthMetrics = getHealthMetrics();
 
+  // Calculate derived metrics
+  const successRate = metrics.requestsTotal > 0
+    ? ((metrics.requestsSuccess / metrics.requestsTotal) * 100).toFixed(2)
+    : "0.00";
+
+  const churnRate = metrics.revenueEvents.subscriptions > 0
+    ? ((metrics.revenueEvents.cancellations / metrics.revenueEvents.subscriptions) * 100).toFixed(2)
+    : "0.00";
+
+  const graceRecoveryRate = metrics.revenueEvents.billingIssues > 0
+    ? ((metrics.revenueEvents.graceRecoveries / metrics.revenueEvents.billingIssues) * 100).toFixed(2)
+    : "0.00";
+
   return new Response(
     JSON.stringify({
       service: SERVICE,
       version: VERSION,
       timestamp: new Date().toISOString(),
-      webhook: metrics,
+      webhook: {
+        ...metrics,
+        successRate: `${successRate}%`,
+      },
+      revenue: {
+        events: metrics.revenueEvents,
+        churnRate: `${churnRate}%`,
+        graceRecoveryRate: `${graceRecoveryRate}%`,
+        netSubscriptions: metrics.revenueEvents.subscriptions - metrics.revenueEvents.cancellations,
+      },
       errors: {
         total: errorStats.total,
         bySeverity: errorStats.bySeverity,
@@ -747,10 +916,15 @@ function handleMetrics(req: Request): Response {
         operations: performanceMetrics.slice(0, 10),
         memory: healthMetrics.memory,
         uptime: healthMetrics.uptime,
+        latency: {
+          avg: metrics.avgLatencyMs,
+          p95: metrics.p95LatencyMs,
+        },
       },
       circuits: getAllCircuitStatuses(),
       cache: {
         dedupCacheSize: dedupCache.size,
+        dedupMaxSize: DEDUP_MAX_SIZE,
         rateLimitCacheSize: rateLimitCache.size,
       },
     }),
