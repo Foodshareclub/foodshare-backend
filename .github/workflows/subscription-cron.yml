@@ -1,0 +1,152 @@
+name: Subscription Cron Jobs
+
+on:
+  schedule:
+    # Run every 5 minutes
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Force run all cron tasks'
+        required: false
+        default: 'false'
+
+env:
+  SUPABASE_URL: https://***REMOVED***
+  CRON_ENDPOINT: https://***REMOVED***/functions/v1/subscription-cron
+
+jobs:
+  subscription-cron:
+    name: Process Subscription Tasks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Call Subscription Cron
+        id: cron
+        run: |
+          echo "Starting subscription cron at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          # Call the cron endpoint with retry logic
+          MAX_RETRIES=3
+          RETRY_DELAY=5
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i of $MAX_RETRIES..."
+
+            RESPONSE=$(curl -s -w "\n%{http_code}" \
+              --max-time 120 \
+              -X POST \
+              -H "Content-Type: application/json" \
+              -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+              "${{ env.CRON_ENDPOINT }}")
+
+            HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+            BODY=$(echo "$RESPONSE" | sed '$d')
+
+            echo "HTTP Status: $HTTP_CODE"
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Success!"
+              echo "Response: $BODY"
+
+              # Parse and log results
+              echo "$BODY" | jq -r '
+                "DLQ Processed: \(.result.dlq.processed // 0)",
+                "DLQ Expired: \(.result.dlq.expired // 0)",
+                "DLQ Pending: \(.result.dlq.pending // 0)",
+                "Metrics Updated: \(.result.metrics.updated // false)",
+                "Cleanup Deleted: \(.result.cleanup.deleted // "N/A")",
+                "Health Report Sent: \(.result.healthReport // false)",
+                "Duration: \(.durationMs // 0)ms"
+              ' 2>/dev/null || echo "$BODY"
+
+              # Set outputs for summary
+              echo "success=true" >> $GITHUB_OUTPUT
+              echo "dlq_pending=$(echo "$BODY" | jq -r '.result.dlq.pending // 0')" >> $GITHUB_OUTPUT
+              echo "duration=$(echo "$BODY" | jq -r '.durationMs // 0')" >> $GITHUB_OUTPUT
+
+              exit 0
+            fi
+
+            echo "Failed with status $HTTP_CODE"
+            echo "Response: $BODY"
+
+            if [ $i -lt $MAX_RETRIES ]; then
+              echo "Retrying in ${RETRY_DELAY}s..."
+              sleep $RETRY_DELAY
+              RETRY_DELAY=$((RETRY_DELAY * 2))
+            fi
+          done
+
+          echo "All retries failed"
+          echo "success=false" >> $GITHUB_OUTPUT
+          exit 1
+
+      - name: Create Job Summary
+        if: always()
+        run: |
+          echo "## Subscription Cron Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ steps.cron.outputs.success == 'true' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| DLQ Pending | ${{ steps.cron.outputs.dlq_pending || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Duration | ${{ steps.cron.outputs.duration || 'N/A' }}ms |" >> $GITHUB_STEP_SUMMARY
+          echo "| Timestamp | $(date -u +%Y-%m-%dT%H:%M:%SZ) |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Alert on High DLQ
+        if: steps.cron.outputs.dlq_pending > 50
+        run: |
+          echo "::warning::DLQ has ${{ steps.cron.outputs.dlq_pending }} pending events - requires attention"
+
+      - name: Alert on Failure
+        if: failure()
+        run: |
+          echo "::error::Subscription cron job failed after all retries"
+          # The Telegram alert is handled by the Edge Function itself
+          # This is a backup alert via GitHub Actions
+
+  health-check:
+    name: Verify Services Health
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs: subscription-cron
+    if: always()
+
+    steps:
+      - name: Check Webhook Health
+        run: |
+          HEALTH=$(curl -s --max-time 10 \
+            "${{ env.SUPABASE_URL }}/functions/v1/subscription-webhook/health")
+
+          STATUS=$(echo "$HEALTH" | jq -r '.status // "unknown"')
+          VERSION=$(echo "$HEALTH" | jq -r '.version // "unknown"')
+
+          echo "Webhook Status: $STATUS (v$VERSION)"
+
+          if [ "$STATUS" != "healthy" ]; then
+            echo "::warning::Webhook service is $STATUS"
+            ISSUES=$(echo "$HEALTH" | jq -r '.issues | join(", ")' 2>/dev/null || echo "unknown")
+            echo "Issues: $ISSUES"
+          fi
+
+      - name: Check Cron Health
+        run: |
+          HEALTH=$(curl -s --max-time 10 \
+            "${{ env.SUPABASE_URL }}/functions/v1/subscription-cron/health")
+
+          STATUS=$(echo "$HEALTH" | jq -r '.status // "unknown"')
+          VERSION=$(echo "$HEALTH" | jq -r '.version // "unknown"')
+
+          echo "Cron Status: $STATUS (v$VERSION)"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Service Health" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| subscription-webhook | Checked |" >> $GITHUB_STEP_SUMMARY
+          echo "| subscription-cron | Checked |" >> $GITHUB_STEP_SUMMARY
