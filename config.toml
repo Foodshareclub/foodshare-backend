@@ -30,3 +30,8 @@ verify_jwt = false
 # Unified webhook for Apple App Store, Google Play, and Stripe
 [functions.subscription-webhook]
 verify_jwt = false
+
+# Disable JWT verification for subscription-cron
+# Cron handler for DLQ processing, metrics, cleanup (called by external scheduler)
+[functions.subscription-cron]
+verify_jwt = false

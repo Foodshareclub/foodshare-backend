@@ -28,8 +28,14 @@ import {
   PlatformHandler,
   SubscriptionEvent,
   SubscriptionPlatform,
+  SubscriptionEventType,
   shouldUpdateSubscription,
 } from "../_shared/subscriptions/types.ts";
+import {
+  sendSubscriptionAlert,
+  sendCircuitBreakerAlert,
+  sendErrorRateAlert,
+} from "../_shared/telegram-alerts.ts";
 
 // Import platform handlers
 import { appleHandler } from "./handlers/apple.ts";
@@ -162,6 +168,19 @@ configureCircuit("subscription-db", {
       failures: state.failures,
       totalFailures: state.totalFailures,
     });
+
+    // Send Telegram alert for circuit breaker state changes
+    if (to === "OPEN" || to === "HALF_OPEN" || (to === "CLOSED" && from !== "CLOSED")) {
+      sendCircuitBreakerAlert(
+        service,
+        to as "OPEN" | "HALF_OPEN" | "CLOSED",
+        state.failures
+      ).catch((err) => {
+        logger.warn("Failed to send circuit breaker alert", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
   },
 });
 
@@ -172,7 +191,10 @@ configureCircuit("subscription-db", {
 /**
  * Track revenue-impacting events for monitoring and alerting
  */
-function trackRevenueEvent(eventType: SubscriptionEventType): void {
+async function trackRevenueEvent(
+  eventType: SubscriptionEventType,
+  event?: SubscriptionEvent
+): Promise<void> {
   switch (eventType) {
     case "subscription_created":
       metrics.revenueEvents.subscriptions++;
@@ -197,12 +219,25 @@ function trackRevenueEvent(eventType: SubscriptionEventType): void {
       break;
   }
 
-  // Alert on revenue-critical events
-  if (REVENUE_CRITICAL_EVENTS.includes(eventType)) {
+  // Send Telegram alert on revenue-critical events
+  if (REVENUE_CRITICAL_EVENTS.includes(eventType) && event) {
     logger.warn("Revenue-critical event detected", {
       eventType,
       alertLevel: "high",
       metrics: metrics.revenueEvents,
+    });
+
+    // Fire and forget - don't block webhook response
+    sendSubscriptionAlert(eventType, {
+      platform: event.platform,
+      productId: event.subscription.productId,
+      userId: event.subscription.appUserId,
+      originalTransactionId: event.subscription.originalTransactionId,
+      status: event.subscription.status,
+    }).catch((err) => {
+      logger.warn("Failed to send subscription alert", {
+        error: err instanceof Error ? err.message : String(err),
+      });
     });
   }
 }
@@ -243,6 +278,46 @@ function updateLatencyMetrics(latencyMs: number): void {
     const sorted = [...latencyBuffer].sort((a, b) => a - b);
     const p95Index = Math.floor(sorted.length * 0.95);
     metrics.p95LatencyMs = sorted[p95Index];
+  }
+}
+
+// Error rate monitoring - track last 100 requests
+const ERROR_RATE_THRESHOLD = 15; // Alert if >15% errors
+const ERROR_RATE_CHECK_INTERVAL = 100; // Check every 100 requests
+let lastErrorRateCheck = 0;
+
+/**
+ * Check error rate and alert if above threshold
+ */
+function checkErrorRateAndAlert(): void {
+  // Only check every N requests to avoid constant alerts
+  if (metrics.requestsTotal - lastErrorRateCheck < ERROR_RATE_CHECK_INTERVAL) {
+    return;
+  }
+
+  lastErrorRateCheck = metrics.requestsTotal;
+
+  const errorRate = metrics.requestsTotal > 10
+    ? (metrics.requestsError / metrics.requestsTotal) * 100
+    : 0;
+
+  if (errorRate > ERROR_RATE_THRESHOLD) {
+    logger.error("High error rate detected", {
+      errorRate: errorRate.toFixed(2),
+      total: metrics.requestsTotal,
+      errors: metrics.requestsError,
+    });
+
+    // Fire and forget - send alert async
+    sendErrorRateAlert(
+      errorRate,
+      metrics.requestsTotal,
+      metrics.requestsError
+    ).catch((err) => {
+      logger.warn("Failed to send error rate alert", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
   }
 }
 
@@ -581,6 +656,7 @@ async function handleWebhook(req: Request): Promise<Response> {
   } catch (error) {
     metrics.requestsError++;
     metrics.byPlatform[platform].error++;
+    checkErrorRateAndAlert();
     const err = error instanceof Error ? error : new Error(String(error));
     trackError(err, { platform, operation: "verify_webhook", requestId });
     logger.error(`${platform} webhook verification error`, err);
@@ -593,6 +669,7 @@ async function handleWebhook(req: Request): Promise<Response> {
   if (!isValid) {
     metrics.requestsError++;
     metrics.byPlatform[platform].error++;
+    checkErrorRateAndAlert();
     logger.warn(`${platform} webhook verification failed`, { requestId });
     // Return 200 to prevent retries for invalid webhooks
     return buildSuccessResponse(
@@ -612,6 +689,7 @@ async function handleWebhook(req: Request): Promise<Response> {
   } catch (error) {
     metrics.requestsError++;
     metrics.byPlatform[platform].error++;
+    checkErrorRateAndAlert();
     const err = error instanceof Error ? error : new Error(String(error));
     trackError(err, { platform, operation: "parse_event", requestId });
     logger.error(`Failed to parse ${platform} event`, err);
@@ -656,6 +734,7 @@ async function handleWebhook(req: Request): Promise<Response> {
   } catch (error) {
     metrics.requestsError++;
     metrics.byPlatform[platform].error++;
+    checkErrorRateAndAlert();
     const err = error instanceof Error ? error : new Error(String(error));
     trackError(err, { platform, operation: "record_event", requestId, eventId: event.eventId });
     logger.error("Failed to record event", err);
@@ -719,7 +798,8 @@ async function handleWebhook(req: Request): Promise<Response> {
     metrics.requestsSuccess++;
     metrics.byPlatform[platform].success++;
     metrics.byPlatform[platform].lastEventAt = new Date().toISOString();
-    trackRevenueEvent(event.eventType);
+    // Fire and forget - track revenue event async
+    trackRevenueEvent(event.eventType, event);
     const durationMs = timer.end({ platform, action: "user_not_found" });
     updateLatencyMetrics(durationMs);
     metrics.lastProcessedAt = new Date().toISOString();
@@ -737,6 +817,7 @@ async function handleWebhook(req: Request): Promise<Response> {
   } catch (error) {
     metrics.requestsError++;
     metrics.byPlatform[platform].error++;
+    checkErrorRateAndAlert();
     const err = error instanceof Error ? error : new Error(String(error));
     trackError(err, {
       platform,
@@ -771,8 +852,8 @@ async function handleWebhook(req: Request): Promise<Response> {
   metrics.byPlatform[platform].lastEventAt = new Date().toISOString();
   metrics.lastProcessedAt = new Date().toISOString();
 
-  // Track revenue metrics
-  trackRevenueEvent(event.eventType);
+  // Track revenue metrics (fire and forget - alerts sent async)
+  trackRevenueEvent(event.eventType, event);
 
   logger.info("Successfully processed subscription event", {
     requestId,
