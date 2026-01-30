@@ -15,7 +15,7 @@ import { getCorsHeadersWithMobile, handleMobileCorsPrelight } from "../_shared/c
 import { logger } from "../_shared/logger.ts";
 import { sendDLQAlert, sendTelegramAlert } from "../_shared/telegram-alerts.ts";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const SERVICE = "subscription-cron";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -75,8 +75,8 @@ async function processDLQ(
   supabase: ReturnType<typeof getServiceRoleClient>
 ): Promise<{ processed: number; expired: number; pending: number }> {
   try {
-    // Call the DLQ processor function
-    const { data, error } = await supabase.rpc("process_dlq");
+    // Call the DLQ processor function (using public wrapper)
+    const { data, error } = await supabase.rpc("billing_process_dlq");
 
     if (error) {
       logger.error("Failed to process DLQ", new Error(error.message));
@@ -139,7 +139,7 @@ async function updateDailyMetrics(
   }
 
   try {
-    const { data, error } = await supabase.rpc("update_daily_metrics", {
+    const { data, error } = await supabase.rpc("billing_update_daily_metrics", {
       p_date: date,
     });
 
@@ -175,7 +175,7 @@ async function cleanupOldEvents(
   }
 
   try {
-    const { data, error } = await supabase.rpc("cleanup_old_events", {
+    const { data, error } = await supabase.rpc("billing_cleanup_old_events", {
       p_retention_days: 90,
     });
 

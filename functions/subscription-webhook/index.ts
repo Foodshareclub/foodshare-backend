@@ -46,7 +46,7 @@ import { stripeHandler } from "./handlers/stripe.ts";
 // Configuration
 // =============================================================================
 
-const VERSION = "3.0.0";
+const VERSION = "4.0.0";
 const SERVICE = "subscription-webhook";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -551,6 +551,147 @@ async function markEventProcessed(
 }
 
 // =============================================================================
+// Field Validation
+// =============================================================================
+
+interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+function validateEventFields(event: SubscriptionEvent): ValidationResult {
+  const errors: string[] = [];
+
+  // Required fields
+  if (!event.eventId?.trim()) {
+    errors.push("Missing eventId");
+  }
+  if (!event.subscription.originalTransactionId?.trim()) {
+    errors.push("Missing originalTransactionId");
+  }
+  if (!event.subscription.productId?.trim()) {
+    errors.push("Missing productId");
+  }
+  if (!event.subscription.status?.trim()) {
+    errors.push("Missing subscription status");
+  }
+
+  // Validate timestamps are reasonable (not in far future)
+  const now = Date.now();
+  const maxFutureMs = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+  if (event.subscription.expiresDate) {
+    const expiresTime = event.subscription.expiresDate.getTime();
+    if (expiresTime > now + maxFutureMs * 52) { // Allow up to 1 year
+      errors.push("expiresDate too far in future");
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+}
+
+// =============================================================================
+// State Transition Validation
+// =============================================================================
+
+async function validateStatusTransition(
+  supabase: ReturnType<typeof getServiceRoleClient>,
+  originalTransactionId: string,
+  platform: string,
+  newStatus: string,
+  eventType: string
+): Promise<{ valid: boolean; currentStatus: string }> {
+  return await withCircuitBreaker("subscription-db", async () => {
+    // Get current status
+    const { data: currentStatus } = await supabase.rpc("billing_get_current_status", {
+      p_original_transaction_id: originalTransactionId,
+      p_platform: platform,
+    });
+
+    // If no existing subscription, any status is valid (new subscription)
+    if (currentStatus === "unknown") {
+      return { valid: true, currentStatus };
+    }
+
+    // Validate transition
+    const { data: isValid } = await supabase.rpc("billing_validate_status_transition", {
+      p_current_status: currentStatus,
+      p_new_status: newStatus,
+      p_event_type: eventType,
+    });
+
+    return { valid: isValid ?? true, currentStatus };
+  });
+}
+
+// =============================================================================
+// Atomic Webhook Processing
+// =============================================================================
+
+interface AtomicProcessResult {
+  success: boolean;
+  alreadyProcessed: boolean;
+  eventId: string | null;
+  subscriptionId: string | null;
+  error?: string;
+}
+
+async function processWebhookAtomically(
+  supabase: ReturnType<typeof getServiceRoleClient>,
+  event: SubscriptionEvent,
+  userId: string | null
+): Promise<AtomicProcessResult> {
+  return await withCircuitBreaker("subscription-db", async () => {
+    return await retryWithBackoff(async () => {
+      return await measureAsync("db.process_atomic", async () => {
+        const sub = event.subscription;
+
+        const { data, error } = await supabase.rpc("billing_process_webhook_atomically", {
+          p_notification_uuid: event.eventId,
+          p_platform: event.platform,
+          p_notification_type: event.rawEventType,
+          p_subtype: event.rawSubtype || null,
+          p_original_transaction_id: sub.originalTransactionId,
+          p_signed_payload: event.rawPayload,
+          p_decoded_payload: {
+            platform: event.platform,
+            eventType: event.eventType,
+            subscription: sub,
+            environment: event.environment,
+          },
+          p_signed_date: event.eventTime.toISOString(),
+          p_user_id: userId,
+          p_product_id: sub.productId,
+          p_bundle_id: sub.bundleId || null,
+          p_status: sub.status,
+          p_purchase_date: sub.purchaseDate?.toISOString() || null,
+          p_original_purchase_date: sub.originalPurchaseDate?.toISOString() || null,
+          p_expires_date: sub.expiresDate?.toISOString() || null,
+          p_auto_renew_status: sub.autoRenewEnabled ?? null,
+          p_auto_renew_product_id: sub.autoRenewProductId || null,
+          p_environment: event.environment === "production" ? "Production" : "Sandbox",
+          p_app_account_token: sub.appUserId || null,
+        });
+
+        if (error) {
+          throw new Error(`Atomic processing failed: ${error.message}`);
+        }
+
+        return {
+          success: data?.success ?? false,
+          alreadyProcessed: data?.already_processed ?? false,
+          eventId: data?.event_id || null,
+          subscriptionId: data?.subscription_id || null,
+        };
+      }, { platform: event.platform, eventType: event.eventType });
+    }, "processWebhookAtomically");
+  });
+}
+
+// =============================================================================
 // Webhook Handler
 // =============================================================================
 
@@ -727,36 +868,27 @@ async function handleWebhook(req: Request): Promise<Response> {
   // Get database client
   const supabase = getServiceRoleClient();
 
-  // Record event (idempotent)
-  let recordResult: { eventId: string; alreadyProcessed: boolean };
-  try {
-    recordResult = await recordEvent(supabase, event);
-  } catch (error) {
+  // ==========================================================================
+  // Step 1: Validate required fields
+  // ==========================================================================
+  const validation = validateEventFields(event);
+  if (!validation.valid) {
     metrics.requestsError++;
     metrics.byPlatform[platform].error++;
-    checkErrorRateAndAlert();
-    const err = error instanceof Error ? error : new Error(String(error));
-    trackError(err, { platform, operation: "record_event", requestId, eventId: event.eventId });
-    logger.error("Failed to record event", err);
-    return buildSuccessResponse(
-      { received: true, error: "database_error" },
-      corsHeaders
-    );
-  }
-
-  if (recordResult.alreadyProcessed) {
-    metrics.requestsDuplicate++;
-    logger.info("Event already processed (database)", {
+    logger.warn("Event failed field validation", {
       requestId,
       eventId: event.eventId,
+      errors: validation.errors,
     });
     return buildSuccessResponse(
-      { received: true, already_processed: true, source: "database" },
+      { received: true, error: "validation_failed", details: validation.errors },
       corsHeaders
     );
   }
 
-  // Check if we should update subscription
+  // ==========================================================================
+  // Step 2: Check if we should update subscription
+  // ==========================================================================
   if (!shouldUpdateSubscription(event.eventType)) {
     logger.info("Event does not require subscription update", {
       requestId,
@@ -764,7 +896,21 @@ async function handleWebhook(req: Request): Promise<Response> {
       eventType: event.eventType,
     });
 
-    await markEventProcessed(supabase, recordResult.eventId, null, null);
+    // Still record the event for audit trail using atomic processing
+    try {
+      const result = await processWebhookAtomically(supabase, event, null);
+      if (result.alreadyProcessed) {
+        metrics.requestsDuplicate++;
+        return buildSuccessResponse(
+          { received: true, already_processed: true, source: "database" },
+          corsHeaders
+        );
+      }
+    } catch (error) {
+      logger.warn("Failed to record non-actionable event", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     metrics.requestsSuccess++;
     metrics.byPlatform[platform].success++;
@@ -778,12 +924,88 @@ async function handleWebhook(req: Request): Promise<Response> {
     );
   }
 
-  // Find user
+  // ==========================================================================
+  // Step 3: Find user for transaction
+  // ==========================================================================
   const userId = await findUserForTransaction(
     supabase,
     event.subscription.appUserId,
     event.subscription.originalTransactionId
   );
+
+  // ==========================================================================
+  // Step 4: Validate state transition (if user exists with subscription)
+  // ==========================================================================
+  if (userId) {
+    try {
+      const transitionCheck = await validateStatusTransition(
+        supabase,
+        event.subscription.originalTransactionId,
+        event.platform,
+        event.subscription.status,
+        event.eventType
+      );
+
+      if (!transitionCheck.valid) {
+        logger.warn("Invalid status transition detected", {
+          requestId,
+          eventId: event.eventId,
+          currentStatus: transitionCheck.currentStatus,
+          newStatus: event.subscription.status,
+          eventType: event.eventType,
+        });
+        // Log but don't reject - platform is source of truth
+        // This is for monitoring, not blocking
+      }
+    } catch (error) {
+      // Non-critical - continue processing
+      logger.warn("Failed to validate status transition", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // ==========================================================================
+  // Step 5: Atomic processing (record + upsert + mark processed in one tx)
+  // ==========================================================================
+  let result: AtomicProcessResult;
+  try {
+    result = await processWebhookAtomically(supabase, event, userId);
+  } catch (error) {
+    metrics.requestsError++;
+    metrics.byPlatform[platform].error++;
+    checkErrorRateAndAlert();
+    const err = error instanceof Error ? error : new Error(String(error));
+    trackError(err, {
+      platform,
+      operation: "process_webhook_atomically",
+      requestId,
+      eventId: event.eventId,
+      userId,
+    });
+    logger.error("Atomic webhook processing failed", err);
+
+    // Note: The atomic function automatically adds to DLQ on failure
+    return buildSuccessResponse(
+      { received: true, error: "processing_failed", dlq: true },
+      corsHeaders
+    );
+  }
+
+  // ==========================================================================
+  // Step 6: Handle results
+  // ==========================================================================
+  if (result.alreadyProcessed) {
+    metrics.requestsDuplicate++;
+    logger.info("Event already processed (database)", {
+      requestId,
+      eventId: event.eventId,
+    });
+    return buildSuccessResponse(
+      { received: true, already_processed: true, source: "database" },
+      corsHeaders
+    );
+  }
 
   if (!userId) {
     logger.warn("No user found for transaction", {
@@ -793,12 +1015,9 @@ async function handleWebhook(req: Request): Promise<Response> {
       appUserId: event.subscription.appUserId,
     });
 
-    await markEventProcessed(supabase, recordResult.eventId, null, "user_not_found");
-
     metrics.requestsSuccess++;
     metrics.byPlatform[platform].success++;
     metrics.byPlatform[platform].lastEventAt = new Date().toISOString();
-    // Fire and forget - track revenue event async
     trackRevenueEvent(event.eventType, event);
     const durationMs = timer.end({ platform, action: "user_not_found" });
     updateLatencyMetrics(durationMs);
@@ -810,40 +1029,12 @@ async function handleWebhook(req: Request): Promise<Response> {
     );
   }
 
-  // Upsert subscription
-  let subscriptionId: string;
-  try {
-    subscriptionId = await upsertSubscription(supabase, userId, event);
-  } catch (error) {
-    metrics.requestsError++;
-    metrics.byPlatform[platform].error++;
-    checkErrorRateAndAlert();
-    const err = error instanceof Error ? error : new Error(String(error));
-    trackError(err, {
-      platform,
-      operation: "upsert_subscription",
-      requestId,
-      eventId: event.eventId,
-      userId,
-    });
-    logger.error("Failed to upsert subscription", err);
-
-    await markEventProcessed(supabase, recordResult.eventId, null, `upsert_failed: ${error}`);
-
-    return buildSuccessResponse(
-      { received: true, error: "subscription_update_failed" },
-      corsHeaders
-    );
-  }
-
-  // Mark as processed
-  await markEventProcessed(supabase, recordResult.eventId, subscriptionId, null);
-
+  // Success path
   const durationMs = timer.end({
     platform,
     eventType: event.eventType,
     userId,
-    subscriptionId,
+    subscriptionId: result.subscriptionId,
   });
   updateLatencyMetrics(durationMs);
 
@@ -861,7 +1052,7 @@ async function handleWebhook(req: Request): Promise<Response> {
     platform: event.platform,
     eventType: event.eventType,
     userId,
-    subscriptionId,
+    subscriptionId: result.subscriptionId,
     status: event.subscription.status,
     durationMs,
   });
@@ -872,7 +1063,7 @@ async function handleWebhook(req: Request): Promise<Response> {
       processed: true,
       platform: event.platform,
       status: event.subscription.status,
-      subscription_id: subscriptionId,
+      subscription_id: result.subscriptionId,
     },
     corsHeaders
   );
