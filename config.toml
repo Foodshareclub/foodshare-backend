@@ -25,3 +25,8 @@ verify_jwt = false
 # Webhook endpoint called by Meta servers
 [functions.whatsapp-bot-foodshare]
 verify_jwt = false
+
+# Disable JWT verification for subscription-webhook
+# Unified webhook for Apple App Store, Google Play, and Stripe
+[functions.subscription-webhook]
+verify_jwt = false
