@@ -182,12 +182,11 @@ async function verifyNestedJWS<T>(
 export const appleHandler: PlatformHandler = {
   platform: "apple",
 
-  canHandle(request: Request): boolean {
-    const contentType = request.headers.get("content-type") || "";
-    return (
-      request.method === "POST" &&
-      contentType.includes("application/json")
-    );
+  canHandle(_request: Request): boolean {
+    // Apple webhooks don't have distinctive headers
+    // Detection is done via body structure (signedPayload) in index.ts
+    // Return false to let specific handlers (Stripe, Google Play) check first
+    return false;
   },
 
   async verifyWebhook(_request: Request, body: string): Promise<boolean> {

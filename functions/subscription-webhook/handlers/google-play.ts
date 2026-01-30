@@ -252,19 +252,57 @@ export const googlePlayHandler: PlatformHandler = {
       }
 
       // Parse and validate message structure
-      const parsed = JSON.parse(body);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(body);
+      } catch (parseError) {
+        timer.end({ success: false, reason: "json_parse_error" });
+        logger.warn("Failed to parse Google Play webhook body as JSON", {
+          error: parseError instanceof Error ? parseError.message : String(parseError),
+          bodyPreview: body.substring(0, 200),
+        });
+        return false;
+      }
 
       if (!isValidPubSubMessage(parsed)) {
         timer.end({ success: false, reason: "invalid_message_format" });
-        logger.warn("Invalid Google Play Pub/Sub message format");
+        logger.warn("Invalid Google Play Pub/Sub message format", {
+          hasMessage: !!(parsed as Record<string, unknown>)?.message,
+          bodyPreview: body.substring(0, 200),
+        });
         return false;
       }
 
       // Decode and validate notification data
-      const dataJson = decodeBase64(parsed.message.data);
-      const notification: GooglePlayNotificationData = JSON.parse(dataJson);
+      let dataJson: string;
+      let notification: GooglePlayNotificationData;
+      try {
+        dataJson = decodeBase64(parsed.message.data);
+        notification = JSON.parse(dataJson);
+      } catch (decodeError) {
+        timer.end({ success: false, reason: "base64_decode_error" });
+        logger.warn("Failed to decode Google Play notification data", {
+          error: decodeError instanceof Error ? decodeError.message : String(decodeError),
+          dataPreview: parsed.message.data.substring(0, 100),
+        });
+        return false;
+      }
 
-      // Validate package name if configured
+      logger.info("Google Play notification decoded", {
+        packageName: notification.packageName,
+        configuredPackage: GOOGLE_PLAY_PACKAGE_NAME || "(not configured)",
+        hasTestNotification: !!notification.testNotification,
+        hasSubscriptionNotification: !!notification.subscriptionNotification,
+      });
+
+      // For test notifications, always allow through
+      if (notification.testNotification) {
+        logger.info("Test notification - skipping package validation");
+        timer.end({ success: true, packageName: notification.packageName, isTest: true });
+        return true;
+      }
+
+      // Validate package name for real notifications
       if (GOOGLE_PLAY_PACKAGE_NAME && notification.packageName !== GOOGLE_PLAY_PACKAGE_NAME) {
         timer.end({ success: false, reason: "package_mismatch" });
         logger.warn("Google Play package name mismatch", {
