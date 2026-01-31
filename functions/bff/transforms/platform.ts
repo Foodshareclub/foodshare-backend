@@ -751,12 +751,5 @@ export function transformNotification<T extends TransformableData>(
   };
 }
 
-/**
- * Export all utilities for use in other modules
- */
-export {
-  getAnimationHints,
-  getImagePreset,
-  optimizeImageUrl,
-  optimizeImageUrls,
-};
+// Note: getAnimationHints, getImagePreset, optimizeImageUrl, optimizeImageUrls
+// are exported at their function declarations above

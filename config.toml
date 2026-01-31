@@ -35,3 +35,13 @@ verify_jwt = false
 # Cron handler for DLQ processing, metrics, cleanup (called by external scheduler)
 [functions.subscription-cron]
 verify_jwt = false
+
+# Disable JWT verification for send-digest-notifications
+# Called by cron jobs for processing digest notifications
+[functions.send-digest-notifications]
+verify_jwt = false
+
+# Disable JWT verification for send-email-notification
+# Service-to-service email notification delivery
+[functions.send-email-notification]
+verify_jwt = false
