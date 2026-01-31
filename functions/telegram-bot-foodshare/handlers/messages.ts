@@ -168,10 +168,10 @@ export async function handleTextMessage(message: TelegramMessage): Promise<void>
   // Handle radius setting
   if (userState?.action === "setting_radius") {
     const radius = parseFloat(text);
-    if (isNaN(radius) || radius < 1 || radius > 50) {
+    if (isNaN(radius) || radius < 1 || radius > 805) {
       await sendMessage(
         chatId,
-        msg.errorMessage("Invalid Radius", "Please enter a number between 1 and 50.")
+        msg.errorMessage("Invalid Radius", "Please enter a number between 1 and 805.")
       );
       return;
     }

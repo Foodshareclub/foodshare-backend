@@ -14,13 +14,12 @@
  * Body: { title, description?, images, postType, latitude, longitude, ... }
  */
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, created, type HandlerContext } from "../_shared/api-handler.ts";
 import { ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
-import { LISTING, ERROR_MESSAGES } from "../_shared/validation-rules.ts";
+import { LISTING, ERROR_MESSAGES, sanitizeHtml } from "../_shared/validation-rules.ts";
 
 // =============================================================================
 // Request Schema (using shared validation constants from Swift FoodshareCore)
@@ -74,13 +73,21 @@ async function handleCreateListing(ctx: HandlerContext<CreateListingRequest>): P
   const supabaseService = createServiceClient(token);
 
   // -------------------------------------------------------------------------
+  // 0. Sanitize user inputs to prevent XSS
+  // -------------------------------------------------------------------------
+  const sanitizedTitle = sanitizeHtml(body.title);
+  const sanitizedDescription = body.description ? sanitizeHtml(body.description) : null;
+  const sanitizedPickupAddress = body.pickupAddress ? sanitizeHtml(body.pickupAddress) : null;
+  const sanitizedPickupTime = body.pickupTime ? sanitizeHtml(body.pickupTime) : null;
+
+  // -------------------------------------------------------------------------
   // 1. Server-side content moderation via RPC
   // -------------------------------------------------------------------------
   const { data: validationResult, error: validationError } = await supabaseService.rpc(
     "validate_listing_content",
     {
-      p_title: body.title,
-      p_description: body.description,
+      p_title: sanitizedTitle,
+      p_description: sanitizedDescription,
     }
   );
 
@@ -105,14 +112,14 @@ async function handleCreateListing(ctx: HandlerContext<CreateListingRequest>): P
     "create_listing_transactional",
     {
       p_profile_id: userId,
-      p_title: body.title,
-      p_description: body.description,
+      p_title: sanitizedTitle,
+      p_description: sanitizedDescription,
       p_post_type: body.postType,
       p_images: body.images,
       p_latitude: body.latitude,
       p_longitude: body.longitude,
-      p_pickup_address: body.pickupAddress,
-      p_pickup_time: body.pickupTime,
+      p_pickup_address: sanitizedPickupAddress,
+      p_pickup_time: sanitizedPickupTime,
       p_category_id: body.categoryId,
     }
   );

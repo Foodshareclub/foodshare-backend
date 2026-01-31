@@ -15,7 +15,6 @@
  * POST /check-login-rate { action: "record", email: "...", success: true/false }
  */
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";

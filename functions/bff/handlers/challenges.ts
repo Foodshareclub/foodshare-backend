@@ -9,6 +9,8 @@
  * - Leaderboard rankings
  *
  * Reduces client round-trips from 4-5 calls to 1.
+ *
+ * NOTE: Translation is handled separately by iOS calling /localization/get-translations
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
@@ -77,68 +79,45 @@ async function handleGetChallenges(
   // Transform active challenges with progress
   const activeChallenges: (ChallengeSummary & { progress: ChallengeProgress })[] = (
     result.active_challenges || []
-  ).map((c: Record<string, unknown>) => ({
-    id: c.id as string,
-    title: c.title as string,
-    description: c.description as string,
-    type: c.type as "daily" | "weekly" | "monthly" | "special",
-    iconUrl: c.icon_url as string,
-    startDate: c.start_date as string,
-    endDate: c.end_date as string,
-    isActive: true,
-    reward: {
-      points: c.reward_points as number,
-      badgeId: c.badge_id as string | undefined,
-      badgeName: c.badge_name as string | undefined,
-      badgeIconUrl: c.badge_icon_url as string | undefined,
-    } as ChallengeReward,
-    progress: {
-      challengeId: c.id as string,
-      currentValue: c.current_value as number,
-      targetValue: c.target_value as number,
-      progressPercentage: Math.min(
-        100,
-        Math.round(((c.current_value as number) / (c.target_value as number)) * 100)
-      ),
-      isCompleted: (c.current_value as number) >= (c.target_value as number),
-      completedAt: c.completed_at as string | undefined,
-      claimedAt: c.claimed_at as string | undefined,
-    } as ChallengeProgress,
-  }));
+  ).map((c: Record<string, unknown>) => {
+    const id = String(c.id);
+    return {
+      id,
+      title: c.title as string,
+      description: c.description as string,
+      type: c.type as "daily" | "weekly" | "monthly" | "special",
+      iconUrl: c.icon_url as string,
+      startDate: c.start_date as string,
+      endDate: c.end_date as string,
+      isActive: true,
+      reward: {
+        points: c.reward_points as number,
+        badgeId: c.badge_id as string | undefined,
+        badgeName: c.badge_name as string | undefined,
+        badgeIconUrl: c.badge_icon_url as string | undefined,
+      } as ChallengeReward,
+      progress: {
+        challengeId: id,
+        currentValue: c.current_value as number,
+        targetValue: c.target_value as number,
+        progressPercentage: Math.min(
+          100,
+          Math.round(((c.current_value as number) / (c.target_value as number)) * 100)
+        ),
+        isCompleted: (c.current_value as number) >= (c.target_value as number),
+        completedAt: c.completed_at as string | undefined,
+        claimedAt: c.claimed_at as string | undefined,
+      } as ChallengeProgress,
+    };
+  });
 
   // Transform completed challenges
   const completedChallenges: (ChallengeSummary & { progress: ChallengeProgress })[] = (
     result.completed_challenges || []
-  ).map((c: Record<string, unknown>) => ({
-    id: c.id as string,
-    title: c.title as string,
-    description: c.description as string,
-    type: c.type as "daily" | "weekly" | "monthly" | "special",
-    iconUrl: c.icon_url as string,
-    startDate: c.start_date as string,
-    endDate: c.end_date as string,
-    isActive: false,
-    reward: {
-      points: c.reward_points as number,
-      badgeId: c.badge_id as string | undefined,
-      badgeName: c.badge_name as string | undefined,
-      badgeIconUrl: c.badge_icon_url as string | undefined,
-    } as ChallengeReward,
-    progress: {
-      challengeId: c.id as string,
-      currentValue: c.target_value as number,
-      targetValue: c.target_value as number,
-      progressPercentage: 100,
-      isCompleted: true,
-      completedAt: c.completed_at as string,
-      claimedAt: c.claimed_at as string | undefined,
-    } as ChallengeProgress,
-  }));
-
-  // Transform upcoming challenges
-  const upcomingChallenges: ChallengeSummary[] = (result.upcoming_challenges || []).map(
-    (c: Record<string, unknown>) => ({
-      id: c.id as string,
+  ).map((c: Record<string, unknown>) => {
+    const id = String(c.id);
+    return {
+      id,
       title: c.title as string,
       description: c.description as string,
       type: c.type as "daily" | "weekly" | "monthly" | "special",
@@ -152,7 +131,39 @@ async function handleGetChallenges(
         badgeName: c.badge_name as string | undefined,
         badgeIconUrl: c.badge_icon_url as string | undefined,
       } as ChallengeReward,
-    })
+      progress: {
+        challengeId: id,
+        currentValue: c.target_value as number,
+        targetValue: c.target_value as number,
+        progressPercentage: 100,
+        isCompleted: true,
+        completedAt: c.completed_at as string,
+        claimedAt: c.claimed_at as string | undefined,
+      } as ChallengeProgress,
+    };
+  });
+
+  // Transform upcoming challenges
+  const upcomingChallenges: ChallengeSummary[] = (result.upcoming_challenges || []).map(
+    (c: Record<string, unknown>) => {
+      const id = String(c.id);
+      return {
+        id,
+        title: c.title as string,
+        description: c.description as string,
+        type: c.type as "daily" | "weekly" | "monthly" | "special",
+        iconUrl: c.icon_url as string,
+        startDate: c.start_date as string,
+        endDate: c.end_date as string,
+        isActive: false,
+        reward: {
+          points: c.reward_points as number,
+          badgeId: c.badge_id as string | undefined,
+          badgeName: c.badge_name as string | undefined,
+          badgeIconUrl: c.badge_icon_url as string | undefined,
+        } as ChallengeReward,
+      };
+    }
   );
 
   // Transform leaderboard

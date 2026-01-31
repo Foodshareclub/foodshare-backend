@@ -10,6 +10,7 @@
  */
 
 import { WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET } from "./config/index.ts";
+import { verifyMetaWebhook, handleMetaWebhookChallenge } from "../_shared/webhook-security.ts";
 import { checkRateLimitDistributed } from "./services/rate-limiter.ts";
 import { cleanupExpiredStates } from "./services/user-state.ts";
 import { getWhatsAppApiStatus, markAsRead } from "./services/whatsapp-api.ts";
@@ -94,58 +95,34 @@ function log(level: string, message: string, context: Record<string, unknown> = 
 }
 
 /**
- * Verify WhatsApp webhook signature (X-Hub-Signature-256)
+ * Check if we're running in development/local environment
  */
-async function verifyWebhookSignature(payload: string, signature: string | null): Promise<boolean> {
-  // If no app secret configured, skip verification (not recommended for production)
+function isDevelopment(): boolean {
+  const env = Deno.env.get("DENO_ENV") || Deno.env.get("ENVIRONMENT") || "";
+  return env === "development" || env === "local" || env === "test";
+}
+
+/**
+ * Verify WhatsApp webhook signature using shared webhook-security module
+ * SECURITY: Rejects requests in production if secret is not configured
+ */
+async function verifyWebhookSignature(payload: string, headers: Headers): Promise<boolean> {
+  // If no app secret configured, behavior depends on environment
   if (!WHATSAPP_APP_SECRET) {
-    return true;
-  }
-
-  if (!signature) {
-    return false;
-  }
-
-  // Signature format: sha256=<hex>
-  const expectedPrefix = "sha256=";
-  if (!signature.startsWith(expectedPrefix)) {
-    return false;
-  }
-
-  const providedHash = signature.slice(expectedPrefix.length);
-
-  try {
-    // Create HMAC-SHA256 hash
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      "raw",
-      encoder.encode(WHATSAPP_APP_SECRET),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"]
-    );
-
-    const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
-
-    // Convert to hex
-    const hashArray = Array.from(new Uint8Array(signatureBuffer));
-    const computedHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
-    // Constant-time comparison to prevent timing attacks
-    if (computedHash.length !== providedHash.length) {
-      return false;
+    if (isDevelopment()) {
+      log("warn", "WHATSAPP_APP_SECRET not configured - skipping signature verification (dev mode)");
+      return true;
     }
-
-    let result = 0;
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ providedHash.charCodeAt(i);
-    }
-
-    return result === 0;
-  } catch (error) {
-    console.error("Signature verification error:", error);
+    // SECURITY: In production, reject requests if secret is not configured
+    log("error", "WHATSAPP_APP_SECRET not configured - rejecting request in production");
     return false;
   }
+
+  const result = await verifyMetaWebhook(payload, headers, WHATSAPP_APP_SECRET);
+  if (!result.valid) {
+    log("warn", "Webhook signature verification failed", { error: result.error });
+  }
+  return result.valid;
 }
 
 // ============================================================================
@@ -243,9 +220,8 @@ Deno.serve(async (req) => {
       // Read raw body for signature verification
       const rawBody = await req.text();
 
-      // Verify webhook signature if app secret is configured
-      const signature = req.headers.get("X-Hub-Signature-256");
-      const isValidSignature = await verifyWebhookSignature(rawBody, signature);
+      // Verify webhook signature using shared webhook-security module
+      const isValidSignature = await verifyWebhookSignature(rawBody, req.headers);
 
       if (!isValidSignature) {
         log("warn", "Invalid webhook signature", { requestId });

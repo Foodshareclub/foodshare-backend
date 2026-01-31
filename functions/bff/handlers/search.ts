@@ -30,7 +30,7 @@ const searchQuerySchema = z.object({
   q: z.string().max(200).optional(),
   lat: z.string().transform(Number).pipe(z.number().min(-90).max(90)).optional(),
   lng: z.string().transform(Number).pipe(z.number().min(-180).max(180)).optional(),
-  radiusKm: z.string().transform(Number).pipe(z.number().min(1).max(100)).optional(),
+  radiusKm: z.string().transform(Number).pipe(z.number().min(1).max(805)).optional(),
   categoryIds: z.string().transform((s) => s.split(",").map(Number)).optional(),
   dietaryTags: z.string().transform((s) => s.split(",")).optional(),
   sortBy: z.enum(["relevance", "distance", "newest", "expiring"]).optional(),

@@ -14,7 +14,6 @@
  * - X-App-Version: semver string (e.g., "1.2.3")
  */
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";

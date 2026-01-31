@@ -164,7 +164,7 @@ export const DEFAULT_EMAIL_CONFIG: EmailServiceConfig = {
     auth: ["resend", "brevo", "mailersend", "aws_ses"],
     chat: ["brevo", "mailersend", "resend", "aws_ses"],
     food_listing: ["brevo", "mailersend", "resend", "aws_ses"],
-    feedback: ["brevo", "mailersend", "resend", "aws_ses"],
+    feedback: ["resend", "mailersend", "brevo", "aws_ses"],
     review_reminder: ["brevo", "mailersend", "resend", "aws_ses"],
     newsletter: ["brevo", "mailersend", "aws_ses", "resend"],
     announcement: ["brevo", "mailersend", "aws_ses", "resend"],

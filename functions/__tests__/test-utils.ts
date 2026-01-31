@@ -271,3 +271,456 @@ export function cleanupTestEnv(): void {
   Deno.env.delete("SUPABASE_ANON_KEY");
   Deno.env.delete("SUPABASE_SERVICE_ROLE_KEY");
 }
+
+// ============================================================================
+// Security Test Helpers
+// ============================================================================
+
+/**
+ * Common XSS attack payloads for testing sanitization
+ */
+export const XSS_PAYLOADS = {
+  /** Basic script injection */
+  scriptTag: '<script>alert("XSS")</script>',
+  /** Image onerror handler */
+  imgOnerror: '<img src="x" onerror="alert(1)">',
+  /** Event handler in div */
+  divOnclick: '<div onclick="alert(1)">click me</div>',
+  /** JavaScript URL scheme */
+  javascriptUrl: '<a href="javascript:alert(1)">click</a>',
+  /** SVG with onload */
+  svgOnload: '<svg onload="alert(1)">',
+  /** Body onload */
+  bodyOnload: '<body onload="alert(1)">',
+  /** Input with onfocus */
+  inputOnfocus: '<input onfocus="alert(1)" autofocus>',
+  /** Encoded script */
+  encodedScript: '&lt;script&gt;alert(1)&lt;/script&gt;',
+  /** Nested quotes */
+  nestedQuotes: `"><script>alert("XSS")</script><"`,
+  /** Unicode escape */
+  unicodeEscape: '\\u003cscript\\u003ealert(1)\\u003c/script\\u003e',
+  /** Data URL */
+  dataUrl: '<a href="data:text/html,<script>alert(1)</script>">',
+  /** CSS expression */
+  cssExpression: '<div style="background:expression(alert(1))">',
+  /** Base64 encoded */
+  base64Script: '<img src="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">',
+} as const;
+
+/**
+ * Get all XSS payloads as an array
+ */
+export function getAllXssPayloads(): string[] {
+  return Object.values(XSS_PAYLOADS);
+}
+
+/**
+ * Generate XSS payload variations with context
+ */
+export function generateXssVariations(basePayload: string): string[] {
+  return [
+    basePayload,
+    basePayload.toUpperCase(),
+    basePayload.replace(/<(\w)/g, '< $1'), // Space after <
+    basePayload.replace(/=/g, ' = '), // Spaces around =
+    `test ${basePayload} test`, // Surrounded by text
+    `${basePayload}${basePayload}`, // Doubled
+  ];
+}
+
+/**
+ * SQL injection payloads for testing (for validation testing, not actual injection)
+ */
+export const SQL_INJECTION_PAYLOADS = [
+  "'; DROP TABLE users; --",
+  "1; DELETE FROM posts WHERE 1=1; --",
+  "' OR '1'='1",
+  "1 UNION SELECT * FROM users",
+  "admin'--",
+  "1; TRUNCATE TABLE posts; --",
+] as const;
+
+// ============================================================================
+// Webhook Test Helpers
+// ============================================================================
+
+/**
+ * Compute HMAC-SHA256 signature for webhook testing
+ */
+export async function computeTestHmac(payload: string, secret: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  const hashArray = Array.from(new Uint8Array(signatureBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Create a mock Meta (WhatsApp/Facebook) webhook request
+ */
+export async function createMetaWebhookRequest(
+  payload: unknown,
+  secret: string,
+  options: { valid?: boolean; path?: string } = {}
+): Promise<Request> {
+  const { valid = true, path = "/whatsapp-bot-foodshare" } = options;
+  const body = JSON.stringify(payload);
+  const signature = valid
+    ? await computeTestHmac(body, secret)
+    : "invalid_signature_12345";
+
+  return new Request(`http://localhost${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Hub-Signature-256": `sha256=${signature}`,
+    },
+    body,
+  });
+}
+
+/**
+ * Create a mock Telegram webhook request
+ */
+export function createTelegramWebhookRequest(
+  payload: unknown,
+  secret: string,
+  options: { valid?: boolean; path?: string } = {}
+): Request {
+  const { valid = true, path = "/telegram-bot-foodshare" } = options;
+  const body = JSON.stringify(payload);
+
+  return new Request(`http://localhost${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Telegram-Bot-Api-Secret-Token": valid ? secret : "invalid_token",
+    },
+    body,
+  });
+}
+
+/**
+ * Create a mock Stripe webhook request
+ */
+export async function createStripeWebhookRequest(
+  payload: unknown,
+  secret: string,
+  options: { valid?: boolean; timestamp?: number; path?: string } = {}
+): Promise<Request> {
+  const { valid = true, path = "/stripe-webhook" } = options;
+  const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
+  const body = JSON.stringify(payload);
+
+  const signedPayload = `${timestamp}.${body}`;
+  const signature = valid
+    ? await computeTestHmac(signedPayload, secret)
+    : "invalid_signature";
+
+  return new Request(`http://localhost${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Stripe-Signature": `t=${timestamp},v1=${signature}`,
+    },
+    body,
+  });
+}
+
+/**
+ * Create a mock GitHub webhook request
+ */
+export async function createGitHubWebhookRequest(
+  payload: unknown,
+  secret: string,
+  options: { valid?: boolean; event?: string; path?: string } = {}
+): Promise<Request> {
+  const { valid = true, event = "push", path = "/github-webhook" } = options;
+  const body = JSON.stringify(payload);
+  const signature = valid
+    ? await computeTestHmac(body, secret)
+    : "invalid_signature";
+
+  return new Request(`http://localhost${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Hub-Signature-256": `sha256=${signature}`,
+      "X-GitHub-Event": event,
+      "X-GitHub-Delivery": crypto.randomUUID(),
+    },
+    body,
+  });
+}
+
+/**
+ * Mock webhook payloads for testing
+ */
+export const MOCK_WEBHOOK_PAYLOADS = {
+  whatsapp: {
+    object: "whatsapp_business_account",
+    entry: [{
+      id: "123456789",
+      changes: [{
+        field: "messages",
+        value: {
+          messaging_product: "whatsapp",
+          metadata: { phone_number_id: "123456789" },
+          messages: [{
+            from: "1234567890",
+            id: "wamid.test123",
+            timestamp: String(Math.floor(Date.now() / 1000)),
+            type: "text",
+            text: { body: "Hello" },
+          }],
+        },
+      }],
+    }],
+  },
+  telegram: {
+    update_id: 123456789,
+    message: {
+      message_id: 1,
+      from: { id: 123456, first_name: "Test", is_bot: false },
+      chat: { id: 123456, type: "private" },
+      date: Math.floor(Date.now() / 1000),
+      text: "/start",
+    },
+  },
+  stripe: {
+    id: "evt_test123",
+    object: "event",
+    type: "checkout.session.completed",
+    data: {
+      object: {
+        id: "cs_test123",
+        object: "checkout.session",
+        amount_total: 1000,
+        currency: "usd",
+      },
+    },
+  },
+  github: {
+    ref: "refs/heads/main",
+    repository: {
+      id: 123456789,
+      name: "test-repo",
+      full_name: "user/test-repo",
+    },
+    pusher: { name: "testuser" },
+    commits: [{ id: "abc123", message: "Test commit" }],
+  },
+} as const;
+
+// ============================================================================
+// CSRF Test Helpers
+// ============================================================================
+
+/**
+ * Create a request with specific Origin header for CSRF testing
+ */
+export function createRequestWithOrigin(
+  origin: string | null,
+  options: { method?: string; path?: string; referer?: string } = {}
+): Request {
+  const { method = "POST", path = "/api/test", referer } = options;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (origin !== null) {
+    headers["Origin"] = origin;
+  }
+  if (referer) {
+    headers["Referer"] = referer;
+  }
+
+  return new Request(`http://localhost${path}`, {
+    method,
+    headers,
+    body: method !== "GET" ? JSON.stringify({}) : undefined,
+  });
+}
+
+/**
+ * Common CSRF bypass attempt origins
+ */
+export const MALICIOUS_ORIGINS = [
+  "https://evil.com",
+  "https://localhost.evil.com",
+  "https://example.com.evil.com",
+  "capacitor://localhost.evil.com",
+  "ionic://localhost.attacker.com",
+  "null", // Sandboxed iframe
+  "file://",
+  "http://localhost:3000", // Wrong protocol/port
+] as const;
+
+// ============================================================================
+// Performance Test Helpers
+// ============================================================================
+
+/**
+ * Measure async operation execution time
+ */
+export async function measureExecutionTime<T>(
+  fn: () => Promise<T>
+): Promise<{ result: T; durationMs: number }> {
+  const start = performance.now();
+  const result = await fn();
+  const durationMs = performance.now() - start;
+  return { result, durationMs };
+}
+
+/**
+ * Measure sync operation execution time
+ */
+export function measureSyncExecutionTime<T>(
+  fn: () => T
+): { result: T; durationMs: number } {
+  const start = performance.now();
+  const result = fn();
+  const durationMs = performance.now() - start;
+  return { result, durationMs };
+}
+
+/**
+ * Run a function multiple times and return statistics
+ */
+export async function benchmark(
+  fn: () => Promise<void>,
+  iterations: number = 100
+): Promise<{
+  min: number;
+  max: number;
+  avg: number;
+  p95: number;
+  p99: number;
+}> {
+  const times: number[] = [];
+
+  for (let i = 0; i < iterations; i++) {
+    const { durationMs } = await measureExecutionTime(fn);
+    times.push(durationMs);
+  }
+
+  times.sort((a, b) => a - b);
+
+  return {
+    min: times[0],
+    max: times[times.length - 1],
+    avg: times.reduce((a, b) => a + b, 0) / times.length,
+    p95: times[Math.floor(times.length * 0.95)],
+    p99: times[Math.floor(times.length * 0.99)],
+  };
+}
+
+/**
+ * Assert that an operation completes within a time limit
+ */
+export async function assertExecutionTime<T>(
+  fn: () => Promise<T>,
+  maxMs: number,
+  description?: string
+): Promise<T> {
+  const { result, durationMs } = await measureExecutionTime(fn);
+  if (durationMs > maxMs) {
+    throw new Error(
+      `${description || "Operation"} took ${durationMs.toFixed(2)}ms, ` +
+      `exceeding limit of ${maxMs}ms`
+    );
+  }
+  return result;
+}
+
+// ============================================================================
+// Input Validation Test Helpers
+// ============================================================================
+
+/**
+ * Boundary values for numeric input testing
+ */
+export const NUMERIC_BOUNDARIES = {
+  int32: {
+    min: -2147483648,
+    max: 2147483647,
+    overflow: 2147483648,
+    underflow: -2147483649,
+  },
+  positiveInt: {
+    valid: [1, 100, 1000000],
+    invalid: [0, -1, -100, 1.5, NaN, Infinity],
+  },
+  latitude: {
+    valid: [0, 45.5, 90, -90, -45.5],
+    invalid: [-91, 91, 180, -180],
+  },
+  longitude: {
+    valid: [0, 90, 180, -180, -90],
+    invalid: [-181, 181, 360, -360],
+  },
+  pagination: {
+    validLimit: [1, 10, 50, 100],
+    invalidLimit: [0, -1, 1001, NaN],
+    validOffset: [0, 10, 100],
+    invalidOffset: [-1, NaN],
+  },
+} as const;
+
+/**
+ * String edge cases for input validation testing
+ */
+export const STRING_EDGE_CASES = {
+  /** Empty and whitespace */
+  empty: "",
+  whitespace: "   ",
+  tabs: "\t\t\t",
+  newlines: "\n\n\n",
+  mixedWhitespace: " \t\n ",
+
+  /** Unicode edge cases */
+  unicode: "Hello 世界 🌍",
+  rtl: "مرحبا",
+  zalgo: "H̷̡̛̺̤̫̯̖̊̈́̃̓̋̅e̵̢̛̞̣̹̣̬̱̊͆̓̑́̋̅l̵̨͖̤̱̞̣͖̓́̽͜͝l̵͔̟̫̯̈́̓̈́̀͆͝o̵̡̨̭̲͖̬̓́͋̑̀̅̚",
+  homoglyph: "рaypal.com", // Cyrillic 'р' looks like Latin 'p'
+
+  /** Length edge cases */
+  veryLong: "x".repeat(10000),
+  maxUint16: "x".repeat(65535),
+
+  /** Control characters */
+  nullByte: "test\x00value",
+  controlChars: "\x00\x01\x02\x03",
+} as const;
+
+/**
+ * Email validation test cases
+ */
+export const EMAIL_TEST_CASES = {
+  valid: [
+    "user@example.com",
+    "user.name@example.com",
+    "user+tag@example.com",
+    "user@subdomain.example.com",
+  ],
+  invalid: [
+    "", // Empty
+    "user", // No @
+    "@example.com", // No local part
+    "user@", // No domain
+    "user@@example.com", // Double @
+    "user@.com", // Domain starts with dot
+    "user@example..com", // Consecutive dots
+    "user@example.c", // Single char TLD
+    "user@example.toolongtldtoolongtld", // TLD too long
+    " user@example.com", // Leading space
+    "user@example.com ", // Trailing space
+  ],
+} as const;

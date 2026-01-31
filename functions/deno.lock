@@ -655,7 +655,8 @@
     "https://deno.land/x/zod@v3.22.4/locales/en.ts": "a7a25cd23563ccb5e0eed214d9b31846305ddbcdb9c5c8f508b108943366ab4c",
     "https://deno.land/x/zod@v3.22.4/mod.ts": "64e55237cb4410e17d968cd08975566059f27638ebb0b86048031b987ba251c4",
     "https://deno.land/x/zod@v3.22.4/types.ts": "724185522fafe43ee56a52333958764c8c8cd6ad4effa27b42651df873fc151e",
-    "https://esm.sh/@supabase/supabase-js@2.43.4": "ed6952bb6d04f4abd86e80a0dde37f35798d483d2603cc8408baf310a21a0b36"
+    "https://esm.sh/@supabase/supabase-js@2.43.4": "ed6952bb6d04f4abd86e80a0dde37f35798d483d2603cc8408baf310a21a0b36",
+    "https://esm.sh/standardwebhooks@1.0.0": "b8cafcb7e9a890c14c0eb74cb093f36333000122e2276cc204818f6a680c8ba9"
   },
   "workspace": {
     "dependencies": [

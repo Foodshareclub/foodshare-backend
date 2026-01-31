@@ -27,7 +27,6 @@
  * }
  */
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 // Types
 type Platform = "ios" | "android" | "web" | "unknown";

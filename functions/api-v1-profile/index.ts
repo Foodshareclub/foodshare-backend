@@ -20,7 +20,6 @@
  * @module api-v1-profile
  */
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import {
   createAPIHandler,
@@ -30,7 +29,7 @@ import {
 } from "../_shared/api-handler.ts";
 import { NotFoundError, ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
-import { PROFILE } from "../_shared/validation-rules.ts";
+import { PROFILE, sanitizeHtml } from "../_shared/validation-rules.ts";
 
 // =============================================================================
 // Schemas (using shared validation constants from Swift FoodshareCore)
@@ -165,20 +164,22 @@ async function updateProfile(ctx: HandlerContext<UpdateProfileBody>): Promise<Re
   }
 
   // Build update object (snake_case for database)
+  // Sanitize text fields to prevent XSS
   const updates: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
 
   if (body.name !== undefined) {
-    // Split name into first/last for the database
-    const parts = body.name.trim().split(/\s+/);
+    // Sanitize and split name into first/last for the database
+    const sanitizedName = sanitizeHtml(body.name.trim());
+    const parts = sanitizedName.split(/\s+/);
     updates.first_name = parts[0] || "";
     updates.second_name = parts.slice(1).join(" ") || "";
-    updates.display_name = body.name.trim();
+    updates.display_name = sanitizedName;
   }
-  if (body.bio !== undefined) updates.bio = body.bio;
-  if (body.phone !== undefined) updates.phone = body.phone;
-  if (body.location !== undefined) updates.location = body.location;
+  if (body.bio !== undefined) updates.bio = sanitizeHtml(body.bio);
+  if (body.phone !== undefined) updates.phone = sanitizeHtml(body.phone);
+  if (body.location !== undefined) updates.location = sanitizeHtml(body.location);
   if (body.isVolunteer !== undefined) updates.is_volunteer = body.isVolunteer;
 
   const { data, error } = await supabase
@@ -208,15 +209,26 @@ async function uploadAvatar(ctx: HandlerContext<UploadAvatarBody>): Promise<Resp
     throw new ValidationError("Authentication required");
   }
 
-  // Decode base64 image
+  // Extract base64 data (strip data URL prefix if present)
   const base64Data = body.imageData.includes(",")
     ? body.imageData.split(",")[1]
     : body.imageData;
 
+  // SECURITY: Check base64 string length BEFORE decoding to prevent memory exhaustion
+  // Base64 has ~4:3 ratio (3 bytes become 4 base64 chars)
+  // For 5MB limit, max base64 length is approximately 5 * 1024 * 1024 * 4 / 3 = ~6.67MB
+  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+  const MAX_BASE64_LENGTH = Math.ceil(MAX_FILE_SIZE * 4 / 3) + 4; // +4 for padding
+
+  if (base64Data.length > MAX_BASE64_LENGTH) {
+    throw new ValidationError("File too large. Maximum size is 5MB");
+  }
+
+  // Now safe to decode - we've verified the size won't exhaust memory
   const binaryData = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
 
-  // Validate size (5MB max)
-  if (binaryData.length > 5 * 1024 * 1024) {
+  // Double-check actual binary size (handles edge cases in base64 encoding)
+  if (binaryData.length > MAX_FILE_SIZE) {
     throw new ValidationError("File too large. Maximum size is 5MB");
   }
 
@@ -230,22 +242,28 @@ async function uploadAvatar(ctx: HandlerContext<UploadAvatarBody>): Promise<Resp
   const ext = extMap[body.mimeType] || "jpg";
   const fileName = `${userId}/avatar.${ext}`;
 
-  // Delete existing avatars first
-  const { data: existingFiles } = await supabase.storage
-    .from("avatars")
-    .list(userId);
-
-  if (existingFiles && existingFiles.length > 0) {
-    const filePaths = existingFiles.map((f) => `${userId}/${f.name}`);
-    await supabase.storage.from("avatars").remove(filePaths);
-  }
-
-  // Upload new avatar
+  // Upload new avatar first (upsert handles same-extension overwrites)
   const { error: uploadError } = await supabase.storage
     .from("avatars")
     .upload(fileName, binaryData, {
       contentType: body.mimeType,
-      upsert: true,
+      upsert: true, // Overwrites existing file with same name
+    });
+
+  // Clean up old avatars with DIFFERENT extensions (if any)
+  // This runs after successful upload to avoid leaving user without avatar
+  const otherExtensions = Object.values(extMap).filter((e) => e !== ext);
+  const oldAvatarPaths = otherExtensions.map((e) => `${userId}/avatar.${e}`);
+
+  // Remove old avatars in background (don't await - fire and forget for better perf)
+  // Errors are logged but don't fail the request since new avatar is already uploaded
+  supabase.storage
+    .from("avatars")
+    .remove(oldAvatarPaths)
+    .then(({ error }) => {
+      if (error) {
+        logger.warn("Failed to cleanup old avatars", { userId, error: error.message });
+      }
     });
 
   if (uploadError) {
@@ -289,25 +307,27 @@ async function deleteAvatar(ctx: HandlerContext<unknown, QueryParams>): Promise<
     throw new ValidationError("Authentication required");
   }
 
-  // Delete from avatars bucket
-  const { data: avatarFiles } = await supabase.storage
-    .from("avatars")
-    .list(userId);
+  // Known avatar file patterns - delete all possible extensions
+  const avatarPaths = [
+    `${userId}/avatar.jpg`,
+    `${userId}/avatar.png`,
+    `${userId}/avatar.webp`,
+    `${userId}/avatar.gif`,
+  ];
 
-  if (avatarFiles && avatarFiles.length > 0) {
-    const filePaths = avatarFiles.map((f) => `${userId}/${f.name}`);
-    await supabase.storage.from("avatars").remove(filePaths);
-  }
+  // Delete from avatars bucket (direct delete without listing)
+  // Storage.remove silently ignores non-existent files
+  await supabase.storage.from("avatars").remove(avatarPaths);
 
-  // Also check profiles bucket (legacy)
-  const { data: profileFiles } = await supabase.storage
+  // Also clean up legacy profiles bucket (if any) in background
+  supabase.storage
     .from("profiles")
-    .list(userId);
-
-  if (profileFiles && profileFiles.length > 0) {
-    const filePaths = profileFiles.map((f) => `${userId}/${f.name}`);
-    await supabase.storage.from("profiles").remove(filePaths);
-  }
+    .remove(avatarPaths)
+    .then(({ error }) => {
+      if (error) {
+        logger.warn("Failed to cleanup legacy profile avatars", { userId, error: error.message });
+      }
+    });
 
   // Update profile to remove avatar URL
   const { error: updateError } = await supabase

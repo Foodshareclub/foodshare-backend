@@ -25,6 +25,11 @@ AS $$
 DECLARE
     v_room_id uuid;
 BEGIN
+    -- Prevent owner from creating room with themselves
+    IF p_sharer_id = p_requester_id THEN
+        RAISE EXCEPTION 'Cannot create a chat room with yourself' USING ERRCODE = '23514';
+    END IF;
+
     -- Try to find existing room
     SELECT r.id INTO v_room_id
     FROM rooms r

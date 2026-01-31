@@ -173,7 +173,7 @@ async function handleProfileRadiusUpdate(chatId: number, userId: number): Promis
 
   await sendMessage(
     chatId,
-    `${emoji.COMPASS} <b>Enter search radius (km)</b>\n\nType a number between 1 and 50.`
+    `${emoji.COMPASS} <b>Enter search radius (km)</b>\n\nType a number between 1 and 805.`
   );
   await setUserState(userId, { action: "setting_radius", data: {} });
 }

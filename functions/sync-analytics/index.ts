@@ -17,7 +17,6 @@
  * GET /sync-analytics - Incremental sync (for cron)
  */
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
 
 // =============================================================================

@@ -13,6 +13,7 @@
  */
 
 import { setWebhook, getTelegramApiStatus } from "./services/telegram-api.ts";
+import { verifyTelegramWebhook as verifyTelegramSignature } from "../_shared/webhook-security.ts";
 import { handleCallbackQuery } from "./handlers/callbacks.ts";
 import {
   handleTextMessage,
@@ -123,19 +124,36 @@ function timingSafeEqual(a: string, b: string): boolean {
   return result === 0;
 }
 
-function verifyWebhookSignature(req: Request): boolean {
-  // If no secret configured, skip verification (development mode)
-  if (!WEBHOOK_SECRET) {
-    return true;
-  }
+/**
+ * Check if we're running in development/local environment
+ */
+function isDevelopment(): boolean {
+  const env = Deno.env.get("DENO_ENV") || Deno.env.get("ENVIRONMENT") || "";
+  return env === "development" || env === "local" || env === "test";
+}
 
-  const token = req.headers.get("X-Telegram-Bot-Api-Secret-Token");
-  if (!token) {
+/**
+ * Verify Telegram webhook signature using shared webhook-security module
+ * SECURITY: Rejects requests in production if secret is not configured
+ */
+function verifyWebhookSignature(req: Request): boolean {
+  // If no secret configured, behavior depends on environment
+  if (!WEBHOOK_SECRET) {
+    if (isDevelopment()) {
+      log("warn", "TELEGRAM_WEBHOOK_SECRET not configured - skipping verification (dev mode)");
+      return true;
+    }
+    // SECURITY: In production, reject requests if secret is not configured
+    log("error", "TELEGRAM_WEBHOOK_SECRET not configured - rejecting request in production");
     return false;
   }
 
-  // Use constant-time comparison to prevent timing attacks
-  return timingSafeEqual(token, WEBHOOK_SECRET);
+  // Use shared webhook-security module for verification
+  const result = verifyTelegramSignature(req.headers, WEBHOOK_SECRET);
+  if (!result.valid) {
+    log("warn", "Webhook signature verification failed", { error: result.error });
+  }
+  return result.valid;
 }
 
 // ============================================================================

@@ -184,6 +184,71 @@ export class ConfigurationError extends AppError {
 }
 
 /**
+ * Forbidden error - request understood but refused (alias for AuthorizationError)
+ */
+export class ForbiddenError extends AppError {
+  constructor(message: string = "Forbidden", details?: unknown) {
+    super(message, "FORBIDDEN", 403, { details });
+  }
+}
+
+/**
+ * Internal server error - generic 500 error
+ */
+export class ServerError extends AppError {
+  constructor(message: string = "Internal server error", details?: unknown) {
+    super(message, "SERVER_ERROR", 500, { details });
+  }
+}
+
+/**
+ * Service unavailable error - temporary unavailability
+ */
+export class ServiceUnavailableError extends AppError {
+  public readonly retryAfterMs?: number;
+
+  constructor(message: string = "Service temporarily unavailable", retryAfterMs?: number) {
+    super(message, "SERVICE_UNAVAILABLE", 503, {
+      retryable: true,
+      details: { retryAfterMs },
+    });
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+/**
+ * Bad gateway error - upstream service failure
+ */
+export class BadGatewayError extends AppError {
+  constructor(message: string = "Bad gateway", upstream?: string) {
+    super(message, "BAD_GATEWAY", 502, {
+      retryable: true,
+      details: { upstream },
+    });
+  }
+}
+
+/**
+ * Payload too large error
+ */
+export class PayloadTooLargeError extends AppError {
+  constructor(message: string = "Payload too large", maxSize?: number) {
+    super(message, "PAYLOAD_TOO_LARGE", 413, {
+      details: { maxSize },
+    });
+  }
+}
+
+/**
+ * Unprocessable entity error - validation passed but business logic failed
+ */
+export class UnprocessableEntityError extends AppError {
+  constructor(message: string, details?: unknown) {
+    super(message, "UNPROCESSABLE_ENTITY", 422, { details });
+  }
+}
+
+/**
  * Standard error response format
  * @deprecated Use TransitionalResponse from response-adapter.ts instead
  */

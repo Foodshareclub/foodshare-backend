@@ -8,6 +8,8 @@
  * - User's interaction state (favorited, can contact)
  *
  * Reduces client round-trips from 4-5 calls to 1.
+ *
+ * NOTE: Translation is handled separately by iOS calling /localization/get-translations
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";

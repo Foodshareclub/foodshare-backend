@@ -5,7 +5,7 @@
  * Provides:
  * - CORS handling (web + mobile)
  * - Authentication validation
- * - Request schema validation (Zod)
+ * - Request schema validation (Zod + Valibot)
  * - Idempotency key support
  * - Rate limiting integration
  * - Method routing
@@ -49,15 +49,21 @@ import {
   shouldUseTransitionalFormat,
 } from "./response-adapter.ts";
 import { logger } from "./logger.ts";
+import { trackError } from "./error-tracking.ts";
+import { trackRequest, checkMemoryUsage } from "./performance.ts";
+import { validateCsrf, type CsrfOptions, CsrfError } from "./csrf.ts";
 
 // =============================================================================
 // Types
 // =============================================================================
 
-/** Zod-like schema interface for validation */
+/** Schema interface supporting both Zod and Valibot */
 interface Schema<T = unknown> {
-  parse: (data: unknown) => T;
-  safeParse: (data: unknown) => { success: true; data: T } | { success: false; error: { errors: Array<{ path: (string | number)[]; message: string }> } };
+  // Zod
+  parse?: (data: unknown) => T;
+  safeParse?: (data: unknown) => { success: true; data: T } | { success: false; error: { errors: Array<{ path: (string | number)[]; message: string }> } };
+  // Valibot
+  _parse?: (input: unknown) => { output: T } | { issues: Array<{ path?: Array<{ key: string }>; message: string }> };
 }
 
 /** Handler context with parsed data and auth info */
@@ -150,6 +156,8 @@ export interface APIHandlerConfig {
   supportedVersions?: string[];
   /** Deprecated versions with sunset dates */
   deprecatedVersions?: DeprecatedVersion[];
+  /** CSRF protection configuration (enabled by default for mutation requests) */
+  csrf?: CsrfOptions | boolean;
 }
 
 // =============================================================================
@@ -275,18 +283,38 @@ function parseQueryParams(url: URL): Record<string, string> {
 // =============================================================================
 
 function validateWithSchema<T>(schema: Schema<T>, data: unknown, location: string): T {
-  const result = schema.safeParse(data);
-
-  if (!result.success) {
-    const errors = result.error.errors.map((e) => ({
-      field: e.path.join("."),
-      message: e.message,
-    }));
-
-    throw new ValidationError(`Invalid ${location}`, errors);
+  // Try Valibot first (smaller, faster)
+  if (typeof schema._parse === "function") {
+    const result = schema._parse(data);
+    
+    if ("issues" in result) {
+      const errors = result.issues.map((issue) => ({
+        field: issue.path?.map((p) => p.key).join(".") || "root",
+        message: issue.message,
+      }));
+      throw new ValidationError(`Invalid ${location}`, errors);
+    }
+    
+    return result.output;
   }
 
-  return result.data;
+  // Fall back to Zod
+  if (typeof schema.safeParse === "function") {
+    const result = schema.safeParse(data);
+
+    if (!result.success) {
+      const errors = result.error.errors.map((e) => ({
+        field: e.path.join("."),
+        message: e.message,
+      }));
+
+      throw new ValidationError(`Invalid ${location}`, errors);
+    }
+
+    return result.data;
+  }
+
+  throw new ValidationError(`Invalid schema for ${location}`);
 }
 
 // =============================================================================
@@ -440,6 +468,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
     additionalOrigins,
     supportedVersions: _supportedVersions,
     deprecatedVersions,
+    csrf = true, // CSRF protection enabled by default
   } = config;
 
   return async (request: Request): Promise<Response> => {
@@ -447,6 +476,10 @@ export function createAPIHandler(config: APIHandlerConfig) {
     const ctx = createContext(request, service);
     const corsHeaders = getCorsHeadersWithMobile(request, additionalOrigins);
     const useTransitional = shouldUseTransitionalFormat(request);
+    const perfTracker = trackRequest(service);
+
+    // Check memory usage periodically
+    checkMemoryUsage();
 
     try {
       // Handle preflight
@@ -469,6 +502,33 @@ export function createAPIHandler(config: APIHandlerConfig) {
           corsHeaders,
           { version, includeTransitional: useTransitional }
         );
+      }
+
+      // CSRF protection for mutation methods (POST, PUT, PATCH, DELETE)
+      if (csrf && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        const csrfOptions: CsrfOptions = typeof csrf === "object" ? csrf : {};
+        csrfOptions.additionalOrigins = [
+          ...(csrfOptions.additionalOrigins || []),
+          ...(additionalOrigins || []),
+        ];
+
+        const csrfResult = validateCsrf(request, csrfOptions);
+        if (!csrfResult.valid) {
+          logger.warn("CSRF validation failed", {
+            reason: csrfResult.reason,
+            origin: request.headers.get("origin"),
+            referer: request.headers.get("referer"),
+          });
+          return buildErrorResponse(
+            new AppError(
+              "Request blocked: origin validation failed",
+              "CSRF_VALIDATION_FAILED",
+              403
+            ),
+            corsHeaders,
+            { version, includeTransitional: useTransitional }
+          );
+        }
       }
 
       // Check API version deprecation
@@ -629,10 +689,33 @@ export function createAPIHandler(config: APIHandlerConfig) {
         });
       }
 
+      perfTracker.end(response.status);
       return response;
     } catch (error) {
+      const appError = error instanceof Error ? error : new Error(String(error));
+
+      // Handle CSRF errors with 403 status
+      if (error instanceof CsrfError) {
+        perfTracker.end(403);
+        return buildErrorResponse(
+          new AppError(error.message, "CSRF_VALIDATION_FAILED", 403),
+          corsHeaders,
+          { version, includeTransitional: useTransitional }
+        );
+      }
+
+      // Track error for monitoring
+      trackError(appError, {
+        service,
+        method: request.method,
+        url: request.url,
+      });
+
+      const statusCode = error instanceof AppError ? error.statusCode : 500;
+      perfTracker.end(statusCode);
+
       return buildErrorResponse(
-        error instanceof Error ? error : new Error(String(error)),
+        appError,
         corsHeaders,
         { version, includeTransitional: useTransitional }
       );
@@ -680,9 +763,14 @@ export function paginated<T>(
     offset: number;
     limit: number;
     total: number;
+    /** Next cursor for cursor-based pagination */
+    nextCursor?: string | null;
   }
 ): Response {
-  const hasMore = pagination.offset + items.length < pagination.total;
+  // Support both offset-based and cursor-based pagination
+  const hasMore = pagination.nextCursor !== undefined
+    ? pagination.nextCursor !== null
+    : pagination.offset + items.length < pagination.total;
 
   return buildSuccessResponse(items, ctx.corsHeaders, {
     pagination: {
@@ -690,7 +778,10 @@ export function paginated<T>(
       limit: pagination.limit,
       total: pagination.total,
       hasMore,
-      nextOffset: hasMore ? pagination.offset + pagination.limit : undefined,
+      nextOffset: hasMore && pagination.nextCursor === undefined
+        ? pagination.offset + pagination.limit
+        : undefined,
+      nextCursor: pagination.nextCursor ?? undefined,
     },
   });
 }

@@ -18,7 +18,6 @@
  * { "operation": "CLEANUP", "days_old": 30 }
  */
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { geocodeAddress, type Coordinates } from "../_shared/geocoding.ts";

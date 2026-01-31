@@ -15,7 +15,6 @@
  * }
  */
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";

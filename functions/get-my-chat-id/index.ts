@@ -8,7 +8,6 @@
  * GET /get-my-chat-id
  */
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { ServerError } from "../_shared/errors.ts";

@@ -94,6 +94,16 @@ export const WebhookProviders = {
     signaturePrefix: "",
     algorithm: "SHA-1",
   } as WebhookProviderConfig,
+
+  /**
+   * Telegram
+   * Uses X-Telegram-Bot-Api-Secret-Token header for webhook verification
+   */
+  telegram: {
+    signatureHeader: "X-Telegram-Bot-Api-Secret-Token",
+    signaturePrefix: "",
+    algorithm: "SHA-256", // Not actually HMAC - simple token comparison
+  } as WebhookProviderConfig,
 } as const;
 
 // =============================================================================
@@ -291,6 +301,35 @@ export async function verifyGitHubWebhook(
   return { valid: true };
 }
 
+/**
+ * Verify Telegram webhook secret token
+ * Telegram uses a simple token comparison (not HMAC)
+ *
+ * @example
+ * ```typescript
+ * const result = verifyTelegramWebhook(req.headers, webhookSecret);
+ * if (!result.valid) {
+ *   return new Response(result.error, { status: 401 });
+ * }
+ * ```
+ */
+export function verifyTelegramWebhook(
+  headers: Headers,
+  secret: string
+): WebhookVerificationResult {
+  const token = headers.get(WebhookProviders.telegram.signatureHeader);
+
+  if (!token) {
+    return { valid: false, error: "Missing X-Telegram-Bot-Api-Secret-Token header" };
+  }
+
+  if (!constantTimeCompare(token, secret)) {
+    return { valid: false, error: "Secret token mismatch" };
+  }
+
+  return { valid: true };
+}
+
 // =============================================================================
 // Generic HMAC Verification
 // =============================================================================
@@ -387,6 +426,9 @@ export function createWebhookVerifier(
         return verifyStripeWebhook(payload, headers, secret);
       case "github":
         return verifyGitHubWebhook(payload, headers, secret);
+      case "telegram":
+        // Telegram uses simple token comparison, not HMAC
+        return verifyTelegramWebhook(headers, secret);
       default:
         // Generic HMAC verification
         const signature = headers.get(config.signatureHeader);

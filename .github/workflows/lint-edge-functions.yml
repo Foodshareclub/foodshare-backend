@@ -1,0 +1,27 @@
+name: Lint Edge Functions
+
+on:
+  push:
+    paths:
+      - 'functions/**'
+      - 'supabase/functions/**'
+  pull_request:
+    paths:
+      - 'functions/**'
+      - 'supabase/functions/**'
+
+jobs:
+  check-jsr-imports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for problematic JSR imports
+        run: |
+          if grep -r "jsr:@supabase/functions-js" functions/ supabase/functions/ 2>/dev/null; then
+            echo "::error::Problematic JSR import detected! This import causes cold start timeouts."
+            echo "::error::Remove the line: import \"jsr:@supabase/functions-js/edge-runtime.d.ts\";"
+            echo "::error::Deno runtime provides these types automatically."
+            exit 1
+          fi
+          echo "No problematic JSR imports found."

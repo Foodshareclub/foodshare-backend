@@ -142,10 +142,17 @@ export function getCorsHeadersWithMobile(
   }
 
   // Check if origin matches any allowed pattern
+  // SECURITY: Use exact hostname matching for mobile schemes to prevent bypasses
+  // like capacitor://localhost.attacker.com
   let allowedOrigin = allAllowed.find((allowed) => {
     if (allowed.endsWith("//")) {
       // Handle scheme-only patterns like "file://"
       return origin.startsWith(allowed);
+    }
+    // For mobile schemes (capacitor://, ionic://, app://), use exact match only
+    // to prevent subdomain/hostname manipulation attacks
+    if (allowed.startsWith("capacitor://") || allowed.startsWith("ionic://") || allowed.startsWith("app://")) {
+      return origin === allowed;
     }
     return origin === allowed;
   });
@@ -168,6 +175,7 @@ export function getCorsHeadersWithMobile(
 
 /**
  * Check if the request origin is from a mobile app
+ * SECURITY: Uses exact matching for mobile schemes to prevent hostname manipulation
  */
 export function isMobileOrigin(request: Request): boolean {
   const origin = request.headers.get("origin");
@@ -179,8 +187,10 @@ export function isMobileOrigin(request: Request): boolean {
 
   return MOBILE_ORIGINS.some((mobileOrigin) => {
     if (mobileOrigin.endsWith("//")) {
+      // Scheme-only patterns like "file://" - use prefix match
       return origin.startsWith(mobileOrigin);
     }
+    // All other mobile origins use exact match to prevent bypasses
     return origin === mobileOrigin;
   });
 }
@@ -207,11 +217,14 @@ export function isOriginAllowed(
   }
 
   // Check mobile origins
+  // SECURITY: Uses exact matching for mobile schemes to prevent hostname manipulation
   if (allowMobile) {
     return MOBILE_ORIGINS.some((mobileOrigin) => {
       if (mobileOrigin.endsWith("//")) {
+        // Scheme-only patterns like "file://" - use prefix match
         return origin.startsWith(mobileOrigin);
       }
+      // All other mobile origins use exact match to prevent bypasses
       return origin === mobileOrigin;
     });
   }

@@ -20,7 +20,7 @@ import {
   ProviderQuota,
   PROVIDER_LIMITS,
 } from "../_shared/email/index.ts";
-import { welcomeEmail, goodbyeEmail } from "../_shared/email/templates.ts";
+import { welcomeEmail, goodbyeEmail, feedbackAlertEmail } from "../_shared/email/templates.ts";
 
 const VERSION = "1.0.0";
 const VALID_PROVIDERS: EmailProviderName[] = ["resend", "brevo", "aws_ses", "mailersend"];
@@ -254,13 +254,44 @@ interface ProcessResult {
   latencyMs: number;
 }
 
+// Resolve template by name if subject/html not provided directly
+function resolveTemplate(
+  templateName: string | undefined,
+  templateData: Record<string, unknown>
+): { subject: string; html: string } | null {
+  if (!templateName) return null;
+
+  switch (templateName) {
+    case "feedback-alert":
+      return feedbackAlertEmail(templateData as Parameters<typeof feedbackAlertEmail>[0]);
+    case "welcome":
+      return welcomeEmail(templateData as Parameters<typeof welcomeEmail>[0]);
+    case "goodbye":
+      return goodbyeEmail(templateData as Parameters<typeof goodbyeEmail>[0]);
+    default:
+      return null;
+  }
+}
+
 async function processEmail(
   email: QueuedEmail,
   emailService: ReturnType<typeof getEmailService>
 ): Promise<ProcessResult> {
   const startTime = performance.now();
 
-  if (!email.template_data?.html || !email.template_data?.subject) {
+  // Try to resolve template if subject/html not directly provided
+  let subject = email.template_data?.subject as string | undefined;
+  let html = email.template_data?.html as string | undefined;
+
+  if (!subject || !html) {
+    const resolved = resolveTemplate(email.template_name, email.template_data || {});
+    if (resolved) {
+      subject = resolved.subject;
+      html = resolved.html;
+    }
+  }
+
+  if (!html || !subject) {
     return {
       id: email.id,
       success: false,
@@ -274,11 +305,11 @@ async function processEmail(
   const result = await emailService.sendEmail(
     {
       to: email.recipient_email,
-      subject: email.template_data.subject,
-      html: email.template_data.html,
-      text: email.template_data.text,
-      from: email.template_data.from,
-      fromName: email.template_data.fromName,
+      subject,
+      html,
+      text: email.template_data?.text as string | undefined,
+      from: email.template_data?.from as string | undefined,
+      fromName: email.template_data?.fromName as string | undefined,
     },
     emailType
   );
@@ -844,7 +875,7 @@ async function handleHealth(
   }
 
   if (alerts.length > 0) {
-    console.warn("[email:health] Alerts:", alerts);
+    logger.warn("Email health alerts detected", { alerts, alertCount: alerts.length });
   }
 
   return createResponse(
@@ -931,7 +962,7 @@ Deno.serve(async (req) => {
         );
     }
   } catch (error) {
-    console.error("[email] Error:", error);
+    logger.error("Email function error", error as Error);
 
     return createResponse(
       {

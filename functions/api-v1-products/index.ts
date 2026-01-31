@@ -19,7 +19,6 @@
  * @module api-v1-products
  */
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import {
   createAPIHandler,
@@ -31,6 +30,13 @@ import {
 } from "../_shared/api-handler.ts";
 import { NotFoundError, ValidationError, ConflictError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
+import { sanitizeHtml, parseIntSafe, parseFloatSafe, parseFloatSafeWithBounds } from "../_shared/validation-rules.ts";
+import {
+  decodeCursor,
+  encodeCursor,
+  normalizeLimit,
+  type CompositeCursor,
+} from "../_shared/pagination.ts";
 
 // =============================================================================
 // Schemas
@@ -81,19 +87,24 @@ type ListQuery = z.infer<typeof listQuerySchema>;
 // =============================================================================
 
 /**
- * List products with filters and cursor pagination
+ * List products with filters and composite cursor pagination
+ * Uses (timestamp, id) composite cursor for precise pagination
  */
 async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Response> {
   const { supabase, query } = ctx;
 
-  const limit = Math.min(parseInt(query.limit || "20"), 50);
+  // Use safe numeric parsing with bounds to prevent invalid values
+  const limit = normalizeLimit(parseIntSafe(query.limit, 20), 50);
   const postType = query.postType;
-  const categoryId = query.categoryId ? parseInt(query.categoryId) : undefined;
-  const lat = query.lat ? parseFloat(query.lat) : undefined;
-  const lng = query.lng ? parseFloat(query.lng) : undefined;
-  const radius = query.radius ? parseFloat(query.radius) : 10; // km
-  const cursor = query.cursor;
+  const categoryId = query.categoryId ? parseIntSafe(query.categoryId) : undefined;
+  const lat = query.lat ? parseFloatSafe(query.lat) : undefined;
+  const lng = query.lng ? parseFloatSafe(query.lng) : undefined;
+  // Radius bounds: 0.1km minimum, 1000km maximum (500mi), default 10km
+  const radius = parseFloatSafeWithBounds(query.radius, 0.1, 1000, 10);
   const userId = query.userId;
+
+  // Decode composite cursor (timestamp + id)
+  const cursor = query.cursor ? decodeCursor(query.cursor) : null;
 
   // Build query
   let dbQuery = supabase
@@ -101,6 +112,7 @@ async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Re
     .select("*", { count: "exact" })
     .eq("is_active", true)
     .order("created_at", { ascending: false })
+    .order("id", { ascending: false }) // Secondary sort for tie-breaking
     .limit(limit + 1); // Fetch one extra for hasMore
 
   if (postType) {
@@ -115,8 +127,15 @@ async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Re
     dbQuery = dbQuery.eq("profile_id", userId);
   }
 
+  // Apply composite cursor for precise pagination
+  // This handles items with the same timestamp by using ID as tie-breaker
   if (cursor) {
-    dbQuery = dbQuery.lt("created_at", cursor);
+    // Get items that are either:
+    // 1. Created before the cursor timestamp, OR
+    // 2. Created at the same timestamp but with a smaller ID
+    dbQuery = dbQuery.or(
+      `created_at.lt.${cursor.timestamp},and(created_at.eq.${cursor.timestamp},id.lt.${cursor.id})`
+    );
   }
 
   // Location-based filtering (if coordinates provided)
@@ -128,7 +147,8 @@ async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Re
       p_radius_km: radius,
       p_post_type: postType || null,
       p_limit: limit + 1,
-      p_cursor: cursor || null,
+      p_cursor: cursor ? cursor.timestamp : null,
+      p_cursor_id: cursor ? cursor.id : null,
     });
   }
 
@@ -143,6 +163,15 @@ async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Re
   const hasMore = items.length > limit;
   const resultItems = hasMore ? items.slice(0, -1) : items;
 
+  // Generate next cursor from last item
+  const lastItem = resultItems[resultItems.length - 1];
+  const nextCursor = hasMore && lastItem
+    ? encodeCursor({
+        timestamp: lastItem.created_at,
+        id: String(lastItem.id),
+      })
+    : null;
+
   return paginated(
     resultItems.map(transformProduct),
     ctx,
@@ -150,6 +179,7 @@ async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Re
       offset: 0,
       limit,
       total: count || resultItems.length,
+      nextCursor,
     }
   );
 }
@@ -197,12 +227,18 @@ async function createProduct(ctx: HandlerContext<CreateProductBody>): Promise<Re
     throw new ValidationError("Authentication required");
   }
 
+  // Sanitize user inputs to prevent XSS
+  const sanitizedTitle = sanitizeHtml(body.title);
+  const sanitizedDescription = body.description ? sanitizeHtml(body.description) : undefined;
+  const sanitizedPickupAddress = body.pickupAddress ? sanitizeHtml(body.pickupAddress) : undefined;
+  const sanitizedPickupTime = body.pickupTime ? sanitizeHtml(body.pickupTime) : undefined;
+
   // Validate content using server-side RPC
   const { data: validation, error: validationError } = await supabase.rpc(
     "validate_listing_content",
     {
-      p_title: body.title,
-      p_description: body.description || "",
+      p_title: sanitizedTitle,
+      p_description: sanitizedDescription || "",
     }
   );
 
@@ -214,19 +250,19 @@ async function createProduct(ctx: HandlerContext<CreateProductBody>): Promise<Re
     throw new ValidationError("Content validation failed", validation.issues);
   }
 
-  // Create product
+  // Create product with sanitized inputs
   const { data, error } = await supabase
     .from("posts")
     .insert({
       profile_id: userId,
-      post_name: body.title,
-      post_description: body.description,
+      post_name: sanitizedTitle,
+      post_description: sanitizedDescription,
       images: body.images,
       post_type: body.postType,
       latitude: body.latitude,
       longitude: body.longitude,
-      pickup_address: body.pickupAddress,
-      pickup_time: body.pickupTime,
+      pickup_address: sanitizedPickupAddress,
+      pickup_time: sanitizedPickupTime,
       category_id: body.categoryId,
       expires_at: body.expiresAt,
       is_active: true,
@@ -283,17 +319,18 @@ async function updateProduct(ctx: HandlerContext<UpdateProductBody>): Promise<Re
     );
   }
 
-  // Build update object
+  // Build update object with sanitized values
   const updates: Record<string, unknown> = {
     version: existing.version + 1,
     updated_at: new Date().toISOString(),
   };
 
-  if (body.title !== undefined) updates.post_name = body.title;
-  if (body.description !== undefined) updates.post_description = body.description;
+  // Sanitize text fields to prevent XSS
+  if (body.title !== undefined) updates.post_name = sanitizeHtml(body.title);
+  if (body.description !== undefined) updates.post_description = sanitizeHtml(body.description);
   if (body.images !== undefined) updates.images = body.images;
-  if (body.pickupAddress !== undefined) updates.pickup_address = body.pickupAddress;
-  if (body.pickupTime !== undefined) updates.pickup_time = body.pickupTime;
+  if (body.pickupAddress !== undefined) updates.pickup_address = sanitizeHtml(body.pickupAddress);
+  if (body.pickupTime !== undefined) updates.pickup_time = sanitizeHtml(body.pickupTime);
   if (body.categoryId !== undefined) updates.category_id = body.categoryId;
   if (body.expiresAt !== undefined) updates.expires_at = body.expiresAt;
   if (body.isActive !== undefined) updates.is_active = body.isActive;

@@ -10,7 +10,6 @@
  * Body: { latitude, longitude, dietaryPreferences?, radiusKm?, limit? }
  */
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
@@ -23,7 +22,7 @@ const matchUsersSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   dietaryPreferences: z.array(z.string()).default([]),
-  radiusKm: z.number().min(1).max(100).default(10),
+  radiusKm: z.number().min(1).max(1000).default(10),
   limit: z.number().int().min(1).max(50).default(20),
 });
 

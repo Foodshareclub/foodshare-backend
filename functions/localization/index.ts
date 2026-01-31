@@ -1,587 +1,204 @@
-// ============================================================================
-// Localization Edge Function
-// ============================================================================
-// High-performance translation delivery for cross-platform apps
-// Features:
-// - Multi-level caching (Edge, KV, Database)
-// - Compression (gzip/brotli)
-// - ETag support for conditional requests
-// - Platform-specific optimizations
-// - Real-time updates via Supabase Realtime
-// - Rate limiting
-// - Analytics tracking
-// ============================================================================
+/**
+ * Localization Edge Function - Componentized Router
+ *
+ * Consolidated translation service with multiple handlers:
+ *
+ * Routes:
+ * - GET  /localization              → UI string bundles (simple, fast)
+ * - GET  /localization/translations → UI strings with delta sync, user context
+ * - POST /localization/translate-content → Dynamic content via self-hosted LLM
+ * - POST /localization/prewarm      → Prewarm translation cache (fire-and-forget)
+ * - POST /localization/translate-batch → Batch translate content to all locales
+ * - POST /localization/get-translations → Get cached translations for content items
+ * - POST /localization/backfill-posts → Backfill translations for existing posts
+ * - GET  /localization/audit        → Audit untranslated UI strings
+ * - POST /localization/ui-batch-translate → Batch translate UI strings with self-hosted LLM
+ * - POST /localization/update       → Update UI string translations
+ *
+ * Features:
+ * - Multi-level caching (Edge, Memory, Database, Redis)
+ * - Compression (gzip)
+ * - ETag support
+ * - Rate limiting
+ * - Self-hosted LLM for dynamic content
+ * - Self-hosted LLM for UI string translation
+ * - 21 languages supported
+ */
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { logger } from "../_shared/logger.ts";
 
-// ============================================================================
-// Types
-// ============================================================================
-
-interface TranslationRequest {
-  locale: string;
-  platform?: "web" | "ios" | "android" | "desktop" | "other";
-  version?: string;
-  compressed?: boolean;
-  etag?: string;
-}
-
-interface TranslationResponse {
-  locale: string;
-  messages: Record<string, string>;
-  version: string;
-  platform: string;
-  cached: boolean;
-  compressed: boolean;
-  etag: string;
-}
-
-interface CacheEntry {
-  data: Uint8Array;
-  etag: string;
-  timestamp: number;
-  locale: string;
-  platform: string;
-}
-
-// ============================================================================
-// Configuration
-// ============================================================================
-
-const SUPPORTED_LOCALES = [
-  "en",
-  "cs",
-  "de",
-  "es",
-  "fr",
-  "pt",
-  "ru",
-  "uk",
-  "zh",
-  "hi",
-  "ar",
-  "it",
-  "pl",
-  "nl",
-  "ja",
-  "ko",
-  "tr",
-];
-
-const DEFAULT_LOCALE = "en";
-const CACHE_TTL_MS = 3600000; // 1 hour
-const MAX_CACHE_SIZE = 100; // Max entries in memory cache
-const RATE_LIMIT_WINDOW = 3600; // 1 hour in seconds
-const RATE_LIMIT_MAX_REQUESTS = 1000; // Per window
-
-// In-memory cache (Edge runtime)
-const memoryCache = new Map<string, CacheEntry>();
-
-// ============================================================================
-// Utilities
-// ============================================================================
+// Import handlers
+import uiStringsHandler from "./handlers/ui-strings.ts";
+import translationsHandler from "./handlers/translations.ts";
+import translateContentHandler from "./handlers/translate-content.ts";
+import prewarmHandler from "./handlers/prewarm.ts";
+import translateBatchHandler from "./handlers/translate-batch.ts";
+import auditHandler from "./handlers/audit.ts";
+import uiBatchTranslateHandler from "./handlers/ui-batch-translate.ts";
+import updateHandler from "./handlers/update.ts";
+import getTranslationsHandler from "./handlers/get-translations.ts";
+import backfillPostsHandler from "./handlers/backfill-posts.ts";
+import backfillChallengesHandler from "./handlers/backfill-challenges.ts";
+import backfillForumPostsHandler from "./handlers/backfill-forum-posts.ts";
+import processQueueHandler from "./handlers/process-queue.ts";
+import healthHandler from "./handlers/health.ts";
+import generateInfoPlistStringsHandler from "./handlers/generate-infoplist-strings.ts";
 
 /**
- * Normalize locale to supported format
+ * Extract subpath from URL
+ * /localization → ""
+ * /localization/translations → "translations"
+ * /localization/translate-content → "translate-content"
  */
-function normalizeLocale(locale: string): string {
-  const normalized = locale.split("-")[0].toLowerCase();
-  return SUPPORTED_LOCALES.includes(normalized) ? normalized : DEFAULT_LOCALE;
+function getSubPath(url: URL): string {
+  const pathname = url.pathname;
+  const locIndex = pathname.indexOf("/localization");
+  if (locIndex === -1) return "";
+  const subPath = pathname.slice(locIndex + 13); // "/localization" = 13 chars
+  // Remove leading slash if present
+  return subPath.startsWith("/") ? subPath.slice(1) : subPath;
 }
-
-/**
- * Generate cache key
- */
-function getCacheKey(locale: string, platform: string): string {
-  return `translations:${locale}:${platform}`;
-}
-
-/**
- * Generate ETag from content
- */
-function generateETag(content: string | Uint8Array): string {
-  const data = typeof content === "string" ? new TextEncoder().encode(content) : content;
-  let hash = 0;
-  for (let i = 0; i < data.length; i++) {
-    hash = (hash << 5) - hash + data[i];
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  return `"${Math.abs(hash).toString(36)}"`;
-}
-
-/**
- * Compress data using gzip
- */
-async function compressData(data: string): Promise<Uint8Array> {
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode(data));
-      controller.close();
-    },
-  }).pipeThrough(new CompressionStream("gzip"));
-
-  const chunks: Uint8Array[] = [];
-  const reader = stream.getReader();
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-
-  const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
-  const result = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  return result;
-}
-
-/**
- * Decompress gzip data
- */
-async function decompressData(data: Uint8Array): Promise<string> {
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(data);
-      controller.close();
-    },
-  }).pipeThrough(new DecompressionStream("gzip"));
-
-  const chunks: Uint8Array[] = [];
-  const reader = stream.getReader();
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-
-  const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
-  const result = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  return new TextDecoder().decode(result);
-}
-
-/**
- * Clean expired cache entries
- */
-function cleanExpiredCache(): void {
-  const now = Date.now();
-  for (const [key, entry] of memoryCache.entries()) {
-    if (now - entry.timestamp > CACHE_TTL_MS) {
-      memoryCache.delete(key);
-    }
-  }
-
-  // Limit cache size
-  if (memoryCache.size > MAX_CACHE_SIZE) {
-    const entries = Array.from(memoryCache.entries());
-    entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
-    const toDelete = entries.slice(0, memoryCache.size - MAX_CACHE_SIZE);
-    toDelete.forEach(([key]) => memoryCache.delete(key));
-  }
-}
-
-/**
- * Check rate limit
- */
-async function checkRateLimit(
-  supabase: ReturnType<typeof createClient>,
-  identifier: string
-): Promise<boolean> {
-  const { data, error } = await supabase
-    .from("rate_limits")
-    .select("request_count, window_start")
-    .eq("identifier", identifier)
-    .single();
-
-  if (error && error.code !== "PGRST116") {
-    console.error("Rate limit check error:", error);
-    return true; // Allow on error
-  }
-
-  const now = new Date();
-  const windowStart = data?.window_start ? new Date(data.window_start) : now;
-  const windowAge = (now.getTime() - windowStart.getTime()) / 1000;
-
-  if (!data || windowAge > RATE_LIMIT_WINDOW) {
-    // Create new window
-    await supabase.from("rate_limits").upsert({
-      identifier,
-      request_count: 1,
-      window_start: now.toISOString(),
-    });
-    return true;
-  }
-
-  if (data.request_count >= RATE_LIMIT_MAX_REQUESTS) {
-    return false; // Rate limit exceeded
-  }
-
-  // Increment counter
-  await supabase
-    .from("rate_limits")
-    .update({ request_count: data.request_count + 1 })
-    .eq("identifier", identifier);
-
-  return true;
-}
-
-/**
- * Log analytics
- */
-async function logAnalytics(
-  supabase: ReturnType<typeof createClient>,
-  params: {
-    locale: string;
-    platform: string;
-    userId?: string;
-    deviceId?: string;
-    responseTimeMs: number;
-    statusCode: number;
-    cached: boolean;
-    fallback: boolean;
-    userAgent?: string;
-    ipAddress?: string;
-  }
-): Promise<void> {
-  try {
-    await supabase.from("translation_analytics").insert({
-      locale: params.locale,
-      platform: params.platform,
-      user_id: params.userId,
-      device_id: params.deviceId,
-      response_time_ms: params.responseTimeMs,
-      status_code: params.statusCode,
-      cached: params.cached,
-      fallback: params.fallback,
-      user_agent: params.userAgent,
-      ip_address: params.ipAddress,
-    });
-  } catch (error) {
-    console.error("Analytics logging error:", error);
-  }
-}
-
-/**
- * Log error
- */
-async function logError(
-  supabase: ReturnType<typeof createClient>,
-  params: {
-    locale: string;
-    platform: string;
-    errorCode?: string;
-    errorMessage: string;
-    userId?: string;
-  }
-): Promise<void> {
-  try {
-    await supabase.from("translation_errors").insert({
-      locale: params.locale,
-      platform: params.platform,
-      error_code: params.errorCode,
-      error_message: params.errorMessage,
-      user_id: params.userId,
-    });
-  } catch (error) {
-    console.error("Error logging error:", error);
-  }
-}
-
-// ============================================================================
-// Main Handler
-// ============================================================================
 
 Deno.serve(async (req: Request) => {
-  const startTime = Date.now();
   const corsHeaders = getCorsHeaders(req);
 
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders, status: 204 });
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
+  const url = new URL(req.url);
+  const subPath = getSubPath(url);
+
+  logger.debug("Localization routing", { subPath, method: req.method });
+
   try {
-    // Initialize Supabase client
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    switch (subPath) {
+      case "":
+      case "/":
+        // GET /localization → Simple UI string bundles (fast, compressed)
+        return uiStringsHandler(req);
 
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error("Missing Supabase configuration");
-    }
+      case "translations":
+      case "translations/":
+        // GET /localization/translations → Delta sync, user context, feature flags
+        return translationsHandler(req);
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
+      case "translate-content":
+      case "translate-content/":
+        // POST /localization/translate-content → Dynamic content via LLM
+        return translateContentHandler(req);
 
-    // Parse request
-    const url = new URL(req.url);
-    const locale = normalizeLocale(url.searchParams.get("locale") || DEFAULT_LOCALE);
-    const platform = (url.searchParams.get("platform") || "web") as TranslationRequest["platform"];
-    const requestedVersion = url.searchParams.get("version");
-    const compressed = url.searchParams.get("compressed") === "true";
-    const clientETag = req.headers.get("if-none-match");
-    const userAgent = req.headers.get("user-agent");
-    const ipAddress = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip");
+      case "prewarm":
+      case "prewarm/":
+        // POST /localization/prewarm → Prewarm translation cache (fire-and-forget)
+        return prewarmHandler(req);
 
-    // Rate limiting
-    const identifier = ipAddress || "anonymous";
-    const rateLimitOk = await checkRateLimit(supabase, identifier);
+      case "translate-batch":
+      case "translate-batch/":
+        // POST /localization/translate-batch → Batch translate content to all locales
+        return translateBatchHandler(req);
 
-    if (!rateLimitOk) {
-      await logAnalytics(supabase, {
-        locale,
-        platform: platform!,
-        responseTimeMs: Date.now() - startTime,
-        statusCode: 429,
-        cached: false,
-        fallback: false,
-        userAgent: userAgent || undefined,
-        ipAddress: ipAddress || undefined,
-      });
+      case "audit":
+      case "audit/":
+        // GET /localization/audit → Audit untranslated UI strings
+        return auditHandler(req);
 
-      return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
-        status: 429,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-          "Retry-After": "3600",
-        },
-      });
-    }
+      case "ui-batch-translate":
+      case "ui-batch-translate/":
+        // POST /localization/ui-batch-translate → Batch translate UI strings with OpenAI
+        return uiBatchTranslateHandler(req);
 
-    // Check memory cache first
-    cleanExpiredCache();
-    const cacheKey = getCacheKey(locale, platform!);
-    const cachedEntry = memoryCache.get(cacheKey);
+      case "update":
+      case "update/":
+        // POST /localization/update → Update UI string translations
+        return updateHandler(req);
 
-    if (cachedEntry && Date.now() - cachedEntry.timestamp < CACHE_TTL_MS) {
-      // Check ETag
-      if (clientETag && clientETag === cachedEntry.etag) {
-        await logAnalytics(supabase, {
-          locale,
-          platform: platform!,
-          responseTimeMs: Date.now() - startTime,
-          statusCode: 304,
-          cached: true,
-          fallback: false,
-          userAgent: userAgent || undefined,
-          ipAddress: ipAddress || undefined,
-        });
+      case "get-translations":
+      case "get-translations/":
+        // POST /localization/get-translations → Get cached translations for content (called by BFF)
+        return getTranslationsHandler(req);
 
-        return new Response(null, {
-          status: 304,
-          headers: {
-            ...corsHeaders,
-            ETag: cachedEntry.etag,
-            "Cache-Control": "public, max-age=3600",
-          },
-        });
-      }
+      case "backfill-posts":
+      case "backfill-posts/":
+        // POST /localization/backfill-posts → Backfill translations for existing posts
+        return backfillPostsHandler(req);
 
-      // Return cached data
-      const responseHeaders = {
-        ...corsHeaders,
-        "Content-Type": "application/json",
-        "Content-Encoding": "gzip",
-        ETag: cachedEntry.etag,
-        "Cache-Control": "public, max-age=3600",
-        "X-Cache": "HIT",
-      };
+      case "backfill-challenges":
+      case "backfill-challenges/":
+        // POST /localization/backfill-challenges → Backfill translations for existing challenges
+        return backfillChallengesHandler(req);
 
-      await logAnalytics(supabase, {
-        locale,
-        platform: platform!,
-        responseTimeMs: Date.now() - startTime,
-        statusCode: 200,
-        cached: true,
-        fallback: false,
-        userAgent: userAgent || undefined,
-        ipAddress: ipAddress || undefined,
-      });
+      case "backfill-forum-posts":
+      case "backfill-forum-posts/":
+        // POST /localization/backfill-forum-posts → Backfill translations for existing forum posts
+        return backfillForumPostsHandler(req);
 
-      return new Response(cachedEntry.data, {
-        status: 200,
-        headers: responseHeaders,
-      });
-    }
+      case "process-queue":
+      case "process-queue/":
+        // POST /localization/process-queue → Process pending translations from queue
+        return processQueueHandler(req);
 
-    // Fetch from database
-    const { data: translation, error: dbError } = await supabase
-      .from("translations")
-      .select("locale, messages, version")
-      .eq("locale", locale)
-      .single();
+      case "generate-infoplist-strings":
+      case "generate-infoplist-strings/":
+        // POST /localization/generate-infoplist-strings → Generate localized InfoPlist.strings
+        return generateInfoPlistStringsHandler(req);
 
-    if (dbError || !translation) {
-      // Fallback to default locale
-      const { data: fallbackTranslation, error: fallbackError } = await supabase
-        .from("translations")
-        .select("locale, messages, version")
-        .eq("locale", DEFAULT_LOCALE)
-        .single();
+      case "health":
+      case "health/":
+        // GET /localization/health → Comprehensive health check
+        return healthHandler(req);
 
-      if (fallbackError || !fallbackTranslation) {
-        await logError(supabase, {
-          locale,
-          platform: platform!,
-          errorCode: "TRANSLATION_NOT_FOUND",
-          errorMessage: `Translation not found for locale: ${locale}`,
-        });
+      default:
+        // Return service info for root without path
+        if (subPath === "" && req.method === "GET") {
+          return new Response(JSON.stringify({
+            success: true,
+            service: "localization",
+            version: "2.1.0",
+            endpoints: [
+              { path: "/localization", method: "GET", description: "UI string bundles (simple)" },
+              { path: "/localization/translations", method: "GET", description: "UI strings with delta sync" },
+              { path: "/localization/translate-content", method: "POST", description: "Dynamic content translation via LLM" },
+              { path: "/localization/prewarm", method: "POST", description: "Prewarm translation cache (fire-and-forget)" },
+              { path: "/localization/translate-batch", method: "POST", description: "Batch translate content to all locales (background)" },
+              { path: "/localization/audit", method: "GET", description: "Audit untranslated UI strings" },
+              { path: "/localization/ui-batch-translate", method: "POST", description: "Batch translate UI strings with self-hosted LLM" },
+              { path: "/localization/update", method: "POST", description: "Update UI string translations" },
+              { path: "/localization/get-translations", method: "POST", description: "Get cached translations for content (BFF)" },
+              { path: "/localization/backfill-posts", method: "POST", description: "Backfill translations for existing posts" },
+              { path: "/localization/backfill-challenges", method: "POST", description: "Backfill translations for existing challenges" },
+              { path: "/localization/backfill-forum-posts", method: "POST", description: "Backfill translations for existing forum posts" },
+              { path: "/localization/process-queue", method: "POST", description: "Process pending translations from queue (cron)" },
+              { path: "/localization/generate-infoplist-strings", method: "POST", description: "Generate localized InfoPlist.strings files" },
+            ],
+            supportedLocales: [
+              "en", "cs", "de", "es", "fr", "pt", "ru", "uk", "zh", "hi",
+              "ar", "it", "pl", "nl", "ja", "ko", "tr", "vi", "id", "th", "sv"
+            ],
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
 
-        return new Response(JSON.stringify({ error: "Translation not found" }), {
+        return new Response(JSON.stringify({
+          success: false,
+          error: { code: "NOT_FOUND", message: `Endpoint not found: ${subPath}` },
+        }), {
           status: 404,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
-      }
-
-      // Use fallback
-      const responseData: TranslationResponse = {
-        locale: fallbackTranslation.locale,
-        messages: fallbackTranslation.messages,
-        version: fallbackTranslation.version,
-        platform: platform!,
-        cached: false,
-        compressed,
-        etag: "",
-      };
-
-      const jsonData = JSON.stringify(responseData);
-      const compressedData = await compressData(jsonData);
-      const etag = generateETag(compressedData);
-      responseData.etag = etag;
-
-      // Cache the result
-      memoryCache.set(cacheKey, {
-        data: compressedData,
-        etag,
-        timestamp: Date.now(),
-        locale: fallbackTranslation.locale,
-        platform: platform!,
-      });
-
-      await logAnalytics(supabase, {
-        locale,
-        platform: platform!,
-        responseTimeMs: Date.now() - startTime,
-        statusCode: 200,
-        cached: false,
-        fallback: true,
-        userAgent: userAgent || undefined,
-        ipAddress: ipAddress || undefined,
-      });
-
-      return new Response(compressedData, {
-        status: 200,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-          "Content-Encoding": "gzip",
-          ETag: etag,
-          "Cache-Control": "public, max-age=3600",
-          "X-Cache": "MISS",
-          "X-Fallback": "true",
-        },
-      });
     }
-
-    // Build response
-    const responseData: TranslationResponse = {
-      locale: translation.locale,
-      messages: translation.messages,
-      version: translation.version,
-      platform: platform!,
-      cached: false,
-      compressed,
-      etag: "",
-    };
-
-    const jsonData = JSON.stringify(responseData);
-    const compressedData = await compressData(jsonData);
-    const etag = generateETag(compressedData);
-    responseData.etag = etag;
-
-    // Check ETag before sending
-    if (clientETag && clientETag === etag) {
-      await logAnalytics(supabase, {
-        locale,
-        platform: platform!,
-        responseTimeMs: Date.now() - startTime,
-        statusCode: 304,
-        cached: false,
-        fallback: false,
-        userAgent: userAgent || undefined,
-        ipAddress: ipAddress || undefined,
-      });
-
-      return new Response(null, {
-        status: 304,
-        headers: {
-          ...corsHeaders,
-          ETag: etag,
-          "Cache-Control": "public, max-age=3600",
-        },
-      });
-    }
-
-    // Cache the result
-    memoryCache.set(cacheKey, {
-      data: compressedData,
-      etag,
-      timestamp: Date.now(),
-      locale: translation.locale,
-      platform: platform!,
-    });
-
-    await logAnalytics(supabase, {
-      locale,
-      platform: platform!,
-      responseTimeMs: Date.now() - startTime,
-      statusCode: 200,
-      cached: false,
-      fallback: false,
-      userAgent: userAgent || undefined,
-      ipAddress: ipAddress || undefined,
-    });
-
-    return new Response(compressedData, {
-      status: 200,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json",
-        "Content-Encoding": "gzip",
-        ETag: etag,
-        "Cache-Control": "public, max-age=3600",
-        "X-Cache": "MISS",
-      },
-    });
   } catch (error) {
-    console.error("Localization error:", error);
-
-    return new Response(
-      JSON.stringify({
-        error: "Internal server error",
-        message: error instanceof Error ? error.message : "Unknown error",
-      }),
-      {
-        status: 500,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    logger.error("Localization error", error as Error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: { code: "INTERNAL_ERROR", message: (error as Error).message },
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
