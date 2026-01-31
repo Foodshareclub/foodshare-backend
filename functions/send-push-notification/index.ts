@@ -20,7 +20,6 @@
  * Uses shared patterns from _shared/ for consistency.
  */
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as jose from "https://deno.land/x/jose@v5.2.0/index.ts";
 import webpush from "npm:web-push@3.6.7";
@@ -37,6 +36,12 @@ import { recordMetricFromContext, flushMetrics } from "../_shared/metrics.ts";
 import { initSentry, captureException, withSentry } from "../_shared/sentry.ts";
 import { createErrorResponse, createSuccessResponse, ValidationError } from "../_shared/errors.ts";
 import { TIMEOUT_DEFAULTS, withOperationTimeout } from "../_shared/timeout.ts";
+import {
+  checkNotificationPreferences,
+  mapTypeToCategory,
+  shouldBypassPreferences,
+  type NotificationCategory,
+} from "../_shared/notification-preferences.ts";
 
 // Initialize Sentry
 initSentry({ release: "send-push-notification@2.3.0" });
@@ -1030,27 +1035,46 @@ Deno.serve(async (req) => {
       const mutablePayload = { ...payload };
 
       if (user_ids?.length) {
-        // Check quiet hours for users (unless bypassed)
-        const { sendNow, deferred } = await filterByQuietHours(
+        // Map notification type to category for preference checking
+        const category = mapTypeToCategory(mutablePayload.type) as NotificationCategory;
+        const bypassPrefs = options?.bypassQuietHours || shouldBypassPreferences(mutablePayload.type);
+
+        // Check notification preferences using enterprise system
+        const { sendNow, deferred, blocked } = await checkNotificationPreferences(
           supabase,
           user_ids,
-          options?.bypassQuietHours || false
+          {
+            category,
+            channel: "push",
+            bypassPreferences: bypassPrefs,
+          }
         );
 
-        // Queue notifications for users in quiet hours
+        // Log blocked notifications
+        if (blocked.length > 0) {
+          logger.info("Notifications blocked by preferences", {
+            count: blocked.length,
+            reasons: blocked.reduce((acc, b) => {
+              acc[b.reason] = (acc[b.reason] || 0) + 1;
+              return acc;
+            }, {} as Record<string, number>),
+          });
+        }
+
+        // Queue notifications for users in quiet hours or with deferred delivery
         if (deferred.length > 0) {
-          for (const { userId, resumeAt } of deferred) {
-            if (options?.useQueue !== false) {
+          for (const { userId, scheduleFor } of deferred) {
+            if (options?.useQueue !== false && scheduleFor) {
               await queueNotification(supabase, userId, mutablePayload as PushPayload, {
                 consolidationKey: options?.consolidationKey,
-                scheduledFor: resumeAt,
+                scheduledFor: scheduleFor,
                 priority: options?.priority === "high" ? 10 : 5,
               });
               queuedCount++;
             }
           }
           deferredCount = deferred.length;
-          logger.info("Deferred notifications for quiet hours", { count: deferredCount });
+          logger.info("Deferred notifications", { count: deferredCount });
         }
 
         // Get tokens only for users we're sending to now

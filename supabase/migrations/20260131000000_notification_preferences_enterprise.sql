@@ -537,9 +537,118 @@ $$;
 GRANT EXECUTE ON FUNCTION public.verify_phone_for_sms TO authenticated;
 
 -- =============================================================================
+-- 11. NOTIFICATION DIGEST QUEUE (for hourly/daily/weekly batching)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS public.notification_digest_queue (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+
+  -- Notification content
+  notification_type text NOT NULL,
+  category notification_category NOT NULL,
+  title text NOT NULL,
+  body text NOT NULL,
+  data jsonb DEFAULT '{}'::jsonb,
+
+  -- Scheduling
+  frequency text NOT NULL CHECK (frequency IN ('hourly', 'daily', 'weekly')),
+  scheduled_for timestamptz NOT NULL,
+
+  -- Status
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'expired')),
+  sent_at timestamptz,
+  error_message text,
+
+  -- Metadata
+  created_at timestamptz NOT NULL DEFAULT now(),
+
+  -- Index for efficient batch processing
+  CONSTRAINT digest_queue_unique_pending UNIQUE (user_id, notification_type, category, frequency, status)
+    DEFERRABLE INITIALLY DEFERRED
+);
+
+-- Enable RLS
+ALTER TABLE public.notification_digest_queue ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role full access to digest queue"
+  ON public.notification_digest_queue FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
+-- Indexes for batch processing
+CREATE INDEX idx_digest_queue_pending ON public.notification_digest_queue(scheduled_for, status)
+  WHERE status = 'pending';
+CREATE INDEX idx_digest_queue_user ON public.notification_digest_queue(user_id, status);
+
+-- =============================================================================
+-- 12. PROCESS DIGEST QUEUE (called by cron)
+-- =============================================================================
+
+CREATE OR REPLACE FUNCTION public.process_notification_digest()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id uuid;
+  v_frequency text;
+  v_notifications jsonb;
+  v_count int := 0;
+  v_users_processed int := 0;
+BEGIN
+  -- Process pending digests that are due
+  FOR v_user_id, v_frequency IN
+    SELECT DISTINCT user_id, frequency
+    FROM notification_digest_queue
+    WHERE status = 'pending'
+      AND scheduled_for <= now()
+    ORDER BY user_id
+  LOOP
+    -- Get all pending notifications for this user/frequency
+    SELECT jsonb_agg(
+      jsonb_build_object(
+        'id', id,
+        'type', notification_type,
+        'category', category,
+        'title', title,
+        'body', body,
+        'data', data
+      )
+    ) INTO v_notifications
+    FROM notification_digest_queue
+    WHERE user_id = v_user_id
+      AND frequency = v_frequency
+      AND status = 'pending'
+      AND scheduled_for <= now();
+
+    -- Mark as sent (actual sending is done by caller)
+    UPDATE notification_digest_queue
+    SET status = 'sent', sent_at = now()
+    WHERE user_id = v_user_id
+      AND frequency = v_frequency
+      AND status = 'pending'
+      AND scheduled_for <= now();
+
+    v_count := v_count + jsonb_array_length(v_notifications);
+    v_users_processed := v_users_processed + 1;
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'processed', v_count,
+    'users', v_users_processed
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.process_notification_digest TO service_role;
+
+-- =============================================================================
 -- SUMMARY
 -- =============================================================================
--- Tables: notification_preferences, notification_settings
+-- Tables: notification_preferences, notification_settings, notification_digest_queue
 -- Functions:
 --   - should_send_notification(user_id, category, channel) -> {send, reason, ...}
 --   - get_notification_preferences(user_id) -> full settings for UI
@@ -547,3 +656,4 @@ GRANT EXECUTE ON FUNCTION public.verify_phone_for_sms TO authenticated;
 --   - update_notification_settings(user_id, settings_jsonb)
 --   - init_notification_preferences(user_id) -> auto-create defaults
 --   - verify_phone_for_sms(user_id, phone, code)
+--   - process_notification_digest() -> process pending digests

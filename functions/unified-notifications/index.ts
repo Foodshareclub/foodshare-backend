@@ -1,15 +1,31 @@
 /**
- * Unified Notification Delivery System
+ * Unified Notification Delivery System v2.0
  *
  * Handles multi-platform notification delivery (FCM, APNs, Web Push)
- * with priority calculation, batching, and intelligent scheduling.
+ * with priority calculation, batching, intelligent scheduling, and
+ * enterprise-grade user preference management.
+ *
+ * Features:
+ * - Category-based notification control
+ * - Per-channel preferences (push/email/sms)
+ * - Frequency control (instant/hourly/daily/weekly)
+ * - Quiet hours with timezone support
+ * - Do Not Disturb mode
+ * - Digest batching
  */
 
-import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { routeNotification } from "./delivery-router.ts";
 import { calculatePriority } from "./priority-calculator.ts";
 import { BatchSender } from "./batch-sender.ts";
+import {
+  shouldSendNotification as checkPreferences,
+  mapTypeToCategory,
+  shouldBypassPreferences,
+  type NotificationCategory,
+  type ShouldSendResult,
+} from "../_shared/notification-preferences.ts";
+import { logger } from "../_shared/logger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -126,7 +142,7 @@ serve(async (req) => {
 // Send single notification
 async function handleSendNotification(
   req: Request,
-  supabase: any
+  supabase: ReturnType<typeof createClient>
 ): Promise<Response> {
   const payload: NotificationPayload = await req.json();
 
@@ -139,50 +155,80 @@ async function handleSendNotification(
     );
   }
 
-  // Get user preferences and devices
-  const [preferences, devices] = await Promise.all([
-    getUserPreferences(supabase, payload.userId),
-    getUserDevices(supabase, payload.userId),
-  ]);
+  // Map notification type to category
+  const category = mapTypeToCategory(payload.type) as NotificationCategory;
+  const bypassPreferences = shouldBypassPreferences(payload.type) || payload.priority === "critical";
 
-  // Check if notification should be sent
-  if (!shouldSendNotification(payload, preferences)) {
+  // Check notification preferences using enterprise system
+  const preferenceCheck = await checkPreferences(supabase, payload.userId, {
+    category,
+    channel: "push",
+    bypassPreferences,
+  });
+
+  // Log preference check result
+  logger.info("Notification preference check", {
+    userId: payload.userId,
+    type: payload.type,
+    category,
+    result: preferenceCheck,
+  });
+
+  // Handle blocked notifications
+  if (!preferenceCheck.send) {
+    // If there's a schedule time (quiet hours), queue for later
+    if (preferenceCheck.scheduleFor) {
+      await scheduleNotification(supabase, payload, preferenceCheck.scheduleFor);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          scheduled: true,
+          scheduledFor: preferenceCheck.scheduleFor,
+          reason: preferenceCheck.reason || "quiet_hours",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Notification blocked entirely
     return new Response(
       JSON.stringify({
         success: false,
-        reason: "blocked_by_preferences",
+        blocked: true,
+        reason: preferenceCheck.reason || "blocked_by_preferences",
         notificationId: payload.id,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 
-  // Calculate priority
-  const priority = payload.priority ?? calculatePriority(payload, preferences);
-
-  // Check quiet hours
-  const quietHoursCheck = checkQuietHours(preferences);
-  if (quietHoursCheck.isInQuietHours && priority !== "critical") {
-    // Schedule for after quiet hours
-    const scheduledFor = quietHoursCheck.endsAt;
-    await scheduleNotification(supabase, { ...payload, priority }, scheduledFor);
+  // Handle non-instant frequencies (queue for digest)
+  if (preferenceCheck.frequency && preferenceCheck.frequency !== "instant") {
+    await queueForDigest(supabase, payload, preferenceCheck.frequency);
 
     return new Response(
       JSON.stringify({
         success: true,
-        scheduled: true,
-        scheduledFor,
-        reason: "quiet_hours",
+        queued: true,
+        frequency: preferenceCheck.frequency,
+        reason: `queued_for_${preferenceCheck.frequency}_digest`,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 
+  // Get user devices for immediate delivery
+  const devices = await getUserDevices(supabase, payload.userId);
+
+  // Calculate priority
+  const priority = payload.priority ?? calculatePriority(payload, null);
+
   // Route to appropriate delivery channels
   const result = await routeNotification(
     { ...payload, priority },
     devices,
-    preferences
+    null
   );
 
   // Log delivery
@@ -331,101 +377,68 @@ function validatePayload(payload: NotificationPayload): { valid: boolean; error?
   return { valid: true };
 }
 
-async function getUserPreferences(supabase: any, userId: string) {
+async function getUserDevices(supabase: ReturnType<typeof createClient>, userId: string) {
   const { data } = await supabase
-    .from("notification_preferences")
+    .from("device_tokens")
     .select("*")
-    .eq("user_id", userId)
-    .single();
-
-  return data ?? getDefaultPreferences();
-}
-
-function getDefaultPreferences() {
-  return {
-    push_enabled: true,
-    email_enabled: true,
-    sms_enabled: false,
-    quiet_hours_enabled: false,
-    quiet_hours_start: "22:00",
-    quiet_hours_end: "08:00",
-    enabled_types: [
-      "new_message",
-      "arrangement_confirmed",
-      "arrangement_cancelled",
-      "challenge_complete",
-      "review_received",
-      "system_announcement",
-      "account_security",
-    ],
-  };
-}
-
-async function getUserDevices(supabase: any, userId: string) {
-  const { data } = await supabase
-    .from("user_devices")
-    .select("*")
-    .eq("user_id", userId)
+    .eq("profile_id", userId)
     .eq("is_active", true);
 
   return data ?? [];
 }
 
-function shouldSendNotification(
+/**
+ * Queue notification for digest delivery (hourly/daily/weekly)
+ */
+async function queueForDigest(
+  supabase: ReturnType<typeof createClient>,
   payload: NotificationPayload,
-  preferences: any
-): boolean {
-  // Always send critical notifications
-  if (payload.priority === "critical") return true;
-
-  // Check if push is enabled
-  if (!preferences.push_enabled) return false;
-
-  // Check if notification type is enabled
-  if (
-    preferences.enabled_types &&
-    !preferences.enabled_types.includes(payload.type)
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-function checkQuietHours(preferences: any): { isInQuietHours: boolean; endsAt?: string } {
-  if (!preferences.quiet_hours_enabled) {
-    return { isInQuietHours: false };
-  }
-
+  frequency: string
+): Promise<void> {
   const now = new Date();
-  const currentTime = `${now.getHours().toString().padStart(2, "0")}:${now
-    .getMinutes()
-    .toString()
-    .padStart(2, "0")}`;
+  let scheduledFor: Date;
 
-  const start = preferences.quiet_hours_start;
-  const end = preferences.quiet_hours_end;
-
-  // Handle overnight quiet hours (e.g., 22:00 - 08:00)
-  let isInQuietHours: boolean;
-  if (start > end) {
-    isInQuietHours = currentTime >= start || currentTime < end;
-  } else {
-    isInQuietHours = currentTime >= start && currentTime < end;
+  switch (frequency) {
+    case "hourly":
+      // Next hour
+      scheduledFor = new Date(now);
+      scheduledFor.setHours(scheduledFor.getHours() + 1, 0, 0, 0);
+      break;
+    case "daily":
+      // Tomorrow at 9am UTC
+      scheduledFor = new Date(now);
+      scheduledFor.setDate(scheduledFor.getDate() + 1);
+      scheduledFor.setHours(9, 0, 0, 0);
+      break;
+    case "weekly":
+      // Next Monday at 9am UTC
+      scheduledFor = new Date(now);
+      const daysUntilMonday = (8 - scheduledFor.getDay()) % 7 || 7;
+      scheduledFor.setDate(scheduledFor.getDate() + daysUntilMonday);
+      scheduledFor.setHours(9, 0, 0, 0);
+      break;
+    default:
+      scheduledFor = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour default
   }
 
-  if (isInQuietHours) {
-    // Calculate when quiet hours end
-    const endsAt = new Date();
-    const [endHour, endMin] = end.split(":").map(Number);
-    endsAt.setHours(endHour, endMin, 0, 0);
-    if (endsAt <= now) {
-      endsAt.setDate(endsAt.getDate() + 1);
-    }
-    return { isInQuietHours: true, endsAt: endsAt.toISOString() };
-  }
+  await supabase.from("notification_digest_queue").insert({
+    user_id: payload.userId,
+    notification_type: payload.type,
+    category: mapTypeToCategory(payload.type),
+    title: payload.title,
+    body: payload.body,
+    data: payload.data || {},
+    frequency,
+    scheduled_for: scheduledFor.toISOString(),
+    created_at: now.toISOString(),
+  });
 
-  return { isInQuietHours: false };
+  logger.info("Notification queued for digest", {
+    userId: payload.userId,
+    type: payload.type,
+    frequency,
+    scheduledFor: scheduledFor.toISOString(),
+  });
 }
 
 async function scheduleNotification(

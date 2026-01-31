@@ -49,7 +49,49 @@ SELECT cron.schedule(
 );
 
 -- =============================================================================
+-- Cron Job 4: Process Hourly Notification Digests (Every hour at :00)
+-- =============================================================================
+-- Sends batched notifications for users with hourly frequency preference
+
+SELECT cron.unschedule('notification-digest-hourly')
+WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'notification-digest-hourly');
+
+SELECT cron.schedule(
+  'notification-digest-hourly',
+  '0 * * * *',
+  $$SELECT process_notification_digest();$$
+);
+
+-- =============================================================================
+-- Cron Job 5: Process Daily Notification Digests (9am UTC)
+-- =============================================================================
+-- Sends batched notifications for users with daily frequency preference
+
+SELECT cron.unschedule('notification-digest-daily')
+WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'notification-digest-daily');
+
+SELECT cron.schedule(
+  'notification-digest-daily',
+  '0 9 * * *',
+  $$SELECT process_notification_digest();$$
+);
+
+-- =============================================================================
+-- Cron Job 6: Process Weekly Notification Digests (Mondays 9am UTC)
+-- =============================================================================
+-- Sends batched notifications for users with weekly frequency preference
+
+SELECT cron.unschedule('notification-digest-weekly')
+WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'notification-digest-weekly');
+
+SELECT cron.schedule(
+  'notification-digest-weekly',
+  '0 9 * * 1',
+  $$SELECT process_notification_digest();$$
+);
+
+-- =============================================================================
 -- Verify Setup
 -- =============================================================================
--- Run: SELECT jobid, jobname, schedule, active FROM cron.job WHERE jobname LIKE 'subscription%';
--- Run: SELECT * FROM cron.job_run_details WHERE jobid IN (SELECT jobid FROM cron.job WHERE jobname LIKE 'subscription%') ORDER BY start_time DESC LIMIT 10;
+-- Run: SELECT jobid, jobname, schedule, active FROM cron.job WHERE jobname LIKE 'subscription%' OR jobname LIKE 'notification%';
+-- Run: SELECT * FROM cron.job_run_details WHERE jobid IN (SELECT jobid FROM cron.job WHERE jobname LIKE 'subscription%' OR jobname LIKE 'notification%') ORDER BY start_time DESC LIMIT 10;
