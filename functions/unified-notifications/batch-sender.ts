@@ -1,13 +1,25 @@
 /**
- * Batch Notification Sender
+ * Batch Notification Sender v2.0
  *
  * Handles efficient batch sending of notifications with rate limiting,
- * retry logic, and parallel processing.
+ * retry logic, parallel processing, and enterprise preference integration.
+ *
+ * v2.0 Changes:
+ * - Unified with shared notification preferences system
+ * - Full quiet hours, DND, and frequency support
+ * - Category-based preference checking
  */
 
 import { NotificationPayload, DeliveryResult, PriorityLevel } from "./index.ts";
 import { routeNotification, UserDevice } from "./delivery-router.ts";
 import { calculatePriority } from "./priority-calculator.ts";
+import {
+  shouldSendNotification as checkPreferences,
+  mapTypeToCategory,
+  shouldBypassPreferences,
+  type NotificationCategory,
+} from "../_shared/notification-preferences.ts";
+import { logger } from "../_shared/logger.ts";
 
 // Batch configuration
 interface BatchConfig {
@@ -166,7 +178,7 @@ export class BatchSender {
   }
 
   /**
-   * Send a single notification with retry logic.
+   * Send a single notification with retry logic and enterprise preference checking.
    */
   private async sendWithRetry(
     notification: NotificationPayload & { priority: PriorityLevel },
@@ -174,25 +186,43 @@ export class BatchSender {
     attempt: number = 0
   ): Promise<DeliveryResult> {
     try {
-      // Get user devices and preferences
-      const [devices, preferences] = await Promise.all([
-        this.getUserDevices(supabase, notification.userId),
-        this.getUserPreferences(supabase, notification.userId),
-      ]);
+      // Map notification type to category for preference checking
+      const category = mapTypeToCategory(notification.type) as NotificationCategory;
+      const bypassPrefs = notification.priority === "critical" ||
+                          shouldBypassPreferences(notification.type);
 
-      // Check if notification should be sent
-      if (!this.shouldSendNotification(notification, preferences)) {
+      // Check preferences using enterprise RPC system
+      const prefResult = await checkPreferences(supabase, notification.userId, {
+        category,
+        channel: "push",
+        bypassPreferences: bypassPrefs,
+      });
+
+      // Log preference check result
+      logger.debug("Batch preference check", {
+        userId: notification.userId,
+        type: notification.type,
+        category,
+        result: prefResult,
+      });
+
+      // Handle blocked/deferred notifications
+      if (!prefResult.send) {
         return {
           success: false,
           notificationId: notification.id ?? crypto.randomUUID(),
           deliveredTo: [],
           failedDevices: [],
-          error: "blocked_by_preferences",
+          error: prefResult.reason || "blocked_by_preferences",
+          scheduledFor: prefResult.scheduleFor,
         };
       }
 
+      // Get user devices for delivery
+      const devices = await this.getUserDevices(supabase, notification.userId);
+
       // Route to delivery channels
-      const result = await routeNotification(notification, devices, preferences);
+      const result = await routeNotification(notification, devices, null);
 
       // Retry if all failed and attempts remain
       if (!result.success && attempt < this.config.retryAttempts) {
@@ -231,62 +261,6 @@ export class BatchSender {
       .eq("is_active", true);
 
     return data ?? [];
-  }
-
-  /**
-   * Get user notification preferences.
-   */
-  private async getUserPreferences(supabase: any, userId: string): Promise<any> {
-    const { data } = await supabase
-      .from("notification_preferences")
-      .select("*")
-      .eq("user_id", userId)
-      .single();
-
-    return data ?? this.getDefaultPreferences();
-  }
-
-  /**
-   * Get default notification preferences.
-   */
-  private getDefaultPreferences(): any {
-    return {
-      push_enabled: true,
-      email_enabled: true,
-      quiet_hours_enabled: false,
-      enabled_types: [
-        "new_message",
-        "arrangement_confirmed",
-        "arrangement_cancelled",
-        "challenge_complete",
-        "review_received",
-        "account_security",
-      ],
-    };
-  }
-
-  /**
-   * Check if notification should be sent based on preferences.
-   */
-  private shouldSendNotification(
-    notification: NotificationPayload & { priority: PriorityLevel },
-    preferences: any
-  ): boolean {
-    // Always send critical notifications
-    if (notification.priority === "critical") return true;
-
-    // Check if push is enabled
-    if (!preferences.push_enabled) return false;
-
-    // Check if notification type is enabled
-    if (
-      preferences.enabled_types &&
-      !preferences.enabled_types.includes(notification.type)
-    ) {
-      return false;
-    }
-
-    return true;
   }
 
   /**
