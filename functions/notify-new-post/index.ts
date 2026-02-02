@@ -32,6 +32,14 @@ const postTypeEmoji: Record<string, string> = {
   restaurant: "🍽️",
   farm: "🌾",
   garden: "🌱",
+  volunteer: "🙌",
+  thing: "🎁",
+  borrow: "🔧",
+  wanted: "🤲",
+  business: "🏛️",
+  challenge: "🏆",
+  zerowaste: "♻️",
+  vegan: "🌱",
   default: "📦",
 };
 
@@ -124,8 +132,35 @@ function formatPostMessage(
     ? [profile.first_name, profile.second_name].filter(Boolean).join(" ")
     : "";
   const userName = fullName || profile?.nickname || "Someone";
-  const postUrl = `${appUrl}/product/${post.id}`;
+  const postUrl = `${appUrl}/food/${post.id}`;
+  const isVolunteer = post.post_type === "volunteer";
 
+  // Special formatting for volunteer applications
+  if (isVolunteer) {
+    let message = `${emoji} <b>NEW VOLUNTEER APPLICATION!</b>\n\n`;
+    message += `<b>${post.post_name}</b>\n`;
+
+    if (post.post_address) {
+      message += `📍 ${post.post_address}\n`;
+    }
+
+    if (post.post_description) {
+      const shortDesc =
+        post.post_description.length > 200
+          ? post.post_description.substring(0, 200) + "..."
+          : post.post_description;
+      message += `\n<i>${shortDesc}</i>\n`;
+    }
+
+    message += `\n👤 Applicant: ${userName}`;
+    message += `\n\n⏳ <b>Status: Pending Approval</b>`;
+    message += `\n\n🔗 <a href="${appUrl}/volunteers">View Volunteers</a>`;
+    message += ` | <a href="${appUrl}/admin/listings">Admin Dashboard</a>`;
+
+    return message;
+  }
+
+  // Standard post message
   let message = `${emoji} <b>New ${post.post_type || "food"} listing!</b>\n\n`;
   message += `<b>${post.post_name}</b>\n`;
 
