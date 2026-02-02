@@ -45,3 +45,8 @@ verify_jwt = false
 # Service-to-service email notification delivery
 [functions.send-email-notification]
 verify_jwt = false
+
+# Disable JWT verification for notify-new-post
+# Database trigger webhook for new post notifications
+[functions.notify-new-post]
+verify_jwt = false

@@ -1,13 +1,12 @@
 -- ============================================================================
--- Migration: Add Database Trigger for New Post Notifications
+-- Migration: Fix notify_new_post trigger to not require auth
 -- Date: 2026-02-02
--- Description: Creates a trigger that calls the notify-new-post Edge Function
---              when new posts are inserted. This ensures admin gets Telegram
---              notifications for new volunteer applications and other posts.
+-- Description: Simplifies the trigger to not require auth headers since
+--              verify_jwt = false is set in config.toml for this function.
 -- ============================================================================
 
--- Create the trigger function that calls the Edge Function via pg_net
--- Note: verify_jwt = false is set in config.toml, so no auth header needed
+-- Update the trigger function to use hardcoded URL and no auth
+-- (matches the pattern used by send-digest-notifications trigger)
 CREATE OR REPLACE FUNCTION trigger_notify_new_post()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -37,19 +36,3 @@ EXCEPTION WHEN OTHERS THEN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Drop existing trigger if any
-DROP TRIGGER IF EXISTS trigger_notify_new_post_on_insert ON posts;
-
--- Create trigger for new post insertions
-CREATE TRIGGER trigger_notify_new_post_on_insert
-  AFTER INSERT ON posts
-  FOR EACH ROW
-  EXECUTE FUNCTION trigger_notify_new_post();
-
--- Add comments
-COMMENT ON FUNCTION trigger_notify_new_post() IS
-  'Sends Telegram notification to admin when new posts are created (including volunteer applications)';
-
-COMMENT ON TRIGGER trigger_notify_new_post_on_insert ON posts IS
-  'Triggers admin notification via Edge Function when posts are inserted';
