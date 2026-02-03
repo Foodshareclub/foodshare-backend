@@ -21,6 +21,7 @@ import {
   disclaimerBox,
   statsBar,
   divider,
+  growingCommunityBox,
   type BulletItem,
   type StatItem,
 } from "./template-components.ts";
@@ -33,11 +34,17 @@ export interface WelcomeParams {
   name: string;
   nearbyMembers?: number;
   mealsSharedMonthly?: number;
+  totalMembers?: number;
 }
 
+// Thresholds for showing different content
+const NEARBY_THRESHOLD = 10;  // Show "nearby" stats only if >= 10 members
+const MEALS_THRESHOLD = 100;  // Show meals stat only if >= 100
+
 export function welcomeTemplate(params: WelcomeParams): { subject: string; html: string } {
-  const nearbyMembers = params.nearbyMembers || 127;
-  const mealsShared = params.mealsSharedMonthly || 50000;
+  const nearbyMembers = params.nearbyMembers ?? 0;
+  const mealsShared = params.mealsSharedMonthly ?? 0;
+  const totalMembers = params.totalMembers ?? 0;
 
   const features: BulletItem[] = [
     { emoji: "🍎", title: "Share Surplus Food", description: "Post your extra groceries for neighbors", color: BRAND.primaryColor },
@@ -46,19 +53,67 @@ export function welcomeTemplate(params: WelcomeParams): { subject: string; html:
     { emoji: "🏆", title: "Join Challenges", description: "Participate in community challenges", color: BRAND.accentPurple },
   ];
 
-  const stats: StatItem[] = [
-    { value: nearbyMembers.toLocaleString(), label: "Members near you", color: BRAND.primaryColor },
-    { value: `${(mealsShared / 1000).toFixed(0)}K+`, label: "Meals shared monthly", color: BRAND.accentTeal },
-  ];
+  // Determine what to show based on actual numbers
+  const hasNearbyMembers = nearbyMembers >= NEARBY_THRESHOLD;
+  const hasMealsStats = mealsShared >= MEALS_THRESHOLD;
+  const isEarlyStage = !hasNearbyMembers && !hasMealsStats;
+
+  // Build stats section based on what we have
+  let statsSection = "";
+
+  if (isEarlyStage) {
+    // Show encouraging "early member" message instead of stats
+    statsSection = growingCommunityBox();
+  } else {
+    // Build stats array with only meaningful numbers
+    const stats: StatItem[] = [];
+
+    if (hasNearbyMembers) {
+      stats.push({
+        value: nearbyMembers,
+        label: "Members near you",
+        color: BRAND.primaryColor,
+      });
+    } else if (totalMembers >= 50) {
+      // Show total community if no nearby members but community exists
+      stats.push({
+        value: totalMembers,
+        label: "Community members",
+        color: BRAND.primaryColor,
+      });
+    }
+
+    if (hasMealsStats) {
+      stats.push({
+        value: mealsShared,
+        label: "Meals shared",
+        color: BRAND.accentTeal,
+      });
+    }
+
+    if (stats.length > 0) {
+      statsSection = statsBar(stats);
+    }
+  }
+
+  // Adjust welcome message based on community size
+  const welcomeMessage = isEarlyStage
+    ? `Welcome to <strong style="color: ${BRAND.primaryColor};">FoodShare</strong>! You're joining a growing movement of neighbors who are reducing food waste and building community through sharing.`
+    : `Welcome to the <strong style="color: ${BRAND.primaryColor};">FoodShare</strong> community! You're joining neighbors who are reducing food waste and sharing delicious food together.`;
+
+  // Adjust CTA message
+  const ctaMessage = isEarlyStage
+    ? `Be one of the first to share in your area! Every journey starts with a single step – why not post something you're not using?`
+    : `Why not have a look around and see what's available near you?`;
 
   const content = `
     ${greeting(params.name)}
-    ${paragraph(`Welcome to the <strong style="color: ${BRAND.primaryColor};">FoodShare</strong> community! You're joining thousands of neighbors who are reducing food waste and sharing delicious food together.`)}
-    ${statsBar(stats)}
+    ${paragraph(welcomeMessage)}
+    ${statsSection}
     <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};"><strong>🌱 Here's what you can do:</strong></p>
     ${bulletList(features)}
     ${divider()}
-    ${paragraph(`Why not have a look around and see what's available near you? With <strong>8 out of 10</strong> items requested within 24 hours, you might just find something great!`, "0")}
+    ${paragraph(ctaMessage, "0")}
   `;
 
   return {
@@ -67,7 +122,11 @@ export function welcomeTemplate(params: WelcomeParams): { subject: string; html:
       title: "Welcome to FoodShare! 🎉",
       subtitle: "Your journey to reducing food waste starts now",
       content,
-      cta: { text: "Start Exploring", url: "https://foodshare.club/map", emoji: "🗺️" },
+      cta: {
+        text: isEarlyStage ? "Share Something" : "Start Exploring",
+        url: isEarlyStage ? "https://foodshare.club/share" : "https://foodshare.club/map",
+        emoji: isEarlyStage ? "🍎" : "🗺️",
+      },
       footer: { showAppBadges: true, signOffMessage: "Happy sharing!" },
     }),
   };
@@ -375,36 +434,87 @@ export interface ReengagementParams {
   newListingsNearby?: number;
   mealsSavedCommunity?: number;
   newMembersNearby?: number;
+  totalMembers?: number;
   unsubscribeUrl: string;
 }
 
 export function reengagementTemplate(params: ReengagementParams): { subject: string; html: string } {
-  const newListings = params.newListingsNearby || 12;
-  const mealsSaved = params.mealsSavedCommunity || 234;
-  const newMembers = params.newMembersNearby || 8;
+  const newListings = params.newListingsNearby ?? 0;
+  const mealsSaved = params.mealsSavedCommunity ?? 0;
+  const newMembers = params.newMembersNearby ?? 0;
 
-  const stats: StatItem[] = [
-    { value: newListings.toString(), label: "New listings near you", color: BRAND.primaryColor },
-    { value: mealsSaved.toString(), label: "Meals saved locally", color: BRAND.accentTeal },
-    { value: newMembers.toString(), label: "New neighbors joined", color: BRAND.accentPurple },
-  ];
+  // Only show stats that are meaningful (> 0)
+  const stats: StatItem[] = [];
+
+  if (newListings > 0) {
+    stats.push({
+      value: newListings,
+      label: newListings === 1 ? "New listing near you" : "New listings near you",
+      color: BRAND.primaryColor,
+      hideIfZero: true,
+    });
+  }
+
+  if (mealsSaved > 0) {
+    stats.push({
+      value: mealsSaved,
+      label: "Meals saved locally",
+      color: BRAND.accentTeal,
+      hideIfZero: true,
+    });
+  }
+
+  if (newMembers > 0) {
+    stats.push({
+      value: newMembers,
+      label: newMembers === 1 ? "New neighbor joined" : "New neighbors joined",
+      color: BRAND.accentPurple,
+      hideIfZero: true,
+    });
+  }
+
+  const hasActivity = stats.length > 0;
+
+  // Different messaging based on whether there's local activity
+  let mainMessage = "";
+  let statsSection = "";
+  let closingMessage = "";
+
+  if (hasActivity) {
+    mainMessage = `It's been <strong>${params.daysSinceLastVisit} days</strong> since we've seen you, and your community has been busy!`;
+    statsSection = statsBar(stats);
+    closingMessage = `Maybe you've finished a good book recently, or have some extra groceries you won't use in time? Why not pop back and see what's happening?`;
+  } else {
+    // No local activity - focus on encouraging them to be a pioneer
+    mainMessage = `It's been <strong>${params.daysSinceLastVisit} days</strong> since we've seen you. We've missed you!`;
+    statsSection = `<div style="margin: 24px 0; padding: 20px; background: linear-gradient(135deg, ${BRAND.bgSecondary} 0%, #fff5f7 100%); border-radius: ${BRAND.cardRadius}; text-align: center;">
+  <p style="margin: 0 0 8px; font-size: 24px;">💚</p>
+  <p style="margin: 0 0 4px; font-size: 16px; font-weight: 700; color: ${BRAND.textPrimary};">Your neighborhood needs you!</p>
+  <p style="margin: 0; font-size: 14px; color: ${BRAND.textSecondary}; line-height: 1.5;">Be the one to kickstart food sharing in your area. One listing could inspire your whole community.</p>
+</div>`;
+    closingMessage = `Got something you're not using? A book you've finished, some extra groceries, or that thing in the cupboard you keep meaning to sort out? Someone nearby might love it!`;
+  }
 
   const content = `
     ${greeting(params.name)}
-    ${paragraph(`It's been a little while since we've seen you – <strong>${params.daysSinceLastVisit} days</strong> to be exact! Your community has been busy sharing, and we thought you might like to know what's been happening.`)}
-    ${statsBar(stats)}
-    ${paragraph(`Maybe you've finished a good book recently, or have some extra groceries you won't use in time? Why not pop back and see what's happening in your neighborhood?`)}
+    ${paragraph(mainMessage)}
+    ${statsSection}
+    ${paragraph(closingMessage)}
     ${divider()}
-    ${paragraph(`With <strong>8 out of 10</strong> items requested within 24 hours, your stuff could make someone's day today! 💚`, "0")}
+    ${paragraph(`One person's spare is another person's treasure. Why not make someone's day? 💚`, "0")}
   `;
 
   return {
-    subject: `Wanna make someone's day today? 💚`,
+    subject: `Wanna make someone's day? 💚`,
     html: buildEmail({
       title: "We've Missed You! 💚",
-      subtitle: "Your neighbors have been busy – come see what's new",
+      subtitle: hasActivity ? "Your neighbors have been busy" : "Come back and share something",
       content,
-      cta: { text: "See What's Available", url: "https://foodshare.club/map", emoji: "🗺️" },
+      cta: {
+        text: hasActivity ? "See What's New" : "Share Something",
+        url: hasActivity ? "https://foodshare.club/map" : "https://foodshare.club/share",
+        emoji: hasActivity ? "🗺️" : "🍎",
+      },
       footer: { showUnsubscribe: true, unsubscribeUrl: params.unsubscribeUrl, showAppBadges: true, signOffMessage: "Happy sharing!" },
     }),
   };

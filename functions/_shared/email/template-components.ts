@@ -272,22 +272,51 @@ export function heroImage(imageUrl: string, alt = "FoodShare community"): string
 }
 
 // ============================================================================
-// Component: Stats Bar (social proof like Olio)
+// Component: Stats Bar (social proof - handles low numbers gracefully)
 // ============================================================================
 
 export interface StatItem {
-  value: string;
+  value: string | number;
   label: string;
   color?: string;
+  hideIfZero?: boolean;
+}
+
+/**
+ * Format a number for display:
+ * - < 10: show exact number or hide
+ * - 10-999: show exact number
+ * - 1000-9999: show as "1.2K+"
+ * - 10000+: show as "10K+"
+ */
+export function formatStatNumber(num: number): string {
+  if (num < 1000) return num.toString();
+  if (num < 10000) return `${(num / 1000).toFixed(1)}K+`;
+  return `${Math.round(num / 1000)}K+`;
 }
 
 export function statsBar(stats: StatItem[]): string {
-  const statCells = stats.map(stat => `
+  // Filter out stats with zero/low values if hideIfZero is set
+  const visibleStats = stats.filter(stat => {
+    if (!stat.hideIfZero) return true;
+    const numValue = typeof stat.value === "number" ? stat.value : parseInt(String(stat.value), 10);
+    return !isNaN(numValue) && numValue > 0;
+  });
+
+  if (visibleStats.length === 0) return "";
+
+  const statCells = visibleStats.map(stat => {
+    const displayValue = typeof stat.value === "number"
+      ? formatStatNumber(stat.value)
+      : stat.value;
+
+    return `
     <td align="center" style="padding: 16px 8px;">
-      <p style="margin: 0; font-size: 28px; font-weight: 800; color: ${stat.color || BRAND.primaryColor};">${stat.value}</p>
+      <p style="margin: 0; font-size: 28px; font-weight: 800; color: ${stat.color || BRAND.primaryColor};">${displayValue}</p>
       <p style="margin: 4px 0 0; font-size: 13px; color: ${BRAND.textMuted}; text-transform: uppercase; letter-spacing: 0.5px;">${stat.label}</p>
     </td>
-  `).join("");
+  `;
+  }).join("");
 
   return `<div style="margin: 24px 0; padding: 20px; background: ${BRAND.bgSecondary}; border-radius: ${BRAND.cardRadius};">
   <table width="100%" cellpadding="0" cellspacing="0">
@@ -295,6 +324,18 @@ export function statsBar(stats: StatItem[]): string {
       ${statCells}
     </tr>
   </table>
+</div>`;
+}
+
+// ============================================================================
+// Component: Growing Community Message (for early-stage areas)
+// ============================================================================
+
+export function growingCommunityBox(): string {
+  return `<div style="margin: 24px 0; padding: 20px; background: linear-gradient(135deg, ${BRAND.bgSecondary} 0%, #fff5f7 100%); border-radius: ${BRAND.cardRadius}; text-align: center;">
+  <p style="margin: 0 0 8px; font-size: 24px;">🌱</p>
+  <p style="margin: 0 0 4px; font-size: 16px; font-weight: 700; color: ${BRAND.textPrimary};">You're an early member!</p>
+  <p style="margin: 0; font-size: 14px; color: ${BRAND.textSecondary}; line-height: 1.5;">Our community is growing every day. Be one of the first to share in your area and help us reduce food waste together.</p>
 </div>`;
 }
 
@@ -526,10 +567,12 @@ export default {
   ctaButton,
   heroImage,
   statsBar,
+  formatStatNumber,
   featuredItems,
   divider,
   signOff,
   appStoreBadges,
+  growingCommunityBox,
   socialIcons,
   footer,
   buildEmail,

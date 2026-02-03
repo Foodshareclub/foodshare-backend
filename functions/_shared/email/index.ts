@@ -89,6 +89,8 @@ export {
   socialIcons,
   footer,
   buildEmail,
+  growingCommunityBox,
+  formatStatNumber,
 } from "./template-components.ts";
 
 // Templates - Pre-built
