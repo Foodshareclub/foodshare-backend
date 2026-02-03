@@ -82,7 +82,7 @@ export const BRAND = {
   social: {
     facebook: "https://facebook.com/foodshareclub",
     twitter: "https://twitter.com/foodshareclub",
-    instagram: "https://instagram.com/foodshareclub",
+    instagram: "https://www.instagram.com/foodshare.club/",
     linkedin: "https://linkedin.com/company/foodshareclub",
   },
 } as const;
