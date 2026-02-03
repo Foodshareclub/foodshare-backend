@@ -572,7 +572,14 @@ async function fetchTemplateBySlug(slug: string): Promise<EmailTemplate | null> 
     .single();
 
   if (error || !data) {
-    logger.warn("Template not found", { slug, error: error?.message });
+    // Fallback to code-based templates
+    logger.info("Database template not found, trying code fallback", { slug });
+    const codeTemplate = await getCodeBasedTemplate(slug);
+    if (codeTemplate) {
+      setCachedTemplate(slug, codeTemplate);
+      return codeTemplate;
+    }
+    logger.warn("Template not found in database or code", { slug, error: error?.message });
     return null;
   }
 
@@ -580,6 +587,40 @@ async function fetchTemplateBySlug(slug: string): Promise<EmailTemplate | null> 
   setCachedTemplate(slug, data as EmailTemplate);
 
   return data as EmailTemplate;
+}
+
+/**
+ * Fallback to code-based templates from template-builder.ts
+ */
+async function getCodeBasedTemplate(slug: string): Promise<EmailTemplate | null> {
+  try {
+    const { templates } = await import("../_shared/email/template-builder.ts");
+
+    const templateFn = templates[slug as keyof typeof templates];
+    if (!templateFn) {
+      return null;
+    }
+
+    // Create a synthetic EmailTemplate object
+    // The actual rendering will happen when we call the template function
+    return {
+      id: `code-${slug}`,
+      slug,
+      name: slug.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
+      category: "transactional",
+      subject: "", // Will be set during rendering
+      html_content: "", // Will be set during rendering
+      text_content: null,
+      variables: [],
+      metadata: { source: "code" },
+      version: 1,
+      is_active: true,
+      _templateFn: templateFn, // Store the function for later use
+    } as EmailTemplate & { _templateFn: typeof templateFn };
+  } catch (err) {
+    logger.error("Failed to load code-based template", { slug, error: String(err) });
+    return null;
+  }
 }
 
 async function fetchAllTemplates(category?: string): Promise<EmailTemplate[]> {
@@ -724,17 +765,32 @@ async function handleRenderTemplate(
   // Build final variables with defaults
   const finalVars = buildFinalVariables(templateVars, enrichedVariables);
 
-  // Render template
-  const rendered: RenderedEmail = {
-    subject: renderTemplate(template.subject, finalVars),
-  };
+  // Render template (handle both database and code-based templates)
+  let rendered: RenderedEmail;
 
-  if (format === "html" || format === "both") {
-    rendered.html = renderTemplate(template.html_content, finalVars);
-  }
+  // Check if this is a code-based template
+  const templateWithFn = template as EmailTemplate & { _templateFn?: (params: Record<string, unknown>) => { subject: string; html: string } };
+  if (templateWithFn._templateFn) {
+    // Use the code-based template function
+    const result = templateWithFn._templateFn(finalVars);
+    rendered = {
+      subject: result.subject,
+      html: format !== "text" ? result.html : undefined,
+      text: format !== "html" ? undefined : undefined, // Code templates don't generate plain text
+    };
+  } else {
+    // Use database template with variable substitution
+    rendered = {
+      subject: renderTemplate(template.subject, finalVars),
+    };
 
-  if (format === "text" || format === "both") {
-    rendered.text = renderTemplate(template.text_content || "", finalVars);
+    if (format === "html" || format === "both") {
+      rendered.html = renderTemplate(template.html_content, finalVars);
+    }
+
+    if (format === "text" || format === "both") {
+      rendered.text = renderTemplate(template.text_content || "", finalVars);
+    }
   }
 
   logger.info("Template rendered", { slug, variableCount: Object.keys(finalVars).length });
@@ -827,9 +883,25 @@ async function handleSendEmail(
 
   // Build and render with enriched variables
   const finalVars = buildFinalVariables(templateVars, enrichedVariables);
-  const subject = renderTemplate(template.subject, finalVars);
-  const html = renderTemplate(template.html_content, finalVars);
-  const text = renderTemplate(template.text_content || "", finalVars);
+
+  // Render template (handle both database and code-based templates)
+  let subject: string;
+  let html: string;
+  let text: string;
+
+  const templateWithFn = template as EmailTemplate & { _templateFn?: (params: Record<string, unknown>) => { subject: string; html: string } };
+  if (templateWithFn._templateFn) {
+    // Use the code-based template function
+    const result = templateWithFn._templateFn(finalVars);
+    subject = result.subject;
+    html = result.html;
+    text = ""; // Code templates don't generate plain text
+  } else {
+    // Use database template with variable substitution
+    subject = renderTemplate(template.subject, finalVars);
+    html = renderTemplate(template.html_content, finalVars);
+    text = renderTemplate(template.text_content || "", finalVars);
+  }
 
   // Send via email service
   const { getEmailService } = await import("../_shared/email/index.ts");
@@ -838,7 +910,7 @@ async function handleSendEmail(
   const result = await emailService.sendEmail(
     {
       to,
-      from: from || "FoodShare <noreply@foodshare.club>",
+      from: from || "FoodShare <contact@foodshare.club>",
       fromName: fromName,
       subject,
       html,
