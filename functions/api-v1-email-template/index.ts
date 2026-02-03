@@ -4,19 +4,33 @@
  * Endpoints:
  * - GET  /templates          - List all active templates
  * - GET  /templates/:slug    - Get single template by slug
- * - POST /render             - Render template with variables (auto-enriches with stats)
- * - POST /send               - Render and send email (auto-enriches with stats)
+ * - POST /render             - Render template with variables
+ * - POST /send               - Render and send email
  * - GET  /stats              - Get community statistics (global + location-based)
  * - GET  /health             - Health check
  *
- * Dynamic Stats Feature:
- * Templates like "welcome" and "reengagement" automatically receive real-time
- * community statistics (members nearby, meals shared, etc.) when rendered.
- * Pass latitude/longitude in variables for location-specific stats.
+ * Auto-Enrichment Features:
  *
- * This Edge Function provides unified access to email templates stored in the
- * database, enabling iOS, Android, and Web applications to share a single
- * source of truth for email content.
+ * 1. User Profile Data (pass userId):
+ *    - Automatically fetches user's name from profiles table
+ *    - Uses display_name > full_name > email prefix > "there"
+ *    - Extracts location for nearby stats calculation
+ *
+ * 2. Dynamic Community Stats:
+ *    - Templates "welcome" and "reengagement" auto-receive real-time stats
+ *    - nearbyMembers: count of profiles within 10km radius
+ *    - mealsSharedMonthly: posts created in last 30 days
+ *    - Stats cached for 10 minutes
+ *
+ * Example:
+ *   POST /send {
+ *     slug: "welcome",
+ *     userId: "uuid-here",  // Fetches name + location from profiles
+ *     to: "user@example.com"
+ *   }
+ *   → "Hey Sarah! 👋" (name from profile)
+ *   → "234 Members near you" (calculated from DB)
+ *   → "52K+ Meals shared monthly" (calculated from DB)
  */
 
 import { getCorsHeadersWithMobile, handleMobileCorsPrelight } from "../_shared/cors.ts";
@@ -73,6 +87,7 @@ interface RenderRequest {
   slug: string;
   variables: Record<string, unknown>;
   format?: "html" | "text" | "both";
+  userId?: string; // Optional: fetch profile data automatically
 }
 
 interface SendRequest {
@@ -83,6 +98,16 @@ interface SendRequest {
   fromName?: string;
   replyTo?: string;
   emailType?: string;
+  userId?: string; // Optional: fetch profile data automatically
+}
+
+interface UserProfile {
+  id: string;
+  display_name: string | null;
+  full_name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  location: unknown | null;
 }
 
 interface RenderedEmail {
@@ -359,6 +384,116 @@ async function fetchLocationStats(
 }
 
 /**
+ * Fetch user profile by ID
+ */
+async function fetchUserProfile(userId: string): Promise<UserProfile | null> {
+  const cacheKey = `user_profile:${userId}`;
+  const cached = cache.get<UserProfile>(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const supabase = getSupabaseClient();
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, display_name, full_name, email, avatar_url, location")
+    .eq("id", userId)
+    .single();
+
+  if (error || !data) {
+    logger.warn("Failed to fetch user profile", { userId, error: error?.message });
+    return null;
+  }
+
+  // Cache for 5 minutes
+  cache.set(cacheKey, data, CACHE_TTL_MS);
+  return data as UserProfile;
+}
+
+/**
+ * Get user's name from profile (display_name > full_name > email prefix > "there")
+ */
+function getUserName(profile: UserProfile | null, email?: string): string {
+  if (profile?.display_name) return profile.display_name;
+  if (profile?.full_name) return profile.full_name;
+  if (profile?.email) return profile.email.split("@")[0];
+  if (email) return email.split("@")[0];
+  return "there";
+}
+
+/**
+ * Extract coordinates from PostGIS geography point
+ */
+function extractCoordinates(location: unknown): { latitude: number; longitude: number } | null {
+  if (!location) return null;
+
+  // Handle different PostGIS formats
+  if (typeof location === "object" && location !== null) {
+    const loc = location as Record<string, unknown>;
+
+    // GeoJSON format: { type: "Point", coordinates: [lng, lat] }
+    if (loc.type === "Point" && Array.isArray(loc.coordinates)) {
+      const [lng, lat] = loc.coordinates as number[];
+      return { latitude: lat, longitude: lng };
+    }
+
+    // Direct object: { latitude, longitude }
+    if (typeof loc.latitude === "number" && typeof loc.longitude === "number") {
+      return { latitude: loc.latitude, longitude: loc.longitude };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Enrich variables with user profile and dynamic stats
+ */
+async function enrichVariablesWithUserAndStats(
+  slug: string,
+  variables: Record<string, unknown>,
+  userId?: string,
+  toEmail?: string
+): Promise<Record<string, unknown>> {
+  const enrichedVars = { ...variables };
+
+  // Fetch user profile if userId provided
+  let profile: UserProfile | null = null;
+  if (userId) {
+    profile = await fetchUserProfile(userId);
+
+    if (profile) {
+      // Inject user data (only if not already provided)
+      if (!enrichedVars.name) {
+        enrichedVars.name = getUserName(profile, toEmail);
+      }
+      if (!enrichedVars.recipientName) {
+        enrichedVars.recipientName = getUserName(profile, toEmail);
+      }
+      if (!enrichedVars.email && profile.email) {
+        enrichedVars.email = profile.email;
+      }
+
+      // Extract location for stats
+      const coords = extractCoordinates(profile.location);
+      if (coords) {
+        if (!enrichedVars.latitude) enrichedVars.latitude = coords.latitude;
+        if (!enrichedVars.longitude) enrichedVars.longitude = coords.longitude;
+      }
+    }
+  }
+
+  // If still no name, try to extract from email
+  if (!enrichedVars.name && toEmail) {
+    enrichedVars.name = toEmail.split("@")[0];
+  }
+
+  // Now enrich with stats
+  return enrichVariablesWithStats(slug, enrichedVars);
+}
+
+/**
  * Enrich variables with dynamic stats for specific templates
  */
 async function enrichVariablesWithStats(
@@ -531,7 +666,7 @@ async function handleRenderTemplate(
   corsHeaders: Record<string, string>
 ): Promise<Response> {
   const body: RenderRequest = await req.json();
-  const { slug, variables = {}, format = "both" } = body;
+  const { slug, variables = {}, format = "both", userId } = body;
 
   if (!slug) {
     return new Response(
@@ -564,8 +699,8 @@ async function handleRenderTemplate(
     );
   }
 
-  // Enrich variables with dynamic stats (for templates that need them)
-  const enrichedVariables = await enrichVariablesWithStats(slug, variables);
+  // Enrich variables with user profile and dynamic stats
+  const enrichedVariables = await enrichVariablesWithUserAndStats(slug, variables, userId);
 
   // Validate required variables
   const templateVars = (template.variables || []) as TemplateVariable[];
@@ -625,7 +760,7 @@ async function handleSendEmail(
   corsHeaders: Record<string, string>
 ): Promise<Response> {
   const body: SendRequest = await req.json();
-  const { slug, variables = {}, to, from, fromName, replyTo, emailType = "transactional" } = body;
+  const { slug, variables = {}, to, from, fromName, replyTo, emailType = "transactional", userId } = body;
 
   if (!slug || !to) {
     return new Response(
@@ -658,8 +793,18 @@ async function handleSendEmail(
     );
   }
 
-  // Enrich variables with dynamic stats
-  const enrichedVariables = await enrichVariablesWithStats(slug, variables);
+  // Enrich variables with user profile data and dynamic stats
+  // This fetches the user's name from their profile and community stats from the database
+  const toEmail = Array.isArray(to) ? to[0] : to;
+  const enrichedVariables = await enrichVariablesWithUserAndStats(slug, variables, userId, toEmail);
+
+  logger.info("Variables enriched for send", {
+    slug,
+    userId,
+    name: enrichedVariables.name,
+    nearbyMembers: enrichedVariables.nearbyMembers,
+    mealsSharedMonthly: enrichedVariables.mealsSharedMonthly,
+  });
 
   // Validate required variables
   const templateVars = (template.variables || []) as TemplateVariable[];
