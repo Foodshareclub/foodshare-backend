@@ -84,7 +84,6 @@ export const BRAND = {
     twitter: "https://twitter.com/foodshareclub",
     instagram: "https://instagram.com/foodshareclub",
     linkedin: "https://linkedin.com/company/foodshareclub",
-    tiktok: "https://tiktok.com/@foodshareclub",
   },
 } as const;
 
@@ -510,9 +509,6 @@ export function footer(props: FooterProps = {}): string {
           </a>
           <a href="${BRAND.social.twitter}" style="display: inline-block; margin: 0 8px; width: 36px; height: 36px; background: ${BRAND.textPrimary}; border-radius: 50%; line-height: 36px; text-align: center; text-decoration: none;">
             <span style="font-size: 16px; color: #ffffff;">𝕏</span>
-          </a>
-          <a href="${BRAND.social.tiktok}" style="display: inline-block; margin: 0 8px; width: 36px; height: 36px; background: ${BRAND.textPrimary}; border-radius: 50%; line-height: 36px; text-align: center; text-decoration: none;">
-            <span style="font-size: 14px; color: #ffffff; font-weight: 900;">TT</span>
           </a>
         </td>
       </tr>
