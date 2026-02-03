@@ -53,8 +53,15 @@ const TEMPLATE_DEFINITIONS: Omit<TemplateDefinition, "html_content">[] = [
     text_content: null,
     variables: [
       { name: "name", type: "string", required: true },
+      { name: "nearbyMembers", type: "number", required: false, default: 100 },
+      { name: "mealsSharedMonthly", type: "number", required: false, default: 50000 },
+      { name: "latitude", type: "number", required: false },
+      { name: "longitude", type: "number", required: false },
     ],
-    metadata: { preheader: "Start sharing and discovering food in your community" },
+    metadata: {
+      preheader: "Start sharing and discovering food in your community",
+      autoEnrichStats: true,
+    },
   },
   {
     slug: "email-verification",
@@ -166,17 +173,22 @@ const TEMPLATE_DEFINITIONS: Omit<TemplateDefinition, "html_content">[] = [
     slug: "reengagement",
     name: "Reengagement Email",
     category: "marketing",
-    subject: "We miss you at FoodShare! 💚",
+    subject: "Wanna make someone's day today? 💚",
     text_content: null,
     variables: [
       { name: "name", type: "string", required: true },
       { name: "daysSinceLastVisit", type: "number", required: true },
-      { name: "newListingsNearby", type: "number", required: false, default: 0 },
-      { name: "mealsSavedCommunity", type: "number", required: false, default: 0 },
-      { name: "newMembersNearby", type: "number", required: false, default: 0 },
+      { name: "newListingsNearby", type: "number", required: false, default: 12 },
+      { name: "mealsSavedCommunity", type: "number", required: false, default: 234 },
+      { name: "newMembersNearby", type: "number", required: false, default: 8 },
       { name: "unsubscribeUrl", type: "url", required: true },
+      { name: "latitude", type: "number", required: false },
+      { name: "longitude", type: "number", required: false },
     ],
-    metadata: { preheader: "A lot has happened since you've been away" },
+    metadata: {
+      preheader: "A lot has happened since you've been away",
+      autoEnrichStats: true,
+    },
   },
   {
     slug: "feedback-alert",
@@ -200,7 +212,7 @@ const TEMPLATE_DEFINITIONS: Omit<TemplateDefinition, "html_content">[] = [
 
 // Sample data for rendering templates
 const SAMPLE_DATA: Record<string, Record<string, unknown>> = {
-  welcome: { name: "John" },
+  welcome: { name: "John", nearbyMembers: 127, mealsSharedMonthly: 52000 },
   "email-verification": { verifyUrl: "https://foodshare.club/verify?token=abc123" },
   "password-reset": { name: "John", resetUrl: "https://foodshare.club/reset?token=xyz789", expiresIn: "1 hour" },
   "chat-notification": { recipientName: "John", senderName: "Sarah", messagePreview: "Hey! Is the pasta still available?", chatUrl: "https://foodshare.club/chat/123" },
@@ -215,7 +227,11 @@ const SAMPLE_DATA: Record<string, Record<string, unknown>> = {
 
 // Template render functions map
 const TEMPLATE_FUNCTIONS: Record<string, (params: Record<string, unknown>) => { subject: string; html: string }> = {
-  welcome: (p) => welcomeTemplate({ name: String(p.name) }),
+  welcome: (p) => welcomeTemplate({
+    name: String(p.name),
+    nearbyMembers: p.nearbyMembers as number,
+    mealsSharedMonthly: p.mealsSharedMonthly as number,
+  }),
   "email-verification": (p) => emailVerificationTemplate({ verifyUrl: String(p.verifyUrl) }),
   "password-reset": (p) => passwordResetTemplate({ name: String(p.name), resetUrl: String(p.resetUrl), expiresIn: p.expiresIn as string }),
   "chat-notification": (p) => chatNotificationTemplate({ recipientName: String(p.recipientName), senderName: String(p.senderName), messagePreview: String(p.messagePreview), chatUrl: String(p.chatUrl) }),
