@@ -19,7 +19,10 @@ import {
   infoBox,
   highlightBox,
   disclaimerBox,
+  statsBar,
+  divider,
   type BulletItem,
+  type StatItem,
 } from "./template-components.ts";
 
 // ============================================================================
@@ -28,9 +31,14 @@ import {
 
 export interface WelcomeParams {
   name: string;
+  nearbyMembers?: number;
+  mealsSharedMonthly?: number;
 }
 
 export function welcomeTemplate(params: WelcomeParams): { subject: string; html: string } {
+  const nearbyMembers = params.nearbyMembers || 127;
+  const mealsShared = params.mealsSharedMonthly || 50000;
+
   const features: BulletItem[] = [
     { emoji: "🍎", title: "Share Surplus Food", description: "Post your extra groceries for neighbors", color: BRAND.primaryColor },
     { emoji: "🗺️", title: "Discover Food Near You", description: "Browse the map to find available food", color: BRAND.accentTeal },
@@ -38,12 +46,19 @@ export function welcomeTemplate(params: WelcomeParams): { subject: string; html:
     { emoji: "🏆", title: "Join Challenges", description: "Participate in community challenges", color: BRAND.accentPurple },
   ];
 
+  const stats: StatItem[] = [
+    { value: nearbyMembers.toLocaleString(), label: "Members near you", color: BRAND.primaryColor },
+    { value: `${(mealsShared / 1000).toFixed(0)}K+`, label: "Meals shared monthly", color: BRAND.accentTeal },
+  ];
+
   const content = `
     ${greeting(params.name)}
-    ${paragraph(`We're thrilled to have you join the <strong style="color: ${BRAND.primaryColor};">FoodShare</strong> community! Get ready to embark on a journey of delicious discoveries and meaningful connections.`)}
+    ${paragraph(`Welcome to the <strong style="color: ${BRAND.primaryColor};">FoodShare</strong> community! You're joining thousands of neighbors who are reducing food waste and sharing delicious food together.`)}
+    ${statsBar(stats)}
     <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};"><strong>🌱 Here's what you can do:</strong></p>
     ${bulletList(features)}
-    ${infoBox("Your Impact Matters", "Together, we're reducing food waste and building stronger communities. Every meal shared makes a difference!", "✨")}
+    ${divider()}
+    ${paragraph(`Why not have a look around and see what's available near you? With <strong>8 out of 10</strong> items requested within 24 hours, you might just find something great!`, "0")}
   `;
 
   return {
@@ -52,7 +67,8 @@ export function welcomeTemplate(params: WelcomeParams): { subject: string; html:
       title: "Welcome to FoodShare! 🎉",
       subtitle: "Your journey to reducing food waste starts now",
       content,
-      cta: { text: "Get Started", url: "https://foodshare.club/products", emoji: "🚀" },
+      cta: { text: "Start Exploring", url: "https://foodshare.club/map", emoji: "🗺️" },
+      footer: { showAppBadges: true, signOffMessage: "Happy sharing!" },
     }),
   };
 }
@@ -363,32 +379,33 @@ export interface ReengagementParams {
 }
 
 export function reengagementTemplate(params: ReengagementParams): { subject: string; html: string } {
-  const statsBox = `
-    <p style="margin: 0 0 16px; font-size: 16px; font-weight: 700; color: ${BRAND.textPrimary};">📊 While You Were Away:</p>
-    <ul style="margin: 0; padding-left: 24px; font-size: 15px; line-height: 2; color: ${BRAND.textSecondary};">
-      <li><strong style="color: ${BRAND.primaryColor};">${params.newListingsNearby || 0}</strong> new listings posted near you</li>
-      <li><strong style="color: ${BRAND.accentTeal};">${params.mealsSavedCommunity || 0}</strong> meals saved from waste in your area</li>
-      <li><strong style="color: ${BRAND.accentPurple};">${params.newMembersNearby || 0}</strong> new members joined your neighborhood</li>
-    </ul>
-  `;
+  const newListings = params.newListingsNearby || 12;
+  const mealsSaved = params.mealsSavedCommunity || 234;
+  const newMembers = params.newMembersNearby || 8;
+
+  const stats: StatItem[] = [
+    { value: newListings.toString(), label: "New listings near you", color: BRAND.primaryColor },
+    { value: mealsSaved.toString(), label: "Meals saved locally", color: BRAND.accentTeal },
+    { value: newMembers.toString(), label: "New neighbors joined", color: BRAND.accentPurple },
+  ];
 
   const content = `
     ${greeting(params.name)}
-    ${paragraph(`It's been ${params.daysSinceLastVisit} days since we last saw you, and your community has been busy!`)}
-    <div style="margin: 24px 0; padding: 20px; background: linear-gradient(135deg, #f8f8f8 0%, #f3f3f3 100%); border-radius: 8px;">
-      ${statsBox}
-    </div>
-    ${infoBox("Welcome Back Offer", "Share something in the next 7 days and earn double impact points!", "🎁")}
+    ${paragraph(`It's been a little while since we've seen you – <strong>${params.daysSinceLastVisit} days</strong> to be exact! Your community has been busy sharing, and we thought you might like to know what's been happening.`)}
+    ${statsBar(stats)}
+    ${paragraph(`Maybe you've finished a good book recently, or have some extra groceries you won't use in time? Why not pop back and see what's happening in your neighborhood?`)}
+    ${divider()}
+    ${paragraph(`With <strong>8 out of 10</strong> items requested within 24 hours, your stuff could make someone's day today! 💚`, "0")}
   `;
 
   return {
-    subject: "We miss you at FoodShare! 💚",
+    subject: `Wanna make someone's day today? 💚`,
     html: buildEmail({
-      title: "We Miss You! 💚",
-      subtitle: "A lot has happened since you've been away",
+      title: "We've Missed You! 💚",
+      subtitle: "Your neighbors have been busy – come see what's new",
       content,
-      cta: { text: "Come Back", url: "https://foodshare.club", emoji: "💚" },
-      footer: { showUnsubscribe: true, unsubscribeUrl: params.unsubscribeUrl },
+      cta: { text: "See What's Available", url: "https://foodshare.club/map", emoji: "🗺️" },
+      footer: { showUnsubscribe: true, unsubscribeUrl: params.unsubscribeUrl, showAppBadges: true, signOffMessage: "Happy sharing!" },
     }),
   };
 }

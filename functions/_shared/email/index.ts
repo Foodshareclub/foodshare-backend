@@ -64,6 +64,8 @@ export type {
   CTAProps,
   FooterProps,
   EmailConfig,
+  StatItem,
+  FeaturedItem,
 } from "./template-components.ts";
 
 export {
@@ -78,6 +80,12 @@ export {
   highlightBox,
   disclaimerBox,
   ctaButton,
+  heroImage,
+  statsBar,
+  featuredItems,
+  divider,
+  signOff,
+  appStoreBadges,
   socialIcons,
   footer,
   buildEmail,
