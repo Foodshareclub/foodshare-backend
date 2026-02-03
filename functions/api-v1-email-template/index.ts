@@ -412,14 +412,47 @@ async function fetchUserProfile(userId: string): Promise<UserProfile | null> {
 }
 
 /**
- * Get user's name from profile (display_name > full_name > email prefix > "there")
+ * Get user's name from profile (display_name > full_name > friendly email prefix > "there")
  */
 function getUserName(profile: UserProfile | null, email?: string): string {
   if (profile?.display_name) return profile.display_name;
   if (profile?.full_name) return profile.full_name;
-  if (profile?.email) return profile.email.split("@")[0];
-  if (email) return email.split("@")[0];
+
+  // Try to extract a friendly name from email
+  const emailToUse = profile?.email || email;
+  if (emailToUse) {
+    const friendlyName = extractFriendlyNameFromEmail(emailToUse);
+    if (friendlyName) return friendlyName;
+  }
+
   return "there";
+}
+
+/**
+ * Extract a friendly name from email address
+ * - "john.doe@example.com" → "John"
+ * - "jane_smith123@example.com" → "Jane"
+ * - "info@example.com" → null (generic, use fallback)
+ */
+function extractFriendlyNameFromEmail(email: string): string | null {
+  const prefix = email.split("@")[0];
+
+  // Skip generic email prefixes
+  const genericPrefixes = ["info", "hello", "contact", "support", "admin", "noreply", "no-reply", "mail", "email"];
+  if (genericPrefixes.includes(prefix.toLowerCase())) {
+    return null;
+  }
+
+  // Extract first part before dots, underscores, or numbers
+  const namePart = prefix.split(/[._\-0-9]/)[0];
+
+  // Must be at least 2 characters and only letters
+  if (namePart.length < 2 || !/^[a-zA-Z]+$/.test(namePart)) {
+    return null;
+  }
+
+  // Capitalize first letter
+  return namePart.charAt(0).toUpperCase() + namePart.slice(1).toLowerCase();
 }
 
 /**
@@ -484,9 +517,9 @@ async function enrichVariablesWithUserAndStats(
     }
   }
 
-  // If still no name, try to extract from email
+  // If still no name, try to extract friendly name from email
   if (!enrichedVars.name && toEmail) {
-    enrichedVars.name = toEmail.split("@")[0];
+    enrichedVars.name = extractFriendlyNameFromEmail(toEmail) || "there";
   }
 
   // Now enrich with stats
