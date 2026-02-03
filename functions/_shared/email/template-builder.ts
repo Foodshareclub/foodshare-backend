@@ -567,6 +567,55 @@ export function feedbackAlertTemplate(params: FeedbackAlertParams): { subject: s
 }
 
 // ============================================================================
+// Template: App Live Announcement (Community Announcement)
+// ============================================================================
+
+export interface AppLiveParams {
+  name?: string;
+  platform: "iOS" | "Android";
+}
+
+export function appReleaseTemplate(params: AppLiveParams): { subject: string; html: string } {
+  const { name, platform } = params;
+
+  const platformIcon = platform === "iOS" ? "🍎" : "🤖";
+  const platformName = platform === "iOS" ? "App Store" : "Google Play";
+  const appStoreUrl = platform === "iOS"
+    ? "https://apps.apple.com/us/app/foodshare-club/id1573242804"
+    : "https://play.google.com/store/apps/details?id=club.foodshare";
+
+  const features: BulletItem[] = [
+    { emoji: "🍎", title: "Share Surplus Food", description: "Post your extra groceries for neighbors to enjoy", color: BRAND.primaryColor },
+    { emoji: "🗺️", title: "Discover Food Near You", description: "Browse the map to find available food in your area", color: BRAND.accentTeal },
+    { emoji: "💬", title: "Connect & Chat", description: "Message neighbors to coordinate pickups", color: BRAND.accentOrange },
+    { emoji: "🏆", title: "Join Challenges", description: "Participate in community challenges and earn rewards", color: BRAND.accentPurple },
+  ];
+
+  const content = `
+    ${greeting(name || "there")}
+    ${paragraph(`<strong style="color: ${BRAND.primaryColor};">Exciting news!</strong> FoodShare is now available on the ${platformIcon} <strong>${platformName}</strong>! Download the app and join thousands of neighbors who are reducing food waste and building community together.`)}
+
+    <p style="margin: 24px 0 16px; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};"><strong>🌱 With FoodShare you can:</strong></p>
+    ${bulletList(features)}
+
+    ${divider()}
+
+    ${paragraph(`Be part of the movement! Every item shared is one less item wasted. Download FoodShare today and start making a difference in your community.`)}
+  `;
+
+  return {
+    subject: `🎉 FoodShare is Live on ${platformName}!`,
+    html: buildEmail({
+      title: `FoodShare is Live! 🍓`,
+      subtitle: `Now available on the ${platformName}`,
+      content,
+      cta: { text: `Download on ${platformName}`, url: appStoreUrl, emoji: "📲" },
+      footer: { showAppBadges: true, showSocialLinks: true, signOffMessage: "Happy sharing!" },
+    }),
+  };
+}
+
+// ============================================================================
 // Export All Templates
 // ============================================================================
 
@@ -582,6 +631,7 @@ export const templates = {
   "milestone-celebration": milestoneTemplate,
   reengagement: reengagementTemplate,
   "feedback-alert": feedbackAlertTemplate,
+  "app-release": appReleaseTemplate,
 };
 
 export type TemplateSlug = keyof typeof templates;
