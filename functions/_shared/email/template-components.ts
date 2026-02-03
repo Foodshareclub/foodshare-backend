@@ -60,10 +60,10 @@ export const BRAND = {
 
   // App Store links
   appStore: {
-    ios: "https://apps.apple.com/app/foodshare/id123456789",
-    android: "https://play.google.com/store/apps/details?id=club.foodshare",
-    iosBadge: "https://***REMOVED***/storage/v1/object/public/assets/app-store-badge.png",
-    androidBadge: "https://***REMOVED***/storage/v1/object/public/assets/google-play-badge.png",
+    ios: "https://apps.apple.com/us/app/foodshare-club/id1573242804",
+    android: null, // Coming soon
+    iosBadge: "https://***REMOVED***/storage/v1/object/public/assets/apple-store.png",
+    androidBadge: "https://***REMOVED***/storage/v1/object/public/assets/google-store.png",
   },
 
   // Company Info
@@ -422,17 +422,36 @@ export function signOff(message = "Happy sharing!", teamName = "Team FoodShare")
 // ============================================================================
 
 export function appStoreBadges(): string {
+  // Use table layout for better email client compatibility
+  const iosBadgeCell = `
+    <td align="center" style="padding: 0 8px;">
+      <a href="${BRAND.appStore.ios}" style="display: inline-block;">
+        <img src="${BRAND.appStore.iosBadge}" alt="Download on App Store" style="height: 44px; width: auto; border-radius: 8px;" />
+      </a>
+    </td>`;
+
+  // Google Play - coming soon (grayed out, not clickable)
+  const androidBadgeCell = BRAND.appStore.android
+    ? `<td align="center" style="padding: 0 8px;">
+        <a href="${BRAND.appStore.android}" style="display: inline-block;">
+          <img src="${BRAND.appStore.androidBadge}" alt="Get it on Google Play" style="height: 44px; width: auto; border-radius: 8px;" />
+        </a>
+      </td>`
+    : `<td align="center" style="padding: 0 8px;">
+        <img src="${BRAND.appStore.androidBadge}" alt="Google Play" style="height: 44px; width: auto; border-radius: 8px; opacity: 0.35; filter: grayscale(100%);" />
+      </td>`;
+
   return `<div style="margin: 20px 0; text-align: center;">
   <p style="margin: 0 0 16px; font-size: 18px; font-weight: 700; color: ${BRAND.textPrimary};">Get the FoodShare App</p>
   <table width="100%" cellpadding="0" cellspacing="0">
     <tr>
       <td align="center">
-        <a href="${BRAND.appStore.ios}" style="display: inline-block; margin: 0 6px;">
-          <img src="${BRAND.appStore.iosBadge}" alt="Download on App Store" style="height: 44px; width: auto;" />
-        </a>
-        <a href="${BRAND.appStore.android}" style="display: inline-block; margin: 0 6px;">
-          <img src="${BRAND.appStore.androidBadge}" alt="Get it on Google Play" style="height: 44px; width: auto;" />
-        </a>
+        <table cellpadding="0" cellspacing="0">
+          <tr>
+            ${iosBadgeCell}
+            ${androidBadgeCell}
+          </tr>
+        </table>
       </td>
     </tr>
   </table>
