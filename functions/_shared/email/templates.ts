@@ -1,225 +1,48 @@
 /**
  * Email Templates
  *
- * Modern, responsive HTML email templates for FoodShare
+ * Modern, responsive HTML email templates for FoodShare.
+ * All templates use the componentized system for consistent branding.
+ *
+ * @see template-components.ts - Reusable design components
+ * @see template-builder.ts - Template implementations
  */
 
-// ============================================================================
-// Constants
-// ============================================================================
+import {
+  BRAND,
+  buildEmail,
+  greeting,
+  paragraph,
+  bulletList,
+  highlightBox,
+  infoBox,
+  disclaimerBox,
+  type BulletItem,
+} from "./template-components.ts";
 
-const LOGO_URL =
-  "https://***REMOVED***/storage/v1/object/public/assets/logo-512.png";
+// Re-export templates from the component-based builder
+export {
+  welcomeTemplate,
+  emailVerificationTemplate,
+  passwordResetTemplate,
+  chatNotificationTemplate,
+  newListingTemplate,
+  volunteerWelcomeTemplate,
+  completeProfileTemplate,
+  firstShareTipsTemplate,
+  milestoneTemplate,
+  reengagementTemplate,
+  feedbackAlertTemplate,
+  renderTemplate,
+  templates,
+  type TemplateSlug,
+} from "./template-builder.ts";
 
-const SOCIAL_LINKS = {
-  facebook: "https://facebook.com/foodshareclub",
-  twitter: "https://twitter.com/foodshareclub",
-  instagram: "https://instagram.com/foodshareclub",
-  linkedin: "https://linkedin.com/company/foodshareclub",
-};
-
-const COMPANY_INFO = {
-  name: "FoodShare LLC",
-  ein: "USA 20231394981",
-  address: "4632 Winding Way",
-  city: "Sacramento, CA 95841",
-  email: "support@foodshare.club",
-  website: "https://foodshare.club",
-  privacy: "https://foodshare.club/privacy",
-  terms: "https://foodshare.club/terms",
-};
-
-// ============================================================================
-// Base Template
-// ============================================================================
-
-interface BaseTemplateParams {
-  title: string;
-  subtitle?: string;
-  preheader?: string;
-  content: string;
-  ctaText?: string;
-  ctaUrl?: string;
-  showSocialLinks?: boolean;
-}
-
-export function baseTemplate(params: BaseTemplateParams): string {
-  const year = new Date().getFullYear();
-  const showSocial = params.showSocialLinks !== false;
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <title>${params.title}</title>
-  ${params.preheader ? `<!--[if !mso]><!--><meta name="description" content="${params.preheader}"><!--<![endif]-->` : ""}
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f0f0f0; color: #363a57;">
-
-  <!-- Email Container -->
-  <table width="100%" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, #f0f0f0 0%, #e5e5e5 100%); padding: 60px 20px;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 45, 85, 0.2); overflow: hidden;">
-
-          <!-- Header with Logo & Gradient -->
-          <tr>
-            <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff5177 50%, #ff6b8a 100%); padding: 50px 30px; text-align: center;">
-              <img src="${LOGO_URL}"
-                   alt="FoodShare Logo"
-                   style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
-
-              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.25); letter-spacing: -0.5px;">
-                ${params.title}
-              </h1>
-
-              ${
-                params.subtitle
-                  ? `<p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);">
-                ${params.subtitle}
-              </p>`
-                  : ""
-              }
-            </td>
-          </tr>
-
-          <!-- Content Section -->
-          <tr>
-            <td style="padding: 50px 40px; background-color: #fafafa;">
-
-              <!-- Main Message -->
-              <div style="background: white; padding: 30px; border-radius: 12px; border: 2px solid #f0f0f0; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);">
-                ${params.content}
-
-                ${
-                  params.ctaText && params.ctaUrl
-                    ? `
-                <!-- CTA Button -->
-                <table width="100%" cellpadding="0" cellspacing="0">
-                  <tr>
-                    <td align="center" style="padding: 24px 0 10px;">
-                      <a href="${params.ctaUrl}"
-                         style="display: inline-block; padding: 18px 48px; background: linear-gradient(135deg, #ff2d55 0%, #ff4873 50%, #ff5e8a 100%); color: #ffffff; text-decoration: none; border-radius: 50px; font-weight: 700; font-size: 16px; box-shadow: 0 6px 24px rgba(255, 45, 85, 0.35), 0 2px 8px rgba(255, 45, 85, 0.2); text-transform: uppercase; letter-spacing: 1px; border: 2px solid rgba(255, 255, 255, 0.3);">
-                        ${params.ctaText}
-                      </a>
-                    </td>
-                  </tr>
-                </table>`
-                    : ""
-                }
-              </div>
-
-            </td>
-          </tr>
-
-          <!-- Footer Section -->
-          <tr>
-            <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff4270 100%); padding: 40px 30px; text-align: center;">
-
-              ${
-                showSocial
-                  ? `
-              <!-- Social Media Icons -->
-              <p style="margin: 0 0 10px; font-size: 15px; color: rgba(255, 255, 255, 0.9); font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">
-                Connect With Us
-              </p>
-
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin: 15px 0 25px;">
-                <tr>
-                  <td align="center">
-                    <a href="${SOCIAL_LINKS.facebook}" style="display: inline-block; margin: 0 6px; width: 48px; height: 48px; background: rgba(255, 255, 255, 0.25); border-radius: 50%; line-height: 48px; text-align: center; text-decoration: none; border: 2px solid rgba(255, 255, 255, 0.4);">
-                      <strong style="font-size: 24px; color: #ffffff; font-family: Georgia, serif;">f</strong>
-                    </a>
-                    <a href="${SOCIAL_LINKS.twitter}" style="display: inline-block; margin: 0 6px; width: 48px; height: 48px; background: rgba(255, 255, 255, 0.25); border-radius: 50%; line-height: 48px; text-align: center; text-decoration: none; border: 2px solid rgba(255, 255, 255, 0.4);">
-                      <strong style="font-size: 20px; color: #ffffff;">𝕏</strong>
-                    </a>
-                    <a href="${SOCIAL_LINKS.instagram}" style="display: inline-block; margin: 0 6px; width: 48px; height: 48px; background: rgba(255, 255, 255, 0.25); border-radius: 50%; line-height: 48px; text-align: center; text-decoration: none; border: 2px solid rgba(255, 255, 255, 0.4);">
-                      <strong style="font-size: 22px; color: #ffffff; font-family: Arial, sans-serif; font-weight: 900;">IG</strong>
-                    </a>
-                    <a href="${SOCIAL_LINKS.linkedin}" style="display: inline-block; margin: 0 6px; width: 48px; height: 48px; background: rgba(255, 255, 255, 0.25); border-radius: 50%; line-height: 48px; text-align: center; text-decoration: none; border: 2px solid rgba(255, 255, 255, 0.4);">
-                      <strong style="font-size: 22px; color: #ffffff; font-family: Arial, sans-serif; font-weight: 700;">in</strong>
-                    </a>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Divider -->
-              <div style="height: 1px; background: rgba(255, 255, 255, 0.3); margin: 25px auto; max-width: 400px;"></div>
-              `
-                  : ""
-              }
-
-              <!-- Footer Logo -->
-              <img src="${LOGO_URL}" alt="FoodShare" style="width: 45px; height: 45px; border-radius: 50%; margin: 15px 0 10px; border: 3px solid rgba(255, 255, 255, 0.4); background: white; padding: 2px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);">
-
-              <!-- Company Info -->
-              <p style="margin: 12px 0 0; font-size: 16px; line-height: 1.5; color: #ffffff; font-weight: 700;">
-                ${COMPANY_INFO.name}
-              </p>
-
-              <p style="margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: rgba(255, 255, 255, 0.9);">
-                &copy; ${year} ${COMPANY_INFO.ein}<br>
-                All Rights Reserved
-              </p>
-
-              <p style="margin: 12px 0 0; font-size: 14px; line-height: 1.6; color: rgba(255, 255, 255, 0.9);">
-                📍 ${COMPANY_INFO.address}<br>
-                ${COMPANY_INFO.city}
-              </p>
-
-              <!-- Contact -->
-              <p style="margin: 20px 0 0; font-size: 14px; color: rgba(255, 255, 255, 0.95);">
-                💬 Questions? <a href="mailto:${COMPANY_INFO.email}" style="color: #ffffff; text-decoration: none; font-weight: 700; border-bottom: 2px solid rgba(255, 255, 255, 0.5);">${COMPANY_INFO.email}</a>
-              </p>
-
-              <!-- Footer Links -->
-              <p style="margin: 25px 0 0; font-size: 13px; color: rgba(255, 255, 255, 0.9); line-height: 2;">
-                <a href="${COMPANY_INFO.website}" style="color: #ffffff; text-decoration: none; margin: 0 8px; padding: 8px 16px; background: rgba(255, 255, 255, 0.15); border-radius: 20px; display: inline-block; font-weight: 600;">🏠 Visit Us</a>
-                <a href="${COMPANY_INFO.privacy}" style="color: #ffffff; text-decoration: none; margin: 0 8px; padding: 8px 16px; background: rgba(255, 255, 255, 0.15); border-radius: 20px; display: inline-block; font-weight: 600;">🔒 Privacy</a>
-                <a href="${COMPANY_INFO.terms}" style="color: #ffffff; text-decoration: none; margin: 0 8px; padding: 8px 16px; background: rgba(255, 255, 255, 0.15); border-radius: 20px; display: inline-block; font-weight: 600;">📋 Terms</a>
-              </p>
-
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-
-</body>
-</html>`;
-}
+// Re-export components and BRAND for direct usage
+export { BRAND } from "./template-components.ts";
 
 // ============================================================================
-// Helper: Info Box
-// ============================================================================
-
-function infoBox(content: string, icon?: string): string {
-  return `
-    <div style="margin: 24px 0 0; padding: 20px; background: linear-gradient(135deg, #f8f8f8 0%, #f3f3f3 100%); border-radius: 8px; border-left: 4px solid #ff2d55;">
-      <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #666;">
-        ${icon ? `<strong style="color: #ff2d55;">${icon}</strong><br>` : ""}
-        ${content}
-      </p>
-    </div>`;
-}
-
-// ============================================================================
-// Helper: Disclaimer Box
-// ============================================================================
-
-function disclaimerBox(content: string): string {
-  return `
-    <div style="margin: 30px 0 0; font-size: 14px; line-height: 1.6; color: #999; text-align: center; padding: 20px; background-color: #fafafa; border-radius: 8px; border: 1px dashed #e0e0e0;">
-      ${content}
-    </div>`;
-}
-
-// ============================================================================
-// Welcome Email
+// Legacy Wrapper Functions (for backwards compatibility with email-service.ts)
 // ============================================================================
 
 interface WelcomeEmailParams {
@@ -230,38 +53,28 @@ interface WelcomeEmailParams {
 export function welcomeEmail(params: WelcomeEmailParams): { subject: string; html: string } {
   const displayName = params.name || params.email.split("@")[0];
 
+  const features: BulletItem[] = [
+    { emoji: "🍎", title: "Share Surplus Food", description: "Post your extra groceries for neighbors", color: BRAND.primaryColor },
+    { emoji: "🗺️", title: "Discover Food Near You", description: "Browse the map to find available food", color: BRAND.accentTeal },
+    { emoji: "💬", title: "Connect & Chat", description: "Message members to coordinate pickups", color: BRAND.accentOrange },
+    { emoji: "🏆", title: "Join Challenges", description: "Participate in community challenges", color: BRAND.accentPurple },
+  ];
+
   const content = `
-    <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: #363a57;">
-      Hey <strong>${displayName}</strong>! 👋
-    </p>
-
-    <p style="margin: 0 0 24px; font-size: 16px; line-height: 1.7; color: #555;">
-      We're thrilled to have you join the <strong style="color: #ff2d55;">FoodShare</strong> community! Get ready to embark on a journey of delicious discoveries and meaningful connections.
-    </p>
-
-    <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.7; color: #555;">
-      <strong>🌱 Here's what you can do:</strong>
-    </p>
-
-    <ul style="margin: 0 0 24px; padding-left: 24px; font-size: 15px; line-height: 2; color: #555;">
-      <li><strong style="color: #ff2d55;">🍎 Share Surplus Food</strong> – Post your extra groceries for neighbors</li>
-      <li><strong style="color: #00A699;">🗺️ Discover Food Near You</strong> – Browse the map to find available food</li>
-      <li><strong style="color: #FC642D;">💬 Connect & Chat</strong> – Message members to coordinate pickups</li>
-      <li><strong style="color: #8B5CF6;">🏆 Join Challenges</strong> – Participate in community challenges</li>
-    </ul>
-
-    ${infoBox("Together, we're reducing food waste and building stronger communities. Every meal shared makes a difference!", "✨ Your Impact Matters")}
+    ${greeting(displayName)}
+    ${paragraph(`We're thrilled to have you join the <strong style="color: ${BRAND.primaryColor};">FoodShare</strong> community! Get ready to embark on a journey of delicious discoveries and meaningful connections.`)}
+    <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};"><strong>🌱 Here's what you can do:</strong></p>
+    ${bulletList(features)}
+    ${infoBox("Your Impact Matters", "Together, we're reducing food waste and building stronger communities. Every meal shared makes a difference!", "✨")}
   `;
 
   return {
     subject: "Welcome to FoodShare! 🎉",
-    html: baseTemplate({
+    html: buildEmail({
       title: "Welcome to FoodShare! 🎉",
       subtitle: "Your journey to reducing food waste starts now",
-      preheader: "Start sharing and discovering food in your community",
       content,
-      ctaText: "🚀 Get Started",
-      ctaUrl: "https://foodshare.club/products",
+      cta: { text: "Get Started", url: "https://foodshare.club/products", emoji: "🚀" },
     }),
   };
 }
@@ -279,40 +92,28 @@ export function goodbyeEmail(params: GoodbyeEmailParams): { subject: string; htm
   const displayName = params.name || params.email.split("@")[0];
 
   const content = `
-    <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: #363a57;">
+    <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: ${BRAND.textPrimary};">
       Hey <strong>${displayName}</strong>,
     </p>
-
-    <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.7; color: #555;">
-      We're very sad to see you go. Your presence in our community will be missed.
-    </p>
-
-    <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.7; color: #555;">
-      If there's anything we could have done better, please don't hesitate to let us know. Your feedback helps us improve for everyone.
-    </p>
-
-    <p style="margin: 0 0 24px; font-size: 16px; line-height: 1.7; color: #555;">
-      Remember, you're always welcome back if you change your mind! 💚
-    </p>
-
-    ${infoBox("Your account data has been securely removed. If you ever want to return, just sign up again – we'd love to have you back!", "📝 Note")}
+    ${paragraph("We're very sad to see you go. Your presence in our community will be missed.")}
+    ${paragraph("If there's anything we could have done better, please don't hesitate to let us know. Your feedback helps us improve for everyone.")}
+    ${paragraph("Remember, you're always welcome back if you change your mind! 💚")}
+    ${infoBox("Note", "Your account data has been securely removed. If you ever want to return, just sign up again – we'd love to have you back!", "📝")}
   `;
 
   return {
     subject: "We'll miss you at FoodShare 😢",
-    html: baseTemplate({
+    html: buildEmail({
       title: "We're Sad to See You Go 😢",
       subtitle: "We hope to see you again soon",
-      preheader: "Your FoodShare account has been deleted",
       content,
-      ctaText: "📝 Give Feedback",
-      ctaUrl: "https://foodshare.club/feedback",
+      cta: { text: "Give Feedback", url: "https://foodshare.club/feedback", emoji: "📝" },
     }),
   };
 }
 
 // ============================================================================
-// Email Verification / Confirmation
+// Email Verification
 // ============================================================================
 
 interface EmailVerificationParams {
@@ -324,37 +125,26 @@ export function emailVerificationEmail(params: EmailVerificationParams): {
   subject: string;
   html: string;
 } {
-  const displayName = params.name || "there";
-
   const content = `
-    <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: #363a57;">
-      Thanks for signing up for <strong style="color: #ff2d55;">FoodShare</strong>! 🥗
-    </p>
-
-    <p style="margin: 0 0 24px; font-size: 16px; line-height: 1.7; color: #555;">
-      We're excited to have you join our community dedicated to reducing food waste and sharing delicious meals. To complete your registration and start making a difference, please confirm your email address below:
-    </p>
-
-    ${infoBox("Once confirmed, your email will be uniquely associated with your account, and you'll gain full access to share and discover food in your community.", "✨ What happens next?")}
-
-    ${disclaimerBox("<strong style=\"color: #666;\">Didn't sign up?</strong><br>If you didn't register with FoodShare, you can safely ignore this email.")}
+    <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: ${BRAND.textPrimary};">Thanks for signing up for <strong style="color: ${BRAND.primaryColor};">FoodShare</strong>! 🥗</p>
+    ${paragraph("We're excited to have you join our community dedicated to reducing food waste and sharing delicious meals. To complete your registration and start making a difference, please confirm your email address below:")}
+    ${infoBox("What happens next?", "Once confirmed, your email will be uniquely associated with your account, and you'll gain full access to share and discover food in your community.", "✨")}
+    ${disclaimerBox(`<strong style="color: ${BRAND.textMuted};">Didn't sign up?</strong><br>If you didn't register with FoodShare, you can safely ignore this email.`)}
   `;
 
   return {
     subject: "Confirm your email to join FoodShare! ✉️",
-    html: baseTemplate({
+    html: buildEmail({
       title: "Welcome to FoodShare! 🎉",
       subtitle: "Let's confirm your email to get started",
-      preheader: "One click to confirm your FoodShare account",
       content,
-      ctaText: "✓ Confirm Your Email",
-      ctaUrl: params.verifyUrl,
+      cta: { text: "Confirm Your Email", url: params.verifyUrl, emoji: "✓" },
     }),
   };
 }
 
 // ============================================================================
-// Password Reset Email
+// Password Reset
 // ============================================================================
 
 interface PasswordResetParams {
@@ -364,35 +154,28 @@ interface PasswordResetParams {
 }
 
 export function passwordResetEmail(params: PasswordResetParams): { subject: string; html: string } {
+  const expiresIn = params.expiresIn || "1 hour";
+
   const content = `
-    <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: #363a57;">
-      Hey <strong>${params.name}</strong>,
-    </p>
-
-    <p style="margin: 0 0 24px; font-size: 16px; line-height: 1.7; color: #555;">
-      We received a request to reset your password. Click the button below to create a new password:
-    </p>
-
-    ${infoBox(`This link will expire in <strong>${params.expiresIn || "1 hour"}</strong>. If you didn't request this, you can safely ignore this email.`, "⏰ Time Sensitive")}
-
-    ${disclaimerBox("<strong style=\"color: #666;\">Didn't request this?</strong><br>If you didn't request a password reset, your account is still secure. No action is needed.")}
+    ${greeting(params.name, "")}
+    ${paragraph("We received a request to reset your password. Click the button below to create a new password:")}
+    ${infoBox("Time Sensitive", `This link will expire in <strong>${expiresIn}</strong>. If you didn't request this, you can safely ignore this email.`, "⏰")}
+    ${disclaimerBox(`<strong style="color: ${BRAND.textMuted};">Didn't request this?</strong><br>If you didn't request a password reset, your account is still secure. No action is needed.`)}
   `;
 
   return {
     subject: "Reset your FoodShare password 🔐",
-    html: baseTemplate({
+    html: buildEmail({
       title: "Reset Your Password 🔐",
       subtitle: "Let's get you back into your account",
-      preheader: "Click to reset your FoodShare password",
       content,
-      ctaText: "🔑 Reset Password",
-      ctaUrl: params.resetUrl,
+      cta: { text: "Reset Password", url: params.resetUrl, emoji: "🔑" },
     }),
   };
 }
 
 // ============================================================================
-// Feedback Alert Email (for support team)
+// Feedback Alert (Admin)
 // ============================================================================
 
 interface FeedbackAlertParams {
@@ -424,39 +207,35 @@ export function feedbackAlertEmail(params: FeedbackAlertParams): {
       })
     : new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 
+  const feedbackBox = `
+    <p style="margin: 0 0 12px; font-size: 15px; color: ${BRAND.textSecondary};"><strong style="color: ${BRAND.textPrimary};">Type:</strong> ${emoji} ${params.feedback_type}</p>
+    <p style="margin: 0 0 12px; font-size: 15px; color: ${BRAND.textSecondary};"><strong style="color: ${BRAND.textPrimary};">Subject:</strong> ${params.subject}</p>
+    <p style="margin: 0 0 12px; font-size: 15px; color: ${BRAND.textSecondary};"><strong style="color: ${BRAND.textPrimary};">From:</strong> ${params.submitter_name} (<a href="mailto:${params.submitter_email}" style="color: ${BRAND.primaryColor};">${params.submitter_email}</a>)</p>
+    <p style="margin: 0 0 16px; font-size: 15px; color: ${BRAND.textSecondary};"><strong style="color: ${BRAND.textPrimary};">Submitted:</strong> ${timestamp}</p>
+    <hr style="border: none; border-top: 1px solid #ddd; margin: 16px 0;">
+    <p style="margin: 0; font-size: 15px; line-height: 1.7; color: ${BRAND.textSecondary}; white-space: pre-wrap;">${params.message}</p>
+  `;
+
   const content = `
-    <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: #363a57;">
-      New feedback has been submitted:
-    </p>
-
-    <div style="background: linear-gradient(135deg, #f8f8f8 0%, #f3f3f3 100%); border-radius: 12px; padding: 24px; margin: 0 0 24px; border-left: 4px solid #ff2d55;">
-      <p style="margin: 0 0 12px; font-size: 15px; color: #555;"><strong style="color: #363a57;">Type:</strong> ${emoji} ${params.feedback_type}</p>
-      <p style="margin: 0 0 12px; font-size: 15px; color: #555;"><strong style="color: #363a57;">Subject:</strong> ${params.subject}</p>
-      <p style="margin: 0 0 12px; font-size: 15px; color: #555;"><strong style="color: #363a57;">From:</strong> ${params.submitter_name} (<a href="mailto:${params.submitter_email}" style="color: #ff2d55;">${params.submitter_email}</a>)</p>
-      <p style="margin: 0 0 16px; font-size: 15px; color: #555;"><strong style="color: #363a57;">Submitted:</strong> ${timestamp}</p>
-      <hr style="border: none; border-top: 1px solid #ddd; margin: 16px 0;">
-      <p style="margin: 0; font-size: 15px; line-height: 1.7; color: #555; white-space: pre-wrap;">${params.message}</p>
-    </div>
-
-    <p style="margin: 0; font-size: 13px; color: #999;">Feedback ID: ${params.feedback_id}</p>
+    <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: ${BRAND.textPrimary};">New feedback has been submitted:</p>
+    ${highlightBox(feedbackBox)}
+    <p style="margin: 0; font-size: 13px; color: ${BRAND.textLight};">Feedback ID: ${params.feedback_id}</p>
   `;
 
   return {
     subject: `${emoji} New Feedback: ${params.subject}`,
-    html: baseTemplate({
+    html: buildEmail({
       title: "New Feedback Received",
       subtitle: `${params.feedback_type} feedback from ${params.submitter_name}`,
-      preheader: `${params.feedback_type} feedback from ${params.submitter_name}`,
       content,
-      ctaText: "View in Dashboard",
-      ctaUrl: "https://foodshare.club/admin/feedback",
-      showSocialLinks: false,
+      cta: { text: "View in Dashboard", url: "https://foodshare.club/admin/feedback", emoji: "📋" },
+      footer: { minimal: true, showSocialLinks: false },
     }),
   };
 }
 
 // ============================================================================
-// New Food Listing Notification
+// New Listing Notification
 // ============================================================================
 
 interface NewListingEmailParams {
@@ -479,48 +258,40 @@ export function newListingEmail(params: NewListingEmailParams): { subject: strin
   };
 
   const emoji = typeEmoji[params.listingType || "default"] || typeEmoji.default;
+  const listingType = params.listingType || "food";
   const shortDesc = params.listingDescription
     ? params.listingDescription.length > 150
       ? params.listingDescription.substring(0, 150) + "..."
       : params.listingDescription
     : "";
 
+  const listingBox = `
+    <p style="font-size: 20px; font-weight: 700; margin: 0 0 12px; color: ${BRAND.textPrimary};">${emoji} ${params.listingTitle}</p>
+    ${params.listingAddress ? `<p style="margin: 0 0 8px; color: ${BRAND.textMuted}; font-size: 14px;">📍 ${params.listingAddress}</p>` : ""}
+    ${shortDesc ? `<p style="margin: 12px 0 0; font-size: 15px; line-height: 1.6; color: ${BRAND.textSecondary};">${shortDesc}</p>` : ""}
+    <p style="margin: 12px 0 0; color: ${BRAND.textLight}; font-size: 14px;">Posted by <strong style="color: ${BRAND.textSecondary};">${params.posterName}</strong></p>
+  `;
+
   const content = `
-    <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: #363a57;">
-      Hey <strong>${params.recipientName}</strong>! 👋
-    </p>
-
-    <p style="margin: 0 0 24px; font-size: 16px; line-height: 1.7; color: #555;">
-      Great news! A new ${params.listingType || "food"} listing is available near you:
-    </p>
-
-    <div style="background: linear-gradient(135deg, #f8f8f8 0%, #f3f3f3 100%); border-radius: 12px; padding: 24px; margin: 0 0 24px; border-left: 4px solid #ff2d55;">
-      <p style="font-size: 20px; font-weight: 700; margin: 0 0 12px; color: #363a57;">${emoji} ${params.listingTitle}</p>
-      ${params.listingAddress ? `<p style="margin: 0 0 8px; color: #666; font-size: 14px;">📍 ${params.listingAddress}</p>` : ""}
-      ${shortDesc ? `<p style="margin: 12px 0 0; font-size: 15px; line-height: 1.6; color: #555;">${shortDesc}</p>` : ""}
-      <p style="margin: 12px 0 0; color: #999; font-size: 14px;">Posted by <strong style="color: #555;">${params.posterName}</strong></p>
-    </div>
-
-    <p style="margin: 0; font-size: 16px; line-height: 1.7; color: #555;">
-      Don't miss out – items go fast! 🏃‍♂️
-    </p>
+    ${greeting(params.recipientName)}
+    ${paragraph(`Great news! A new ${listingType} listing is available near you:`)}
+    ${highlightBox(listingBox)}
+    ${paragraph("Don't miss out – items go fast! 🏃‍♂️", "0")}
   `;
 
   return {
-    subject: `${emoji} New ${params.listingType || "food"} available: ${params.listingTitle}`,
-    html: baseTemplate({
+    subject: `${emoji} New ${listingType} available: ${params.listingTitle}`,
+    html: buildEmail({
       title: "New Listing Near You! 📍",
       subtitle: `${params.listingTitle} is now available`,
-      preheader: `${params.listingTitle} is now available near you`,
       content,
-      ctaText: "View Listing",
-      ctaUrl: params.listingUrl,
+      cta: { text: "View Listing", url: params.listingUrl, emoji: "👀" },
     }),
   };
 }
 
 // ============================================================================
-// Chat Message Notification
+// Chat Notification
 // ============================================================================
 
 interface ChatNotificationParams {
@@ -540,32 +311,19 @@ export function chatNotificationEmail(params: ChatNotificationParams): {
       : params.messagePreview;
 
   const content = `
-    <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: #363a57;">
-      Hey <strong>${params.recipientName}</strong>! 👋
-    </p>
-
-    <p style="margin: 0 0 24px; font-size: 16px; line-height: 1.7; color: #555;">
-      You have a new message from <strong style="color: #ff2d55;">${params.senderName}</strong>:
-    </p>
-
-    <div style="background: linear-gradient(135deg, #f8f8f8 0%, #f3f3f3 100%); border-radius: 12px; padding: 24px; margin: 0 0 24px; border-left: 4px solid #ff2d55;">
-      <p style="margin: 0; font-size: 16px; line-height: 1.7; color: #555; font-style: italic;">"${preview}"</p>
-    </div>
-
-    <p style="margin: 0; font-size: 16px; line-height: 1.7; color: #555;">
-      Reply now to continue the conversation! 💬
-    </p>
+    ${greeting(params.recipientName)}
+    ${paragraph(`You have a new message from <strong style="color: ${BRAND.primaryColor};">${params.senderName}</strong>:`)}
+    ${highlightBox(`<p style="margin: 0; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary}; font-style: italic;">"${preview}"</p>`)}
+    ${paragraph("Reply now to continue the conversation! 💬", "0")}
   `;
 
   return {
     subject: `💬 New message from ${params.senderName}`,
-    html: baseTemplate({
+    html: buildEmail({
       title: "You've Got a Message! 💬",
       subtitle: `${params.senderName} sent you a message`,
-      preheader: `${params.senderName} sent you a message`,
       content,
-      ctaText: "Reply Now",
-      ctaUrl: params.chatUrl,
+      cta: { text: "Reply Now", url: params.chatUrl, emoji: "💬" },
     }),
   };
 }
@@ -602,30 +360,24 @@ export function notificationEmail(params: NotificationEmailParams): {
   const categoryLabel = categoryLabels[params.category] || "notification";
 
   const content = `
-    <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: #363a57;">
-      Hey <strong>${params.recipientName}</strong>! 👋
-    </p>
-
-    <div style="background: linear-gradient(135deg, #f8f8f8 0%, #f3f3f3 100%); border-radius: 12px; padding: 24px; margin: 0 0 24px; border-left: 4px solid #ff2d55;">
-      <p style="margin: 0; font-size: 16px; line-height: 1.7; color: #555;">
-        ${params.body.replace(/\n/g, "<br>")}
-      </p>
-    </div>
-
-    <p style="margin: 20px 0 0; font-size: 13px; color: #999; text-align: center;">
+    ${greeting(params.recipientName)}
+    ${highlightBox(`<p style="margin: 0; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};">${params.body.replace(/\n/g, "<br>")}</p>`)}
+    <p style="margin: 20px 0 0; font-size: 13px; color: ${BRAND.textLight}; text-align: center;">
       You received this email because you have ${categoryLabel} notifications enabled.
-      <a href="${params.unsubscribeUrl}" style="color: #ff2d55; text-decoration: none;">Unsubscribe</a>
+      <a href="${params.unsubscribeUrl}" style="color: ${BRAND.primaryColor}; text-decoration: none;">Unsubscribe</a>
     </p>
   `;
 
   return {
     subject: params.title,
-    html: baseTemplate({
+    html: buildEmail({
       title: params.title,
-      preheader: params.body.substring(0, 100),
       content,
-      ctaText: params.actionText || "View Details",
-      ctaUrl: params.actionUrl || "https://foodshare.club",
+      cta: {
+        text: params.actionText || "View Details",
+        url: params.actionUrl || "https://foodshare.club",
+      },
+      footer: { showUnsubscribe: true, unsubscribeUrl: params.unsubscribeUrl },
     }),
   };
 }
@@ -697,7 +449,7 @@ export function digestEmail(params: DigestEmailParams): {
     itemsHtml += `
       <tr>
         <td style="padding: 20px 0 10px;">
-          <h3 style="margin: 0; font-size: 16px; color: #ff2d55; font-weight: 600; border-bottom: 2px solid #ff2d55; padding-bottom: 8px; display: inline-block;">
+          <h3 style="margin: 0; font-size: 16px; color: ${BRAND.primaryColor}; font-weight: 600; border-bottom: 2px solid ${BRAND.primaryColor}; padding-bottom: 8px; display: inline-block;">
             ${emoji} ${categoryName} (${categoryItems.length})
           </h3>
         </td>
@@ -708,8 +460,8 @@ export function digestEmail(params: DigestEmailParams): {
       itemsHtml += `
       <tr>
         <td style="padding: 12px 0; border-bottom: 1px solid #f0f0f0;">
-          <p style="margin: 0 0 4px; font-size: 15px; font-weight: 600; color: #333333;">${item.title}</p>
-          <p style="margin: 0; font-size: 14px; color: #666666; line-height: 1.4;">${bodyPreview}</p>
+          <p style="margin: 0 0 4px; font-size: 15px; font-weight: 600; color: ${BRAND.textPrimary};">${item.title}</p>
+          <p style="margin: 0; font-size: 14px; color: ${BRAND.textMuted}; line-height: 1.4;">${bodyPreview}</p>
         </td>
       </tr>`;
     }
@@ -718,41 +470,33 @@ export function digestEmail(params: DigestEmailParams): {
       itemsHtml += `
       <tr>
         <td style="padding: 8px 0;">
-          <p style="margin: 0; font-size: 13px; color: #999999;">...and ${categoryItems.length - 5} more</p>
+          <p style="margin: 0; font-size: 13px; color: ${BRAND.textLight};">...and ${categoryItems.length - 5} more</p>
         </td>
       </tr>`;
     }
   }
 
   const content = `
-    <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: #363a57;">
-      Hey <strong>${params.recipientName}</strong>! 👋
-    </p>
-
-    <p style="margin: 0 0 24px; font-size: 16px; line-height: 1.7; color: #555;">
-      Here's your ${frequencyLabel.toLowerCase()} digest with <strong>${params.items.length}</strong> notification${params.items.length !== 1 ? "s" : ""}:
-    </p>
-
+    ${greeting(params.recipientName)}
+    ${paragraph(`Here's your ${frequencyLabel.toLowerCase()} digest with <strong>${params.items.length}</strong> notification${params.items.length !== 1 ? "s" : ""}:`)}
     <table width="100%" cellpadding="0" cellspacing="0" style="margin: 0 0 24px;">
       ${itemsHtml}
     </table>
-
-    <p style="margin: 20px 0 0; font-size: 13px; color: #999; text-align: center;">
-      <a href="${params.settingsUrl || "https://foodshare.club/settings/notifications"}" style="color: #ff2d55; text-decoration: none;">Manage Preferences</a>
+    <p style="margin: 20px 0 0; font-size: 13px; color: ${BRAND.textLight}; text-align: center;">
+      <a href="${params.settingsUrl || "https://foodshare.club/settings/notifications"}" style="color: ${BRAND.primaryColor}; text-decoration: none;">Manage Preferences</a>
       &nbsp;|&nbsp;
-      <a href="${params.unsubscribeUrl}" style="color: #ff2d55; text-decoration: none;">Unsubscribe</a>
+      <a href="${params.unsubscribeUrl}" style="color: ${BRAND.primaryColor}; text-decoration: none;">Unsubscribe</a>
     </p>
   `;
 
   return {
     subject: `${frequencyLabel} Digest: ${params.items.length} new notification${params.items.length !== 1 ? "s" : ""}`,
-    html: baseTemplate({
+    html: buildEmail({
       title: `Your ${frequencyLabel} Digest`,
       subtitle: `${params.items.length} notification${params.items.length !== 1 ? "s" : ""} to catch up on`,
-      preheader: `${params.items.length} notifications from FoodShare`,
       content,
-      ctaText: "Open FoodShare",
-      ctaUrl: "https://foodshare.club",
+      cta: { text: "Open FoodShare", url: "https://foodshare.club" },
+      footer: { showUnsubscribe: true, unsubscribeUrl: params.unsubscribeUrl },
     }),
   };
 }

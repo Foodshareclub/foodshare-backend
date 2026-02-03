@@ -1,0 +1,478 @@
+/**
+ * Email Template Builder
+ *
+ * Generates all FoodShare email templates using the componentized system.
+ * This is the SINGLE SOURCE OF TRUTH for all email templates.
+ *
+ * Usage:
+ * - Edge Functions: Import and call template functions directly
+ * - Database Seeding: Run `deno run template-builder.ts --generate-sql`
+ * - Preview: Run `deno run template-builder.ts --preview welcome`
+ */
+
+import {
+  BRAND,
+  buildEmail,
+  greeting,
+  paragraph,
+  bulletList,
+  infoBox,
+  highlightBox,
+  disclaimerBox,
+  type BulletItem,
+} from "./template-components.ts";
+
+// ============================================================================
+// Template: Welcome
+// ============================================================================
+
+export interface WelcomeParams {
+  name: string;
+}
+
+export function welcomeTemplate(params: WelcomeParams): { subject: string; html: string } {
+  const features: BulletItem[] = [
+    { emoji: "🍎", title: "Share Surplus Food", description: "Post your extra groceries for neighbors", color: BRAND.primaryColor },
+    { emoji: "🗺️", title: "Discover Food Near You", description: "Browse the map to find available food", color: BRAND.accentTeal },
+    { emoji: "💬", title: "Connect & Chat", description: "Message members to coordinate pickups", color: BRAND.accentOrange },
+    { emoji: "🏆", title: "Join Challenges", description: "Participate in community challenges", color: BRAND.accentPurple },
+  ];
+
+  const content = `
+    ${greeting(params.name)}
+    ${paragraph(`We're thrilled to have you join the <strong style="color: ${BRAND.primaryColor};">FoodShare</strong> community! Get ready to embark on a journey of delicious discoveries and meaningful connections.`)}
+    <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};"><strong>🌱 Here's what you can do:</strong></p>
+    ${bulletList(features)}
+    ${infoBox("Your Impact Matters", "Together, we're reducing food waste and building stronger communities. Every meal shared makes a difference!", "✨")}
+  `;
+
+  return {
+    subject: "Welcome to FoodShare! 🎉",
+    html: buildEmail({
+      title: "Welcome to FoodShare! 🎉",
+      subtitle: "Your journey to reducing food waste starts now",
+      content,
+      cta: { text: "Get Started", url: "https://foodshare.club/products", emoji: "🚀" },
+    }),
+  };
+}
+
+// ============================================================================
+// Template: Email Verification
+// ============================================================================
+
+export interface EmailVerificationParams {
+  verifyUrl: string;
+}
+
+export function emailVerificationTemplate(params: EmailVerificationParams): { subject: string; html: string } {
+  const content = `
+    <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: ${BRAND.textPrimary};">Thanks for signing up for <strong style="color: ${BRAND.primaryColor};">FoodShare</strong>! 🥗</p>
+    ${paragraph("We're excited to have you join our community dedicated to reducing food waste and sharing delicious meals. To complete your registration and start making a difference, please confirm your email address below:")}
+    ${infoBox("What happens next?", "Once confirmed, your email will be uniquely associated with your account, and you'll gain full access to share and discover food in your community.", "✨")}
+    ${disclaimerBox(`<strong style="color: ${BRAND.textMuted};">Didn't sign up?</strong><br>If you didn't register with FoodShare, you can safely ignore this email.`)}
+  `;
+
+  return {
+    subject: "Confirm your email to join FoodShare! ✉️",
+    html: buildEmail({
+      title: "Welcome to FoodShare! 🎉",
+      subtitle: "Let's confirm your email to get started",
+      content,
+      cta: { text: "Confirm Your Email", url: params.verifyUrl, emoji: "✓" },
+    }),
+  };
+}
+
+// ============================================================================
+// Template: Password Reset
+// ============================================================================
+
+export interface PasswordResetParams {
+  name: string;
+  resetUrl: string;
+  expiresIn?: string;
+}
+
+export function passwordResetTemplate(params: PasswordResetParams): { subject: string; html: string } {
+  const expiresIn = params.expiresIn || "1 hour";
+
+  const content = `
+    ${greeting(params.name, "")}
+    ${paragraph("We received a request to reset your password. Click the button below to create a new password:")}
+    ${infoBox("Time Sensitive", `This link will expire in <strong>${expiresIn}</strong>. If you didn't request this, you can safely ignore this email.`, "⏰")}
+    ${disclaimerBox(`<strong style="color: ${BRAND.textMuted};">Didn't request this?</strong><br>If you didn't request a password reset, your account is still secure. No action is needed.`)}
+  `;
+
+  return {
+    subject: "Reset your FoodShare password 🔐",
+    html: buildEmail({
+      title: "Reset Your Password 🔐",
+      subtitle: "Let's get you back into your account",
+      content,
+      cta: { text: "Reset Password", url: params.resetUrl, emoji: "🔑" },
+    }),
+  };
+}
+
+// ============================================================================
+// Template: Chat Notification
+// ============================================================================
+
+export interface ChatNotificationParams {
+  recipientName: string;
+  senderName: string;
+  messagePreview: string;
+  chatUrl: string;
+}
+
+export function chatNotificationTemplate(params: ChatNotificationParams): { subject: string; html: string } {
+  const preview = params.messagePreview.length > 100
+    ? params.messagePreview.substring(0, 100) + "..."
+    : params.messagePreview;
+
+  const content = `
+    ${greeting(params.recipientName)}
+    ${paragraph(`You have a new message from <strong style="color: ${BRAND.primaryColor};">${params.senderName}</strong>:`)}
+    ${highlightBox(`<p style="margin: 0; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary}; font-style: italic;">"${preview}"</p>`)}
+    ${paragraph("Reply now to continue the conversation! 💬", "0")}
+  `;
+
+  return {
+    subject: `💬 New message from ${params.senderName}`,
+    html: buildEmail({
+      title: "You've Got a Message! 💬",
+      subtitle: `${params.senderName} sent you a message`,
+      content,
+      cta: { text: "Reply Now", url: params.chatUrl, emoji: "💬" },
+    }),
+  };
+}
+
+// ============================================================================
+// Template: New Listing Nearby
+// ============================================================================
+
+export interface NewListingParams {
+  recipientName: string;
+  listingTitle: string;
+  listingDescription?: string;
+  listingAddress?: string;
+  posterName: string;
+  listingUrl: string;
+  listingType?: string;
+  listingEmoji?: string;
+}
+
+export function newListingTemplate(params: NewListingParams): { subject: string; html: string } {
+  const emoji = params.listingEmoji || "🍎";
+  const listingType = params.listingType || "food";
+  const shortDesc = params.listingDescription
+    ? params.listingDescription.length > 150
+      ? params.listingDescription.substring(0, 150) + "..."
+      : params.listingDescription
+    : "";
+
+  const listingBox = `
+    <p style="font-size: 20px; font-weight: 700; margin: 0 0 12px; color: ${BRAND.textPrimary};">${emoji} ${params.listingTitle}</p>
+    ${params.listingAddress ? `<p style="margin: 0 0 8px; color: ${BRAND.textMuted}; font-size: 14px;">📍 ${params.listingAddress}</p>` : ""}
+    ${shortDesc ? `<p style="margin: 12px 0 0; font-size: 15px; line-height: 1.6; color: ${BRAND.textSecondary};">${shortDesc}</p>` : ""}
+    <p style="margin: 12px 0 0; color: ${BRAND.textLight}; font-size: 14px;">Posted by <strong style="color: ${BRAND.textSecondary};">${params.posterName}</strong></p>
+  `;
+
+  const content = `
+    ${greeting(params.recipientName)}
+    ${paragraph(`Great news! A new ${listingType} listing is available near you:`)}
+    ${highlightBox(listingBox)}
+    ${paragraph("Don't miss out – items go fast! 🏃‍♂️", "0")}
+  `;
+
+  return {
+    subject: `${emoji} New ${listingType} available: ${params.listingTitle}`,
+    html: buildEmail({
+      title: "New Listing Near You! 📍",
+      subtitle: `${params.listingTitle} is now available`,
+      content,
+      cta: { text: "View Listing", url: params.listingUrl, emoji: "👀" },
+    }),
+  };
+}
+
+// ============================================================================
+// Template: Volunteer Welcome
+// ============================================================================
+
+export interface VolunteerWelcomeParams {
+  name: string;
+}
+
+export function volunteerWelcomeTemplate(params: VolunteerWelcomeParams): { subject: string; html: string } {
+  const features: BulletItem[] = [
+    { emoji: "📦", title: "Coordinate Pickups", description: "Help connect donors with recipients", color: BRAND.primaryColor },
+    { emoji: "🏪", title: "Manage Community Fridges", description: "Keep local fridges stocked and clean", color: BRAND.accentTeal },
+    { emoji: "📣", title: "Spread the Word", description: "Help grow our community", color: BRAND.accentOrange },
+    { emoji: "📊", title: "Track Impact", description: "See your contributions in real-time", color: BRAND.accentPurple },
+  ];
+
+  const content = `
+    ${greeting(params.name)}
+    ${paragraph(`Thank you for joining the <strong style="color: ${BRAND.primaryColor};">FoodShare Volunteer Program</strong>! Your dedication helps make our community stronger.`)}
+    <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};"><strong>🌟 As a volunteer, you can:</strong></p>
+    ${bulletList(features)}
+    ${infoBox("Your Impact Starts Now", "Every volunteer hour helps reduce food waste and feeds families in need. Thank you for being part of the solution!", "💪")}
+  `;
+
+  return {
+    subject: "Welcome to the FoodShare Volunteer Team! 🌟",
+    html: buildEmail({
+      title: "Welcome, Volunteer! 🙌",
+      subtitle: "You're joining an amazing team",
+      content,
+      cta: { text: "Start Volunteering", url: "https://foodshare.club/volunteer/dashboard", emoji: "🚀" },
+    }),
+  };
+}
+
+// ============================================================================
+// Template: Complete Profile
+// ============================================================================
+
+export interface CompleteProfileParams {
+  name: string;
+  completionPercent?: number;
+}
+
+export function completeProfileTemplate(params: CompleteProfileParams): { subject: string; html: string } {
+  const percent = params.completionPercent || 50;
+
+  const benefits: BulletItem[] = [
+    { emoji: "🔍", title: "Get Found", description: "Neighbors can discover you more easily", color: BRAND.primaryColor },
+    { emoji: "🤝", title: "Build Trust", description: "People are more likely to connect with complete profiles", color: BRAND.accentTeal },
+    { emoji: "📍", title: "Get Matched", description: "Find food shares near your location", color: BRAND.accentOrange },
+  ];
+
+  const content = `
+    ${greeting(params.name)}
+    ${paragraph(`Your FoodShare profile is <strong>${percent}%</strong> complete. Add a few more details to get the full experience!`)}
+    <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};"><strong>✅ A complete profile helps you:</strong></p>
+    ${bulletList(benefits)}
+    ${infoBox("Quick Tip", "Adding a profile photo increases your chances of successful connections by 3x!", "💡")}
+  `;
+
+  return {
+    subject: "Complete your FoodShare profile 📝",
+    html: buildEmail({
+      title: "Almost There! 📝",
+      subtitle: "Complete your profile to unlock all features",
+      content,
+      cta: { text: "Complete Profile", url: "https://foodshare.club/settings/profile", emoji: "📝" },
+    }),
+  };
+}
+
+// ============================================================================
+// Template: First Share Tips
+// ============================================================================
+
+export interface FirstShareTipsParams {
+  name: string;
+}
+
+export function firstShareTipsTemplate(params: FirstShareTipsParams): { subject: string; html: string } {
+  const tips: BulletItem[] = [
+    { emoji: "📷", title: "Add Clear Photos", description: "Good photos get 5x more interest", color: BRAND.primaryColor },
+    { emoji: "📝", title: "Be Descriptive", description: "Include quantity, expiry dates, and dietary info", color: BRAND.accentTeal },
+    { emoji: "📍", title: "Set Pickup Details", description: "Clear time and location help coordination", color: BRAND.accentOrange },
+    { emoji: "⚡", title: "Respond Quickly", description: "Fast responses lead to successful pickups", color: BRAND.accentPurple },
+  ];
+
+  const content = `
+    ${greeting(params.name)}
+    ${paragraph("Ready to make your first food share? Here are some tips to make it a great experience:")}
+    <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};"><strong>📸 Creating a Great Listing:</strong></p>
+    ${bulletList(tips)}
+    ${infoBox("Pro Tip", "Start with items that are still fresh but you can't use in time. Produce, bread, and leftovers are popular first shares!", "🌟")}
+  `;
+
+  return {
+    subject: "Tips for your first FoodShare 🍎",
+    html: buildEmail({
+      title: "Ready to Share? 🍎",
+      subtitle: "Tips for a successful first share",
+      content,
+      cta: { text: "Create Your First Share", url: "https://foodshare.club/share", emoji: "🍎" },
+    }),
+  };
+}
+
+// ============================================================================
+// Template: Milestone Celebration
+// ============================================================================
+
+export interface MilestoneParams {
+  name: string;
+  milestoneName: string;
+  milestoneDescription: string;
+  milestoneEmoji?: string;
+  percentile?: number;
+  nextMilestone?: string;
+}
+
+export function milestoneTemplate(params: MilestoneParams): { subject: string; html: string } {
+  const emoji = params.milestoneEmoji || "🏆";
+  const percentile = params.percentile || 10;
+  const nextMilestone = params.nextMilestone || "Keep sharing to unlock your next achievement!";
+
+  const milestoneBox = `
+    <div style="margin: 24px 0; padding: 32px; background: linear-gradient(135deg, ${BRAND.accentPurple} 0%, #A78BFA 100%); border-radius: 16px; text-align: center;">
+      <p style="margin: 0; font-size: 64px;">${emoji}</p>
+      <p style="margin: 16px 0 0; font-size: 24px; font-weight: 800; color: #ffffff;">${params.milestoneName}</p>
+      <p style="margin: 8px 0 0; font-size: 16px; color: rgba(255,255,255,0.9);">${params.milestoneDescription}</p>
+    </div>
+  `;
+
+  const content = `
+    <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: ${BRAND.textPrimary};">Congratulations <strong>${params.name}</strong>! 🎊</p>
+    ${milestoneBox}
+    ${paragraph(`This achievement puts you in the top <strong style="color: ${BRAND.primaryColor};">${percentile}%</strong> of FoodShare members. Keep up the amazing work!`)}
+    ${infoBox("Next Goal", nextMilestone, "🎯")}
+  `;
+
+  return {
+    subject: `🎉 Achievement Unlocked: ${params.milestoneName}!`,
+    html: buildEmail({
+      title: "🎉 Achievement Unlocked!",
+      subtitle: "You've reached an amazing milestone",
+      content,
+      cta: { text: "View All Achievements", url: "https://foodshare.club/achievements", emoji: "🏆" },
+    }),
+  };
+}
+
+// ============================================================================
+// Template: Reengagement
+// ============================================================================
+
+export interface ReengagementParams {
+  name: string;
+  daysSinceLastVisit: number;
+  newListingsNearby?: number;
+  mealsSavedCommunity?: number;
+  newMembersNearby?: number;
+  unsubscribeUrl: string;
+}
+
+export function reengagementTemplate(params: ReengagementParams): { subject: string; html: string } {
+  const statsBox = `
+    <p style="margin: 0 0 16px; font-size: 16px; font-weight: 700; color: ${BRAND.textPrimary};">📊 While You Were Away:</p>
+    <ul style="margin: 0; padding-left: 24px; font-size: 15px; line-height: 2; color: ${BRAND.textSecondary};">
+      <li><strong style="color: ${BRAND.primaryColor};">${params.newListingsNearby || 0}</strong> new listings posted near you</li>
+      <li><strong style="color: ${BRAND.accentTeal};">${params.mealsSavedCommunity || 0}</strong> meals saved from waste in your area</li>
+      <li><strong style="color: ${BRAND.accentPurple};">${params.newMembersNearby || 0}</strong> new members joined your neighborhood</li>
+    </ul>
+  `;
+
+  const content = `
+    ${greeting(params.name)}
+    ${paragraph(`It's been ${params.daysSinceLastVisit} days since we last saw you, and your community has been busy!`)}
+    <div style="margin: 24px 0; padding: 20px; background: linear-gradient(135deg, #f8f8f8 0%, #f3f3f3 100%); border-radius: 8px;">
+      ${statsBox}
+    </div>
+    ${infoBox("Welcome Back Offer", "Share something in the next 7 days and earn double impact points!", "🎁")}
+  `;
+
+  return {
+    subject: "We miss you at FoodShare! 💚",
+    html: buildEmail({
+      title: "We Miss You! 💚",
+      subtitle: "A lot has happened since you've been away",
+      content,
+      cta: { text: "Come Back", url: "https://foodshare.club", emoji: "💚" },
+      footer: { showUnsubscribe: true, unsubscribeUrl: params.unsubscribeUrl },
+    }),
+  };
+}
+
+// ============================================================================
+// Template: Feedback Alert (Admin)
+// ============================================================================
+
+export interface FeedbackAlertParams {
+  feedbackId: string;
+  feedbackType: string;
+  feedbackEmoji?: string;
+  subject: string;
+  submitterName: string;
+  submitterEmail: string;
+  message: string;
+  timestamp?: string;
+}
+
+export function feedbackAlertTemplate(params: FeedbackAlertParams): { subject: string; html: string } {
+  const emoji = params.feedbackEmoji || "📩";
+  const timestamp = params.timestamp || new Date().toISOString();
+
+  const feedbackBox = `
+    <p style="margin: 0 0 12px; font-size: 15px; color: ${BRAND.textSecondary};"><strong style="color: ${BRAND.textPrimary};">Type:</strong> ${emoji} ${params.feedbackType}</p>
+    <p style="margin: 0 0 12px; font-size: 15px; color: ${BRAND.textSecondary};"><strong style="color: ${BRAND.textPrimary};">Subject:</strong> ${params.subject}</p>
+    <p style="margin: 0 0 12px; font-size: 15px; color: ${BRAND.textSecondary};"><strong style="color: ${BRAND.textPrimary};">From:</strong> ${params.submitterName} (<a href="mailto:${params.submitterEmail}" style="color: ${BRAND.primaryColor};">${params.submitterEmail}</a>)</p>
+    <p style="margin: 0 0 16px; font-size: 15px; color: ${BRAND.textSecondary};"><strong style="color: ${BRAND.textPrimary};">Submitted:</strong> ${timestamp}</p>
+    <hr style="border: none; border-top: 1px solid #ddd; margin: 16px 0;">
+    <p style="margin: 0; font-size: 15px; line-height: 1.7; color: ${BRAND.textSecondary}; white-space: pre-wrap;">${params.message}</p>
+  `;
+
+  const content = `
+    <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: ${BRAND.textPrimary};">New feedback has been submitted:</p>
+    ${highlightBox(feedbackBox)}
+    <p style="margin: 0; font-size: 13px; color: ${BRAND.textLight};">Feedback ID: ${params.feedbackId}</p>
+  `;
+
+  return {
+    subject: `${emoji} New Feedback: ${params.subject}`,
+    html: buildEmail({
+      title: "New Feedback Received",
+      subtitle: `${params.feedbackType} feedback from ${params.submitterName}`,
+      content,
+      cta: { text: "View in Dashboard", url: "https://foodshare.club/admin/feedback", emoji: "📋" },
+      footer: { minimal: true, showSocialLinks: false },
+    }),
+  };
+}
+
+// ============================================================================
+// Export All Templates
+// ============================================================================
+
+export const templates = {
+  welcome: welcomeTemplate,
+  "email-verification": emailVerificationTemplate,
+  "password-reset": passwordResetTemplate,
+  "chat-notification": chatNotificationTemplate,
+  "new-listing-nearby": newListingTemplate,
+  "volunteer-welcome": volunteerWelcomeTemplate,
+  "complete-profile": completeProfileTemplate,
+  "first-share-tips": firstShareTipsTemplate,
+  "milestone-celebration": milestoneTemplate,
+  reengagement: reengagementTemplate,
+  "feedback-alert": feedbackAlertTemplate,
+};
+
+export type TemplateSlug = keyof typeof templates;
+
+// ============================================================================
+// Render Template by Slug
+// ============================================================================
+
+export function renderTemplate(
+  slug: string,
+  variables: Record<string, unknown>
+): { subject: string; html: string } | null {
+  const templateFn = templates[slug as TemplateSlug];
+
+  if (!templateFn) {
+    return null;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return templateFn(variables as any);
+}

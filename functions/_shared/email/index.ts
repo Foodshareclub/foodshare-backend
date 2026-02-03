@@ -49,4 +49,67 @@ export { AWSSESProvider, createAWSSESProvider } from "./aws-ses-provider.ts";
 export { MailerSendProvider, createMailerSendProvider } from "./mailersend-provider.ts";
 
 // Service
-export { EmailService, getEmailService, resetEmailService } from "./email-service.ts";
+export {
+  EmailService,
+  getEmailService,
+  resetEmailService,
+  type SendTemplateEmailParams,
+} from "./email-service.ts";
+
+// Templates - Component System
+export { BRAND } from "./template-components.ts";
+export type {
+  HeaderProps,
+  BulletItem,
+  CTAProps,
+  FooterProps,
+  EmailConfig,
+} from "./template-components.ts";
+
+export {
+  documentWrapper,
+  emailContainer,
+  header,
+  contentSection,
+  greeting,
+  paragraph,
+  bulletList,
+  infoBox,
+  highlightBox,
+  disclaimerBox,
+  ctaButton,
+  socialIcons,
+  footer,
+  buildEmail,
+} from "./template-components.ts";
+
+// Templates - Pre-built
+export {
+  welcomeTemplate,
+  emailVerificationTemplate,
+  passwordResetTemplate,
+  chatNotificationTemplate,
+  newListingTemplate,
+  volunteerWelcomeTemplate,
+  completeProfileTemplate,
+  firstShareTipsTemplate,
+  milestoneTemplate,
+  reengagementTemplate,
+  feedbackAlertTemplate,
+  renderTemplate,
+  templates,
+  type TemplateSlug,
+} from "./template-builder.ts";
+
+// Templates - Legacy (backwards compatible)
+export {
+  welcomeEmail,
+  goodbyeEmail,
+  emailVerificationEmail,
+  passwordResetEmail,
+  feedbackAlertEmail,
+  newListingEmail,
+  chatNotificationEmail,
+  notificationEmail,
+  digestEmail,
+} from "./templates.ts";
