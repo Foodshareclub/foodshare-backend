@@ -124,7 +124,7 @@ export function welcomeTemplate(params: WelcomeParams): { subject: string; html:
       content,
       cta: {
         text: isEarlyStage ? "Share Something" : "Start Exploring",
-        url: isEarlyStage ? "https://foodshare.club/share" : "https://foodshare.club/map",
+        url: isEarlyStage ? "https://foodshare.club/new" : "https://foodshare.club/map",
         emoji: isEarlyStage ? "🍎" : "🗺️",
       },
       footer: { showAppBadges: true, signOffMessage: "Happy sharing!" },
@@ -375,7 +375,7 @@ export function firstShareTipsTemplate(params: FirstShareTipsParams): { subject:
       title: "Ready to Share? 🍎",
       subtitle: "Tips for a successful first share",
       content,
-      cta: { text: "Create Your First Share", url: "https://foodshare.club/share", emoji: "🍎" },
+      cta: { text: "Create Your First Share", url: "https://foodshare.club/new", emoji: "🍎" },
     }),
   };
 }
@@ -512,7 +512,7 @@ export function reengagementTemplate(params: ReengagementParams): { subject: str
       content,
       cta: {
         text: hasActivity ? "See What's New" : "Share Something",
-        url: hasActivity ? "https://foodshare.club/map" : "https://foodshare.club/share",
+        url: hasActivity ? "https://foodshare.club/map" : "https://foodshare.club/new",
         emoji: hasActivity ? "🗺️" : "🍎",
       },
       footer: { showUnsubscribe: true, unsubscribeUrl: params.unsubscribeUrl, showAppBadges: true, signOffMessage: "Happy sharing!" },
