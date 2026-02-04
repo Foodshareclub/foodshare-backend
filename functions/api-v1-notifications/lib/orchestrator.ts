@@ -342,10 +342,16 @@ async function buildChannelPayload(
         return null;
       }
 
+      // Check for custom HTML content from admin email compose
+      const useCustomHtml = request.data?.useHtml === "true" && request.data?.rawMessage;
+      const htmlContent = useCustomHtml
+        ? request.data.rawMessage
+        : formatEmailHtml(request);
+
       return {
         to: email,
         subject: request.title,
-        html: formatEmailHtml(request),
+        html: htmlContent,
         text: request.body,
       };
     }
