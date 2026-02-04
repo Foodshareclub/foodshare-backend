@@ -63,7 +63,7 @@ export const sendRequestSchema = z.object({
   userId: z.string().uuid(),
   type: notificationTypeEnum,
   title: z.string().min(1).max(100),
-  body: z.string().min(1).max(500),
+  body: z.string().min(1).max(50000), // Allow HTML templates up to 50KB
   data: z.record(z.string()).optional(),
   channels: z.array(notificationChannelEnum).optional(),
   priority: priorityLevelEnum.optional(),
