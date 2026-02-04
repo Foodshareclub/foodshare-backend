@@ -372,6 +372,16 @@ export const ENDPOINT_RATE_LIMITS: EndpointRateLimitConfig[] = [
     applyTierMultipliers: false,
     customLimits: { perMinute: 1000, perHour: 10000 },
   },
+
+  // Email Queue Processor (cron-triggered)
+  {
+    path: "/process-email-queue",
+    methods: ["POST"],
+    category: "batch",
+    distributed: true,
+    applyTierMultipliers: false,
+    customLimits: { perMinute: 10, perHour: 60 },
+  },
 ];
 
 // =============================================================================

@@ -22,17 +22,10 @@ export const CRITICAL_FUNCTIONS: FunctionConfig[] = [
   { name: "geolocate-user", critical: true, requiresAuth: false },
   { name: "send-push-notification", critical: true, requiresAuth: false, skipInQuickCheck: true },
   { name: "check-login-rate", critical: true, requiresAuth: false, testPayload: { phone: "+1234567890", action: "check" } },
-  { name: "verify-attestation", critical: true, requiresAuth: false, expectedStatus: [200, 400] },
-  { name: "verify-android-attestation", critical: true, requiresAuth: false, expectedStatus: [200, 400] },
-  // Unified Notification System (consolidates email, push, preferences, digests)
+  // Unified Attestation API (consolidates verify-attestation, verify-android-attestation)
+  { name: "api-v1-attestation", critical: true, requiresAuth: false, expectedStatus: [200, 400] },
+  // Unified Notification System (consolidates ALL notifications: email, push, preferences, digests, triggers)
   { name: "api-v1-notifications", critical: true, requiresAuth: false },
-
-  // Notification Triggers
-  { name: "notify-new-post", critical: true, requiresAuth: false },
-  { name: "notify-new-listing", critical: true, requiresAuth: false },
-  { name: "notify-new-report", critical: true, requiresAuth: false },
-  { name: "notify-forum-post", critical: true, requiresAuth: false },
-  { name: "notify-new-user", critical: true, requiresAuth: false },
 ];
 
 // =============================================================================
@@ -55,10 +48,17 @@ export const API_FUNCTIONS: FunctionConfig[] = [
   { name: "api-v1-profile", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
   { name: "api-v1-reviews", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
 
-  // Admin APIs
-  { name: "api-v1-admin-email", critical: false, requiresAuth: true, expectedStatus: [200, 401, 403], skipInQuickCheck: true },
-  { name: "api-v1-admin-listings", critical: false, requiresAuth: true, expectedStatus: [200, 401, 403], skipInQuickCheck: true },
-  { name: "api-v1-admin-users", critical: false, requiresAuth: true, expectedStatus: [200, 401, 403], skipInQuickCheck: true },
+  // Unified Admin API (consolidates listings, users, email)
+  { name: "api-v1-admin", critical: false, requiresAuth: false, expectedStatus: [200, 401, 403], skipInQuickCheck: true },
+
+  // Unified Validation API (consolidates validate-listing, validate-profile, validate-review)
+  { name: "api-v1-validation", critical: false, requiresAuth: false },
+
+  // Unified Geocoding API (consolidates update-coordinates, update-post-coordinates)
+  { name: "api-v1-geocoding", critical: false, requiresAuth: false },
+
+  // Unified Listings API (consolidates create-listing, update-listing)
+  { name: "api-v1-listings", critical: false, requiresAuth: false },
 ];
 
 // =============================================================================
@@ -69,12 +69,7 @@ export const API_FUNCTIONS: FunctionConfig[] = [
  * Functions handling data operations (CRUD, sync, validation).
  */
 export const DATA_FUNCTIONS: FunctionConfig[] = [
-  // Listing Operations
-  { name: "create-listing", critical: false, requiresAuth: true, expectedStatus: [200, 400, 401] },
-  { name: "update-listing", critical: false, requiresAuth: true, expectedStatus: [200, 400, 401] },
-  { name: "validate-listing", critical: false, requiresAuth: false },
-  { name: "validate-profile", critical: false, requiresAuth: false },
-  { name: "validate-review", critical: false, requiresAuth: false },
+  // User Operations
   { name: "delete-user", critical: false, requiresAuth: true, expectedStatus: [200, 401], skipInQuickCheck: true },
   { name: "atomic-favorites", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
   { name: "batch-operations", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
@@ -85,8 +80,6 @@ export const DATA_FUNCTIONS: FunctionConfig[] = [
   { name: "track-event", critical: false, requiresAuth: false },
 
   // Location Services
-  { name: "update-coordinates", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
-  { name: "update-post-coordinates", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
   { name: "match-users", critical: false, requiresAuth: false },
 ];
 
@@ -121,6 +114,7 @@ export const UTILITY_FUNCTIONS: FunctionConfig[] = [
   { name: "check-alerts", critical: false, requiresAuth: false },
   { name: "domain-monitor", critical: false, requiresAuth: false },
   { name: "process-automation-queue", critical: false, requiresAuth: false, skipInQuickCheck: true },
+  { name: "process-email-queue", critical: false, requiresAuth: false, skipInQuickCheck: true },
   { name: "sentry-telegram-webhook", critical: false, requiresAuth: false },
 
   // Bots (webhooks, not directly callable)

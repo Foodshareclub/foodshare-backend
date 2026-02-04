@@ -35,24 +35,94 @@ verify_jwt = false
 verify_jwt = false
 
 # =============================================================================
-# Notification System
-# =============================================================================
-
-[functions.notify-new-post]
-verify_jwt = false
-
-# =============================================================================
 # UNIFIED NOTIFICATION API v1 (MASTER)
 # =============================================================================
-# Enterprise-grade unified notification API consolidating ALL channels:
-# - Channels: Email (Resend/Brevo/SES/MailerSend), Push (FCM/APNs/WebPush), SMS, In-App
-# - Send: POST /send, /send/batch, /send/template
-# - Digest: POST /digest/process (cron)
-# - Preferences: GET/PUT /preferences, POST/DELETE /preferences/dnd
-# - Webhooks: POST /webhook/:provider (all email + push providers)
-# - Dashboard: GET /health, /stats, /dashboard
-# - Admin: /admin/* (queue, suppression, channel control)
+# Enterprise-grade unified notification API consolidating ALL notifications:
+#
+# Channels:
+# - Email (Resend/Brevo/SES/MailerSend), Push (FCM/APNs/WebPush), SMS, In-App
+#
+# Routes:
+# - POST /send, /send/batch, /send/template
+# - POST /digest/process (cron)
+# - GET/PUT /preferences, POST/DELETE /preferences/dnd
+# - POST /webhook/:provider (delivery events)
+# - GET /health, /stats, /dashboard
+# - POST /trigger/new-post (db webhook - replaces notify-new-post)
+# - POST /trigger/new-user (db webhook - replaces notify-new-user)
+# - POST /trigger/forum-post (db webhook - replaces notify-forum-post)
+# - POST /trigger/new-report (db webhook - replaces notify-new-report)
+# - POST /trigger/new-listing (authenticated - replaces notify-new-listing)
 # Auth handled internally per-route
 
 [functions.api-v1-notifications]
+verify_jwt = false
+
+# Email Queue Processor (cron-triggered)
+[functions.process-email-queue]
+verify_jwt = false
+
+# =============================================================================
+# UNIFIED ADMIN API v1
+# =============================================================================
+# Consolidates all admin operations:
+# - /users - List, roles, ban/unban
+# - /listings - CRUD, activate/deactivate, bulk operations
+# - /health - Health check
+[functions.api-v1-admin]
+verify_jwt = false
+
+# =============================================================================
+# UNIFIED VALIDATION API v1
+# =============================================================================
+# Consolidates all validation operations (replaces validate-listing, validate-profile, validate-review):
+# - POST /listing - Validate listing
+# - POST /profile - Validate profile
+# - POST /review - Validate review
+# - POST /email - Validate email format
+# - POST /password - Validate password with strength
+# - POST /batch - Batch validate multiple entities
+# - GET /rules - Get validation constants for client sync
+# - GET /health - Health check
+[functions.api-v1-validation]
+verify_jwt = false
+
+# =============================================================================
+# UNIFIED GEOCODING API v1
+# =============================================================================
+# Consolidates all geocoding operations (replaces update-coordinates, update-post-coordinates):
+# - POST /address - Geocode and update user address
+# - POST /post - Geocode single post
+# - POST /post/batch - Batch process posts from queue
+# - GET /post/stats - Queue statistics
+# - POST /post/cleanup - Cleanup old queue entries
+# - POST /geocode - Geocode address (no DB update)
+# - GET /health - Health check
+[functions.api-v1-geocoding]
+verify_jwt = false
+
+# =============================================================================
+# UNIFIED LISTINGS API v1
+# =============================================================================
+# Consolidates listing CRUD operations (replaces create-listing, update-listing):
+# - POST / - Create new listing
+# - PUT /:id - Update listing
+# - DELETE /:id - Delete listing
+# - GET /:id - Get listing details
+# - GET /health - Health check
+[functions.api-v1-listings]
+verify_jwt = false
+
+# =============================================================================
+# UNIFIED ATTESTATION API v1
+# =============================================================================
+# Consolidates all device integrity verification:
+# - iOS: App Attest, Assertion, DeviceCheck
+# - Android: Play Integrity, SafetyNet
+# Routes:
+# - POST / - Auto-detect platform and verify attestation
+# - POST /ios - iOS-specific attestation
+# - POST /android - Android-specific attestation
+# - GET /health - Health check
+[functions.api-v1-attestation]
 verify_jwt = false

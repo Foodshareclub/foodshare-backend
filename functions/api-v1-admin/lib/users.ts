@@ -1,21 +1,12 @@
 /**
- * Admin Users API
+ * Admin Users Handler
  *
- * Edge Function for admin user management operations.
- * Provides role management, ban/unban functionality.
- *
- * Routes:
- * - GET / - List users with filters
- * - PUT /:id/role - Update user role
- * - PUT /:id/roles - Update multiple user roles
- * - POST /:id/ban - Ban user
- * - POST /:id/unban - Unban user
+ * Handles all user-related admin operations.
  */
 
-import { createAPIHandler, ok, paginated, type HandlerContext } from "../_shared/api-handler.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { ForbiddenError, NotFoundError, ValidationError } from "../_shared/errors.ts";
-import { logger } from "../_shared/logger.ts";
+import { logger } from "../../_shared/logger.ts";
+import type { AdminContext } from "../index.ts";
 
 // =============================================================================
 // Schemas
@@ -42,34 +33,26 @@ const banUserSchema = z.object({
 });
 
 // =============================================================================
-// Admin Auth Helper
+// Errors
 // =============================================================================
 
-async function requireAdmin(ctx: HandlerContext): Promise<string> {
-  if (!ctx.userId) {
-    throw new ForbiddenError("Authentication required");
-  }
+class ValidationError extends Error {
+  name = "ValidationError";
+}
 
-  const { data: userRoles, error } = await ctx.supabase
-    .from("user_roles")
-    .select("roles!inner(name)")
-    .eq("profile_id", ctx.userId);
+class NotFoundError extends Error {
+  name = "NotFoundError";
+}
 
-  if (error) {
-    logger.error("Failed to check admin role", { error: error.message });
-    throw new ForbiddenError("Failed to verify admin access");
-  }
+// =============================================================================
+// Response Helper
+// =============================================================================
 
-  const roles = (userRoles || []).map(
-    (r) => (r.roles as unknown as { name: string }).name
-  );
-  const isAdmin = roles.includes("admin") || roles.includes("superadmin");
-
-  if (!isAdmin) {
-    throw new ForbiddenError("Admin access required");
-  }
-
-  return ctx.userId;
+function jsonResponse(data: unknown, corsHeaders: Record<string, string>, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 }
 
 // =============================================================================
@@ -77,18 +60,16 @@ async function requireAdmin(ctx: HandlerContext): Promise<string> {
 // =============================================================================
 
 async function logAdminAction(
-  ctx: HandlerContext,
+  ctx: AdminContext,
   action: string,
-  resourceType: string,
   resourceId: string,
-  adminId: string,
   metadata: Record<string, unknown> = {}
 ): Promise<void> {
   try {
     await ctx.supabase.rpc("log_audit_event", {
-      p_user_id: adminId,
+      p_user_id: ctx.adminId,
       p_action: action,
-      p_resource_type: resourceType,
+      p_resource_type: "profile",
       p_resource_id: resourceId,
       p_metadata: metadata,
     });
@@ -98,93 +79,85 @@ async function logAdminAction(
 }
 
 // =============================================================================
+// Helpers
+// =============================================================================
+
+function isValidUUID(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
+
+// =============================================================================
+// Route Handler
+// =============================================================================
+
+export async function handleUsersRoute(
+  segments: string[],
+  method: string,
+  body: unknown,
+  query: Record<string, string>,
+  ctx: AdminContext
+): Promise<Response> {
+  // GET / - List users
+  if (method === "GET" && segments.length === 0) {
+    return handleListUsers(query, ctx);
+  }
+
+  // Operations on specific user: /users/:id/:action
+  const userId = segments[0];
+  if (!userId || !isValidUUID(userId)) {
+    return jsonResponse({ error: "Invalid user ID" }, ctx.corsHeaders, 400);
+  }
+
+  const action = segments[1];
+
+  switch (method) {
+    case "PUT":
+      if (action === "role") return handleUpdateRole(userId, body, ctx);
+      if (action === "roles") return handleUpdateRoles(userId, body, ctx);
+      break;
+    case "POST":
+      if (action === "ban") return handleBanUser(userId, body, ctx);
+      if (action === "unban") return handleUnbanUser(userId, ctx);
+      break;
+  }
+
+  return jsonResponse({ error: "Not found" }, ctx.corsHeaders, 404);
+}
+
+// =============================================================================
 // Handlers
 // =============================================================================
 
-async function handleRequest(ctx: HandlerContext): Promise<Response> {
-  const adminId = await requireAdmin(ctx);
-  const url = new URL(ctx.request.url);
-  const pathParts = url.pathname.split("/").filter(Boolean);
-
-  const functionIndex = pathParts.findIndex((p) => p === "api-v1-admin-users");
-  const subPath = pathParts.slice(functionIndex + 1);
-
-  // GET / - List users
-  if (ctx.request.method === "GET" && subPath.length === 0) {
-    return handleListUsers(ctx, adminId);
-  }
-
-  // Operations on specific user
-  const userId = subPath[0];
-  if (!userId || !isValidUUID(userId)) {
-    return new Response(JSON.stringify({ error: "Invalid user ID" }), {
-      status: 400,
-      headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  const action = subPath[1];
-
-  switch (ctx.request.method) {
-    case "PUT":
-      if (action === "role") {
-        return handleUpdateRole(ctx, userId, adminId);
-      } else if (action === "roles") {
-        return handleUpdateRoles(ctx, userId, adminId);
-      }
-      break;
-    case "POST":
-      if (action === "ban") {
-        return handleBanUser(ctx, userId, adminId);
-      } else if (action === "unban") {
-        return handleUnbanUser(ctx, userId, adminId);
-      }
-      break;
-  }
-
-  return new Response(JSON.stringify({ error: "Not found" }), {
-    status: 404,
-    headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
-function isValidUUID(str: string): boolean {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(str);
-}
-
 async function handleListUsers(
-  ctx: HandlerContext,
-  _adminId: string
+  query: Record<string, string>,
+  ctx: AdminContext
 ): Promise<Response> {
-  const queryParams = listUsersQuerySchema.parse(ctx.query);
+  const queryParams = listUsersQuerySchema.parse(query);
 
   const page = parseInt(queryParams.page || "1", 10);
   const limit = Math.min(parseInt(queryParams.limit || "20", 10), 100);
   const offset = (page - 1) * limit;
 
-  let query = ctx.supabase
+  let dbQuery = ctx.supabase
     .from("profiles")
     .select("id, first_name, second_name, email, created_time, is_active", { count: "exact" });
 
   if (queryParams.search) {
     const safeSearch = queryParams.search.replace(/[%_]/g, "\\$&");
-    query = query.or(
+    dbQuery = dbQuery.or(
       `first_name.ilike.%${safeSearch}%,second_name.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%`
     );
   }
 
   if (queryParams.isActive !== undefined) {
-    query = query.eq("is_active", queryParams.isActive === "true");
+    dbQuery = dbQuery.eq("is_active", queryParams.isActive === "true");
   }
 
-  query = query.order("created_time", { ascending: false }).range(offset, offset + limit - 1);
+  dbQuery = dbQuery.order("created_time", { ascending: false }).range(offset, offset + limit - 1);
 
-  const { data, count, error } = await query;
+  const { data, count, error } = await dbQuery;
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 
   // Get product counts and roles for each user
   const usersWithData = await Promise.all(
@@ -226,24 +199,31 @@ async function handleListUsers(
     filteredUsers = usersWithData.filter((u) => u.roles?.includes(queryParams.role!));
   }
 
-  return paginated(filteredUsers, ctx, {
-    offset,
-    limit,
-    total: count ?? 0,
-  });
+  const total = count ?? 0;
+  const hasMore = offset + limit < total;
+
+  return jsonResponse({
+    success: true,
+    data: filteredUsers,
+    pagination: {
+      page,
+      limit,
+      total,
+      hasMore,
+    },
+  }, ctx.corsHeaders);
 }
 
 async function handleUpdateRole(
-  ctx: HandlerContext,
   userId: string,
-  adminId: string
+  body: unknown,
+  ctx: AdminContext
 ): Promise<Response> {
-  // Prevent changing own role
-  if (userId === adminId) {
+  if (userId === ctx.adminId) {
     throw new ValidationError("Cannot change your own role");
   }
 
-  const input = updateRoleSchema.parse(ctx.body);
+  const input = updateRoleSchema.parse(body);
 
   // Get role_id from roles table
   const { data: roleData, error: roleError } = await ctx.supabase
@@ -264,37 +244,30 @@ async function handleUpdateRole(
       { onConflict: "profile_id,role_id" }
     );
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 
-  await logAdminAction(ctx, "UPDATE_USER_ROLE", "profile", userId, adminId, {
-    newRole: input.role,
-  });
+  await logAdminAction(ctx, "UPDATE_USER_ROLE", userId, { newRole: input.role });
 
-  return ok({ userId, role: input.role, updated: true }, ctx);
+  return jsonResponse({ success: true, userId, role: input.role, updated: true }, ctx.corsHeaders);
 }
 
 async function handleUpdateRoles(
-  ctx: HandlerContext,
   userId: string,
-  adminId: string
+  body: unknown,
+  ctx: AdminContext
 ): Promise<Response> {
-  // Prevent changing own role
-  if (userId === adminId) {
+  if (userId === ctx.adminId) {
     throw new ValidationError("Cannot change your own roles");
   }
 
-  const input = updateRolesSchema.parse(ctx.body);
+  const input = updateRolesSchema.parse(body);
 
   // Get all role IDs from roles table
   const { data: allRoles, error: rolesError } = await ctx.supabase
     .from("roles")
     .select("id, name");
 
-  if (rolesError) {
-    throw new Error(rolesError.message);
-  }
+  if (rolesError) throw new Error(rolesError.message);
 
   const roleMap = new Map((allRoles ?? []).map((r) => [r.name, r.id]));
 
@@ -304,9 +277,7 @@ async function handleUpdateRoles(
     .delete()
     .eq("profile_id", userId);
 
-  if (deleteError) {
-    throw new Error(deleteError.message);
-  }
+  if (deleteError) throw new Error(deleteError.message);
 
   // Insert new roles
   const rolesToInsert = Object.entries(input.roles)
@@ -320,29 +291,24 @@ async function handleUpdateRoles(
       .from("user_roles")
       .insert(rolesToInsert);
 
-    if (insertError) {
-      throw new Error(insertError.message);
-    }
+    if (insertError) throw new Error(insertError.message);
   }
 
-  await logAdminAction(ctx, "UPDATE_USER_ROLES", "profile", userId, adminId, {
-    roles: input.roles,
-  });
+  await logAdminAction(ctx, "UPDATE_USER_ROLES", userId, { roles: input.roles });
 
-  return ok({ userId, roles: input.roles, updated: true }, ctx);
+  return jsonResponse({ success: true, userId, roles: input.roles, updated: true }, ctx.corsHeaders);
 }
 
 async function handleBanUser(
-  ctx: HandlerContext,
   userId: string,
-  adminId: string
+  body: unknown,
+  ctx: AdminContext
 ): Promise<Response> {
-  // Prevent banning yourself
-  if (userId === adminId) {
+  if (userId === ctx.adminId) {
     throw new ValidationError("Cannot ban yourself");
   }
 
-  const input = banUserSchema.parse(ctx.body);
+  const input = banUserSchema.parse(body);
 
   // Check if user exists
   const { data: targetUser } = await ctx.supabase
@@ -361,9 +327,7 @@ async function handleBanUser(
     .update({ is_active: false, ban_reason: input.reason })
     .eq("id", userId);
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 
   // Deactivate all user's listings
   await ctx.supabase
@@ -371,22 +335,22 @@ async function handleBanUser(
     .update({ is_active: false })
     .eq("profile_id", userId);
 
-  await logAdminAction(ctx, "BAN_USER", "profile", userId, adminId, {
+  await logAdminAction(ctx, "BAN_USER", userId, {
     targetEmail: targetUser.email,
     reason: input.reason,
   });
 
-  return ok({
+  return jsonResponse({
+    success: true,
     userId,
     banned: true,
     reason: input.reason,
-  }, ctx);
+  }, ctx.corsHeaders);
 }
 
 async function handleUnbanUser(
-  ctx: HandlerContext,
   userId: string,
-  adminId: string
+  ctx: AdminContext
 ): Promise<Response> {
   // Check if user exists
   const { data: targetUser } = await ctx.supabase
@@ -409,32 +373,9 @@ async function handleUnbanUser(
     .update({ is_active: true, ban_reason: null })
     .eq("id", userId);
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 
-  await logAdminAction(ctx, "UNBAN_USER", "profile", userId, adminId, {
-    targetEmail: targetUser.email,
-  });
+  await logAdminAction(ctx, "UNBAN_USER", userId, { targetEmail: targetUser.email });
 
-  return ok({ userId, unbanned: true }, ctx);
+  return jsonResponse({ success: true, userId, unbanned: true }, ctx.corsHeaders);
 }
-
-// =============================================================================
-// Export Handler
-// =============================================================================
-
-export default createAPIHandler({
-  service: "admin-users-api",
-  requireAuth: true,
-  rateLimit: {
-    limit: 60,
-    windowMs: 60000, // 60 requests per minute
-    keyBy: "user",
-  },
-  routes: {
-    GET: { handler: handleRequest },
-    PUT: { handler: handleRequest },
-    POST: { handler: handleRequest },
-  },
-});

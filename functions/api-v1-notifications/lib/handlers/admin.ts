@@ -534,17 +534,19 @@ export async function handleAdminTestEmail(
       await context.supabase.rpc("record_email_send", {
         p_provider: providerName,
         p_success: true,
-        p_latency_ms: 100,
+        p_latency_ms: result.latencyMs || 100,
         p_message_id: result.messageId || null,
       });
     }
 
     return {
       success: result.success,
+      error: result.error,
       data: {
         provider: providerName,
         recipient,
         messageId: result.messageId,
+        latencyMs: result.latencyMs,
         sentAt: new Date().toISOString(),
       },
     };
