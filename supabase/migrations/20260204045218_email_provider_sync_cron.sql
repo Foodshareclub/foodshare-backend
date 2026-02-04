@@ -39,34 +39,19 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_provider record;
   v_now timestamptz := now();
 BEGIN
-  -- Update health scores for all providers
-  FOR v_provider IN
-    SELECT provider FROM email_provider_health_metrics
-  LOOP
-    UPDATE email_provider_health_metrics
-    SET
-      last_updated = v_now,
-      -- Recalculate health score based on recent success rate
-      health_score = CASE
-        WHEN total_requests = 0 THEN 100
-        WHEN successful_requests::float / NULLIF(total_requests, 0) >= 0.95 THEN 100
-        WHEN successful_requests::float / NULLIF(total_requests, 0) >= 0.90 THEN 90
-        WHEN successful_requests::float / NULLIF(total_requests, 0) >= 0.80 THEN 80
-        WHEN successful_requests::float / NULLIF(total_requests, 0) >= 0.70 THEN 70
-        ELSE 50
-      END
-    WHERE provider = v_provider.provider;
-  END LOOP;
+  -- Only update last_updated timestamp
+  -- health_score comes from the hourly API sync (source of truth)
+  UPDATE email_provider_health_metrics
+  SET last_updated = v_now;
 
   -- Reset daily quotas if it's a new day (past midnight UTC)
   UPDATE email_provider_health_metrics
   SET
     daily_quota_used = 0,
     last_updated = v_now
-  WHERE DATE(last_updated) < DATE(v_now)
+  WHERE DATE(last_synced_at) < DATE(v_now)
     AND daily_quota_used > 0;
 END;
 $$;
