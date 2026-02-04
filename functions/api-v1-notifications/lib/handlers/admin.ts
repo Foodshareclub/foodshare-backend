@@ -282,18 +282,28 @@ async function storeProviderStats(
   }
 
   // Also update email_provider_health_metrics
+  // Note: We use GREATEST to preserve internal tracking if higher than provider API stats
+  // (provider APIs have reporting delays)
   try {
+    const { data: existing } = await context.supabase
+      .from("email_provider_health_metrics")
+      .select("daily_quota_used, monthly_quota_used, total_requests, successful_requests")
+      .eq("provider", stats.provider)
+      .single();
+
     await context.supabase.from("email_provider_health_metrics").upsert(
       {
         provider: stats.provider,
         health_score: stats.health.healthScore,
-        total_requests: stats.stats?.delivered ?? 0,
-        successful_requests: stats.stats?.delivered ?? 0,
+        // Preserve internal tracking if higher than provider stats
+        total_requests: Math.max(existing?.total_requests ?? 0, stats.stats?.delivered ?? 0),
+        successful_requests: Math.max(existing?.successful_requests ?? 0, stats.stats?.delivered ?? 0),
         failed_requests: stats.stats?.bounced ?? 0,
         average_latency_ms: stats.health.latencyMs,
-        daily_quota_used: stats.quota.daily.sent,
+        // Use MAX of internal tracking and provider API
+        daily_quota_used: Math.max(existing?.daily_quota_used ?? 0, stats.quota.daily.sent),
         daily_quota_limit: stats.quota.daily.limit,
-        monthly_quota_used: stats.quota.monthly?.sent ?? 0,
+        monthly_quota_used: Math.max(existing?.monthly_quota_used ?? 0, stats.quota.monthly?.sent ?? 0),
         monthly_quota_limit: stats.quota.monthly?.limit ?? 15000,
         emails_delivered: stats.stats?.delivered ?? 0,
         emails_opened: stats.stats?.opened ?? 0,
@@ -486,6 +496,64 @@ export async function handleAdminStats(
 }
 
 /**
+ * POST /admin/test-email
+ * Send a test email via specified provider
+ */
+export async function handleAdminTestEmail(
+  body: unknown,
+  context: NotificationContext
+): Promise<{ success: boolean; data?: unknown; error?: string }> {
+  const { provider, recipient } = (body as { provider?: string; recipient?: string }) || {};
+
+  if (!recipient) {
+    return { success: false, error: "recipient is required" };
+  }
+
+  const providerName = provider || "resend";
+  const emailService = getEmailService();
+
+  try {
+    const result = await emailService.sendEmailWithProvider(
+      {
+        to: recipient,
+        subject: `Test Email from ${providerName.toUpperCase()}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2>Test Email</h2>
+            <p>This is a test email sent via <strong>${providerName}</strong> provider.</p>
+            <p>Sent at: ${new Date().toISOString()}</p>
+            <p>Request ID: ${context.requestId}</p>
+          </div>
+        `,
+      },
+      providerName as "resend" | "brevo" | "mailersend" | "aws_ses"
+    );
+
+    // Record the send in health metrics
+    if (result.success) {
+      await context.supabase.rpc("record_email_send", {
+        p_provider: providerName,
+        p_success: true,
+        p_latency_ms: 100,
+        p_message_id: result.messageId || null,
+      });
+    }
+
+    return {
+      success: result.success,
+      data: {
+        provider: providerName,
+        recipient,
+        messageId: result.messageId,
+        sentAt: new Date().toISOString(),
+      },
+    };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+/**
  * Router for admin routes
  */
 export async function handleAdminRoute(
@@ -512,6 +580,11 @@ export async function handleAdminRoute(
   // /admin/stats - GET
   if (segments[1] === "stats" && method === "GET") {
     return handleAdminStats(context);
+  }
+
+  // /admin/test-email - POST
+  if (segments[1] === "test-email" && method === "POST") {
+    return handleAdminTestEmail(body, context);
   }
 
   return {
