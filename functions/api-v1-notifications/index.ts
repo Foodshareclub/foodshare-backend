@@ -44,6 +44,8 @@ import {
   handleWebhook,
   handleDigestProcess,
   handleDashboard,
+  handleTrigger,
+  handleAdminRoute,
 } from "./lib/handlers/index.ts";
 import type { AuthMode, NotificationContext } from "./lib/types.ts";
 
@@ -121,6 +123,7 @@ Deno.serve(async (req) => {
   const isHealth = segments.length === 0 || segments[0] === "health";
   const isStats = segments[0] === "stats";
   const isWebhook = segments[0] === "webhook";
+  const isTrigger = segments[0] === "trigger";
   const isDigestProcess = segments[0] === "digest" && segments[1] === "process";
   const isAdmin = segments[0] === "admin";
 
@@ -133,6 +136,15 @@ Deno.serve(async (req) => {
     provider = segments[1];
     usePermissiveCors = true;
     rawBody = await req.text();
+  } else if (isTrigger) {
+    // Triggers: database webhooks (none) or new-listing (jwt)
+    const triggerType = segments[1];
+    if (triggerType === "new-listing") {
+      authMode = "jwt"; // User-facing, needs auth
+    } else {
+      authMode = "none"; // Database webhooks
+      usePermissiveCors = true;
+    }
   } else if (isDigestProcess) {
     authMode = "service";
   } else if (isAdmin) {
@@ -285,16 +297,29 @@ Deno.serve(async (req) => {
     }
 
     // =========================================================================
+    // Trigger Routes (Database Webhooks)
+    // Consolidates: notify-new-post, notify-new-user, notify-forum-post,
+    //               notify-new-report, notify-new-listing
+    // =========================================================================
+
+    // POST /trigger/:type
+    if (isTrigger && method === "POST" && segments[1]) {
+      const triggerType = segments[1];
+      const body = await req.json().catch(() => ({}));
+      const result = await handleTrigger(triggerType, body, context);
+      return jsonResponse(result, corsHeaders, result.success ? 200 : 400);
+    }
+
+    // =========================================================================
     // Admin Routes
     // =========================================================================
 
     if (isAdmin) {
-      // TODO: Implement admin routes
-      return jsonResponse(
-        { success: false, error: "Admin routes not yet implemented" },
-        corsHeaders,
-        501
-      );
+      const body = ["POST", "PUT", "PATCH"].includes(method)
+        ? await req.json().catch(() => ({}))
+        : {};
+      const result = await handleAdminRoute(segments, method, body, context);
+      return jsonResponse(result, corsHeaders, result.status || (result.success ? 200 : 400));
     }
 
     // =========================================================================
@@ -322,6 +347,15 @@ Deno.serve(async (req) => {
           "DELETE /preferences/dnd",
           "POST /digest/process",
           "POST /webhook/:provider",
+          "POST /trigger/new-post",
+          "POST /trigger/new-user",
+          "POST /trigger/forum-post",
+          "POST /trigger/new-report",
+          "POST /trigger/new-listing",
+          "GET  /admin/providers/status",
+          "POST /admin/providers/sync",
+          "GET  /admin/providers/health",
+          "GET  /admin/stats",
         ],
       },
       corsHeaders,

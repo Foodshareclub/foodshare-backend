@@ -7,9 +7,10 @@
  */
 
 export * from "./send.ts";
+export * from "./triggers.ts";
+export * from "./admin.ts";
 
-// Export placeholder implementations for other handlers
-// These can be expanded as needed
+// Export other handlers
 
 import type { NotificationContext } from "../types.ts";
 import { logger } from "../../../_shared/logger.ts";
@@ -199,6 +200,7 @@ export async function handleDisableDnd(
 
 /**
  * POST /webhook/:provider - Handle provider webhook
+ * Processes delivery events from email providers (Resend, Brevo, SES, MailerSend)
  */
 export async function handleWebhook(
   provider: string,
@@ -207,19 +209,349 @@ export async function handleWebhook(
 ): Promise<{
   success: boolean;
   message?: string;
+  processed?: number;
+  errors?: string[];
 }> {
+  const startTime = performance.now();
+
   logger.info("Webhook received", {
     requestId: context.requestId,
     provider,
   });
 
-  // TODO: Process webhook events (delivery status, bounces, etc.)
-  // This would update notification_delivery_log with delivery status
+  try {
+    const events = parseWebhookEvents(provider, body);
 
-  return {
-    success: true,
-    message: "Webhook processed",
+    if (events.length === 0) {
+      return {
+        success: true,
+        message: "No events to process",
+        processed: 0,
+      };
+    }
+
+    let processed = 0;
+    const errors: string[] = [];
+
+    for (const event of events) {
+      try {
+        const { error } = await context.supabase.rpc("update_email_delivery_status", {
+          p_message_id: event.messageId,
+          p_status: event.status,
+          p_metadata: event.metadata || {},
+        });
+
+        if (error) {
+          errors.push(`${event.messageId}: ${error.message}`);
+        } else {
+          processed++;
+        }
+      } catch (e) {
+        errors.push(`${event.messageId}: ${(e as Error).message}`);
+      }
+    }
+
+    const durationMs = Math.round(performance.now() - startTime);
+
+    logger.info("Webhook processing complete", {
+      requestId: context.requestId,
+      provider,
+      eventsReceived: events.length,
+      processed,
+      errors: errors.length,
+      durationMs,
+    });
+
+    return {
+      success: true,
+      message: `Processed ${processed}/${events.length} events`,
+      processed,
+      errors: errors.length > 0 ? errors : undefined,
+    };
+  } catch (error) {
+    logger.error("Webhook processing failed", error as Error);
+    return {
+      success: false,
+      message: (error as Error).message,
+    };
+  }
+}
+
+/**
+ * Webhook event structure
+ */
+interface WebhookEvent {
+  messageId: string;
+  status: "sent" | "delivered" | "opened" | "clicked" | "bounced" | "complained" | "failed";
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Parse webhook events from different providers
+ */
+function parseWebhookEvents(provider: string, body: unknown): WebhookEvent[] {
+  const events: WebhookEvent[] = [];
+
+  try {
+    switch (provider.toLowerCase()) {
+      case "resend":
+        return parseResendEvents(body);
+      case "brevo":
+        return parseBrevoEvents(body);
+      case "ses":
+      case "aws":
+        return parseSesEvents(body);
+      case "mailersend":
+        return parseMailerSendEvents(body);
+      case "fcm":
+        return parseFcmEvents(body);
+      default:
+        logger.warn("Unknown webhook provider", { provider });
+        return events;
+    }
+  } catch (error) {
+    logger.error("Failed to parse webhook events", error as Error, { provider });
+    return events;
+  }
+}
+
+/**
+ * Parse Resend webhook events
+ * @see https://resend.com/docs/dashboard/webhooks/event-types
+ */
+function parseResendEvents(body: unknown): WebhookEvent[] {
+  const payload = body as {
+    type?: string;
+    data?: {
+      email_id?: string;
+      to?: string[];
+      bounce?: { type?: string };
+    };
   };
+
+  if (!payload.type || !payload.data?.email_id) return [];
+
+  const statusMap: Record<string, WebhookEvent["status"]> = {
+    "email.sent": "sent",
+    "email.delivered": "delivered",
+    "email.opened": "opened",
+    "email.clicked": "clicked",
+    "email.bounced": "bounced",
+    "email.complained": "complained",
+    "email.delivery_delayed": "sent",
+  };
+
+  const status = statusMap[payload.type];
+  if (!status) return [];
+
+  return [{
+    messageId: payload.data.email_id,
+    status,
+    metadata: {
+      eventType: payload.type,
+      recipient: payload.data.to?.[0],
+      bounceType: payload.data.bounce?.type,
+    },
+  }];
+}
+
+/**
+ * Parse Brevo (Sendinblue) webhook events
+ * @see https://developers.brevo.com/docs/transactional-webhooks
+ */
+function parseBrevoEvents(body: unknown): WebhookEvent[] {
+  const payload = body as {
+    event?: string;
+    "message-id"?: string;
+    email?: string;
+    reason?: string;
+    tag?: string;
+  };
+
+  if (!payload.event || !payload["message-id"]) return [];
+
+  const statusMap: Record<string, WebhookEvent["status"]> = {
+    delivered: "delivered",
+    opened: "opened",
+    click: "clicked",
+    hard_bounce: "bounced",
+    soft_bounce: "bounced",
+    complaint: "complained",
+    blocked: "failed",
+    error: "failed",
+    unsubscribed: "complained",
+  };
+
+  const status = statusMap[payload.event];
+  if (!status) return [];
+
+  return [{
+    messageId: payload["message-id"],
+    status,
+    metadata: {
+      eventType: payload.event,
+      recipient: payload.email,
+      errorMessage: payload.reason,
+      tag: payload.tag,
+    },
+  }];
+}
+
+/**
+ * Parse AWS SES webhook events (via SNS)
+ * @see https://docs.aws.amazon.com/ses/latest/dg/notification-contents.html
+ */
+function parseSesEvents(body: unknown): WebhookEvent[] {
+  // SES events come via SNS and may be wrapped
+  let payload = body as Record<string, unknown>;
+
+  // Handle SNS confirmation
+  if (payload.Type === "SubscriptionConfirmation") {
+    logger.info("SNS subscription confirmation received");
+    return [];
+  }
+
+  // Parse SNS message if wrapped
+  if (payload.Type === "Notification" && typeof payload.Message === "string") {
+    try {
+      payload = JSON.parse(payload.Message as string);
+    } catch {
+      return [];
+    }
+  }
+
+  const notification = payload as {
+    notificationType?: string;
+    eventType?: string;
+    mail?: {
+      messageId?: string;
+      destination?: string[];
+    };
+    bounce?: {
+      bounceType?: string;
+      bounceSubType?: string;
+    };
+    complaint?: {
+      complaintFeedbackType?: string;
+    };
+    delivery?: {
+      timestamp?: string;
+    };
+  };
+
+  const eventType = notification.notificationType || notification.eventType;
+  const messageId = notification.mail?.messageId;
+
+  if (!eventType || !messageId) return [];
+
+  const statusMap: Record<string, WebhookEvent["status"]> = {
+    Delivery: "delivered",
+    Bounce: "bounced",
+    Complaint: "complained",
+    Send: "sent",
+    Open: "opened",
+    Click: "clicked",
+    Reject: "failed",
+    DeliveryDelay: "sent",
+  };
+
+  const status = statusMap[eventType];
+  if (!status) return [];
+
+  return [{
+    messageId,
+    status,
+    metadata: {
+      eventType,
+      recipients: notification.mail?.destination,
+      bounceType: notification.bounce?.bounceType,
+      bounceSubType: notification.bounce?.bounceSubType,
+      complaintType: notification.complaint?.complaintFeedbackType,
+    },
+  }];
+}
+
+/**
+ * Parse MailerSend webhook events
+ * @see https://developers.mailersend.com/api/v1/webhooks.html
+ */
+function parseMailerSendEvents(body: unknown): WebhookEvent[] {
+  const payload = body as {
+    type?: string;
+    data?: {
+      email?: {
+        message?: {
+          id?: string;
+        };
+      };
+      recipient?: {
+        email?: string;
+      };
+      url?: string;
+      reason?: string;
+    };
+  };
+
+  if (!payload.type || !payload.data?.email?.message?.id) return [];
+
+  const statusMap: Record<string, WebhookEvent["status"]> = {
+    "activity.sent": "sent",
+    "activity.delivered": "delivered",
+    "activity.opened": "opened",
+    "activity.clicked": "clicked",
+    "activity.soft_bounced": "bounced",
+    "activity.hard_bounced": "bounced",
+    "activity.spam_complaint": "complained",
+    "activity.unsubscribed": "complained",
+  };
+
+  const status = statusMap[payload.type];
+  if (!status) return [];
+
+  return [{
+    messageId: payload.data.email.message.id,
+    status,
+    metadata: {
+      eventType: payload.type,
+      recipient: payload.data.recipient?.email,
+      clickedUrl: payload.data.url,
+      errorMessage: payload.data.reason,
+    },
+  }];
+}
+
+/**
+ * Parse FCM webhook events (delivery receipts)
+ * Note: FCM doesn't have webhooks, this handles any custom callback implementation
+ */
+function parseFcmEvents(body: unknown): WebhookEvent[] {
+  const payload = body as {
+    messageId?: string;
+    status?: string;
+    error?: string;
+  };
+
+  if (!payload.messageId) return [];
+
+  const statusMap: Record<string, WebhookEvent["status"]> = {
+    sent: "sent",
+    delivered: "delivered",
+    opened: "opened",
+    failed: "failed",
+    unregistered: "failed",
+  };
+
+  const status = statusMap[payload.status || "sent"];
+  if (!status) return [];
+
+  return [{
+    messageId: payload.messageId,
+    status,
+    metadata: {
+      eventType: payload.status,
+      errorMessage: payload.error,
+    },
+  }];
 }
 
 /**
