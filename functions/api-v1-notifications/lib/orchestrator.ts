@@ -30,6 +30,44 @@ import { getUserEmail, isEmailSuppressed } from "./channels/email.ts";
 import { getUserPhoneNumber } from "./channels/sms.ts";
 
 // =============================================================================
+// Template Rendering Utilities
+// =============================================================================
+
+function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  const keys = path.split(".");
+  let current: unknown = obj;
+
+  for (const key of keys) {
+    if (current === null || current === undefined) return undefined;
+    if (typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+
+  return current;
+}
+
+function renderTemplateString(template: string, variables: Record<string, unknown>): string {
+  if (!template) return "";
+
+  let result = template;
+
+  // Replace {{variable}} syntax (Mustache-style)
+  result = result.replace(/\{\{(\s*[\w.]+\s*)\}\}/g, (_, key) => {
+    const trimmedKey = key.trim();
+    const value = getNestedValue(variables, trimmedKey);
+    return value !== undefined ? String(value) : "";
+  });
+
+  // Replace {{ .Variable }} syntax (Go-style)
+  result = result.replace(/\{\{\s*\.(\w+)\s*\}\}/g, (_, key) => {
+    const value = variables[key];
+    return value !== undefined ? String(value) : "";
+  });
+
+  return result;
+}
+
+// =============================================================================
 // Main Orchestration
 // =============================================================================
 
@@ -342,17 +380,28 @@ async function buildChannelPayload(
         return null;
       }
 
+      // Build template variables from request.data
+      const variables: Record<string, unknown> = {
+        ...request.data,
+        title: request.title,
+        body: request.body,
+      };
+
+      // Render subject through template engine
+      const renderedSubject = renderTemplateString(request.title, variables);
+      const renderedBody = renderTemplateString(request.body, variables);
+
       // Check for custom HTML content from admin email compose
       const useCustomHtml = request.data?.useHtml === "true" && request.data?.rawMessage;
       const htmlContent = useCustomHtml
-        ? request.data.rawMessage
+        ? renderTemplateString(request.data.rawMessage, variables)
         : formatEmailHtml(request);
 
       return {
         to: email,
-        subject: request.title,
+        subject: renderedSubject,
         html: htmlContent,
-        text: request.body,
+        text: renderedBody,
       };
     }
 
@@ -400,7 +449,19 @@ async function buildChannelPayload(
 }
 
 function formatEmailHtml(request: SendRequest): string {
-  // Basic HTML email formatting
+  // Build template variables from request.data
+  const variables: Record<string, unknown> = {
+    ...request.data,
+    title: request.title,
+    body: request.body,
+    imageUrl: request.imageUrl,
+  };
+
+  // Render title and body through template engine
+  const renderedTitle = renderTemplateString(request.title, variables);
+  const renderedBody = renderTemplateString(request.body, variables);
+
+  // Basic HTML email formatting with rendered content
   return `
 <!DOCTYPE html>
 <html>
@@ -409,13 +470,13 @@ function formatEmailHtml(request: SendRequest): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h2 style="color: #1a1a1a; margin-bottom: 20px;">${request.title}</h2>
-  <p style="margin-bottom: 20px;">${request.body}</p>
+  <h2 style="color: #1a1a1a; margin-bottom: 20px;">${renderedTitle}</h2>
+  <p style="margin-bottom: 20px;">${renderedBody}</p>
   ${request.imageUrl ? `<img src="${request.imageUrl}" alt="" style="max-width: 100%; height: auto; border-radius: 8px; margin-bottom: 20px;">` : ""}
   <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
   <p style="font-size: 12px; color: #666;">
     You received this notification because you are subscribed to FoodShare updates.
-    <a href="{{unsubscribe_url}}" style="color: #666;">Unsubscribe</a>
+    <a href="${variables.unsubscribe_url || "#"}" style="color: #666;">Unsubscribe</a>
   </p>
 </body>
 </html>
@@ -561,11 +622,21 @@ async function handleFallbacks(
       if (emailAdapter) {
         const email = await getUserEmail(context, request.userId);
         if (email) {
+          // Build template variables from request.data
+          const variables: Record<string, unknown> = {
+            ...request.data,
+            title: request.title,
+            body: request.body,
+          };
+
+          const renderedSubject = renderTemplateString(request.title, variables);
+          const renderedBody = renderTemplateString(request.body, variables);
+
           const payload = {
             to: email,
-            subject: `[Fallback] ${request.title}`,
+            subject: `[Fallback] ${renderedSubject}`,
             html: formatEmailHtml(request),
-            text: request.body,
+            text: renderedBody,
           };
 
           await emailAdapter.send(payload, context);
