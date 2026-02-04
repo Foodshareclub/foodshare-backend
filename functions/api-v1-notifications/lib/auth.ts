@@ -186,10 +186,31 @@ function authenticateWebhook(
 }
 
 /**
- * Admin authentication (JWT + admin role check)
+ * Admin authentication (JWT + admin role check OR service role key)
+ * Service role key is accepted for cron jobs and internal service calls
  */
 async function authenticateAdmin(req: Request): Promise<AuthResult> {
-  // First verify JWT
+  const authHeader = req.headers.get("Authorization");
+
+  // Extract token from Bearer header
+  const token = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7).trim()
+    : null;
+
+  // Check if this is a service role key (for cron jobs)
+  if (token && token === SUPABASE_SERVICE_ROLE_KEY) {
+    logger.info("Admin auth via service role key (cron/internal)");
+    return { authenticated: true, isAdmin: true };
+  }
+
+  // Also check for internal service secret
+  const internalSecret = Deno.env.get("INTERNAL_SERVICE_SECRET");
+  if (token && internalSecret && token === internalSecret) {
+    logger.info("Admin auth via internal service secret");
+    return { authenticated: true, isAdmin: true };
+  }
+
+  // Otherwise verify JWT
   const jwtResult = await authenticateJWT(req);
 
   if (!jwtResult.authenticated || !jwtResult.userId) {
