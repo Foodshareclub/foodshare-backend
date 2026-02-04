@@ -569,7 +569,7 @@ async function sendFcm(device: DeviceToken, payload: PushPayload): Promise<SendR
               priority: payload.priority === "normal" ? "NORMAL" : "HIGH",
               ttl: `${payload.ttl || 86400}s`,
               collapse_key: payload.collapseKey,
-              restricted_package_name: "co.nz.foodshare.android",
+              restricted_package_name: "com.flutterflow.foodshare",
               notification: {
                 icon: androidOptions.smallIcon || payload.icon || "ic_notification",
                 color: "#FF2D55", // Brand color

@@ -24,8 +24,7 @@ BEGIN
       p.location::geography,
       ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography,
       radius_meters
-    )
-    AND p.deleted_at IS NULL;
+    );
 
   RETURN COALESCE(count_result, 0);
 END;
@@ -85,7 +84,6 @@ BEGIN
       ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography,
       radius_meters
     )
-    AND p.deleted_at IS NULL
     AND p.created_at >= NOW() - (days_ago || ' days')::INTERVAL;
 
   RETURN COALESCE(count_result, 0);

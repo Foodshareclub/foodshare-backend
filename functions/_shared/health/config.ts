@@ -24,15 +24,15 @@ export const CRITICAL_FUNCTIONS: FunctionConfig[] = [
   { name: "check-login-rate", critical: true, requiresAuth: false, testPayload: { phone: "+1234567890", action: "check" } },
   { name: "verify-attestation", critical: true, requiresAuth: false, expectedStatus: [200, 400] },
   { name: "verify-android-attestation", critical: true, requiresAuth: false, expectedStatus: [200, 400] },
-  { name: "email", critical: true, requiresAuth: false, skipInQuickCheck: true },
+  // Unified Notification System (consolidates email, push, preferences, digests)
+  { name: "api-v1-notifications", critical: true, requiresAuth: false },
 
-  // Notification System
+  // Notification Triggers
   { name: "notify-new-post", critical: true, requiresAuth: false },
   { name: "notify-new-listing", critical: true, requiresAuth: false },
   { name: "notify-new-report", critical: true, requiresAuth: false },
   { name: "notify-forum-post", critical: true, requiresAuth: false },
   { name: "notify-new-user", critical: true, requiresAuth: false },
-  { name: "unified-notifications", critical: true, requiresAuth: false },
 ];
 
 // =============================================================================

@@ -341,13 +341,36 @@ export const ENDPOINT_RATE_LIMITS: EndpointRateLimitConfig[] = [
     applyTierMultipliers: true,
   },
 
-  // Notifications
+  // Unified Notifications API
   {
-    path: "/unified-notifications",
+    path: "/api-v1-notifications/*",
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    category: "write",
+    distributed: true,
+    applyTierMultipliers: true,
+  },
+  {
+    path: "/api-v1-notifications/send",
     methods: ["POST"],
     category: "write",
     distributed: true,
+    applyTierMultipliers: true,
+    customLimits: { perMinute: 60, perHour: 1000 },
+  },
+  {
+    path: "/api-v1-notifications/send/batch",
+    methods: ["POST"],
+    category: "batch",
+    distributed: true,
+    applyTierMultipliers: true,
+  },
+  {
+    path: "/api-v1-notifications/webhook/*",
+    methods: ["POST"],
+    category: "write",
+    distributed: false,
     applyTierMultipliers: false,
+    customLimits: { perMinute: 1000, perHour: 10000 },
   },
 ];
 

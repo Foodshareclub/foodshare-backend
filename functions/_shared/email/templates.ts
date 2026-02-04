@@ -19,6 +19,7 @@ import {
   disclaimerBox,
   type BulletItem,
 } from "./template-components.ts";
+import { extractDisplayName } from "../display-name.ts";
 
 // Re-export templates from the component-based builder
 export {
@@ -51,7 +52,7 @@ interface WelcomeEmailParams {
 }
 
 export function welcomeEmail(params: WelcomeEmailParams): { subject: string; html: string } {
-  const displayName = params.name || params.email.split("@")[0];
+  const displayName = extractDisplayName({ firstName: params.name, email: params.email });
 
   const features: BulletItem[] = [
     { emoji: "🍎", title: "Share Surplus Food", description: "Post your extra groceries for neighbors", color: BRAND.primaryColor },
@@ -89,7 +90,7 @@ interface GoodbyeEmailParams {
 }
 
 export function goodbyeEmail(params: GoodbyeEmailParams): { subject: string; html: string } {
-  const displayName = params.name || params.email.split("@")[0];
+  const displayName = extractDisplayName({ firstName: params.name, email: params.email });
 
   const content = `
     <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: ${BRAND.textPrimary};">

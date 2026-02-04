@@ -1,52 +1,58 @@
 # Supabase Edge Functions Configuration
 # See: https://supabase.com/docs/guides/functions/function-configuration
 
-# Disable JWT verification for resize-tinify-upload-image
-# This function is called by cron jobs without authentication
+# =============================================================================
+# Core Functions
+# =============================================================================
+
 [functions.resize-tinify-upload-image]
 verify_jwt = false
 
-# Disable JWT verification for geolocate-user
-# This is an auth hook called by Supabase Auth service
 [functions.geolocate-user]
 verify_jwt = false
 
-# Disable JWT verification for get-translations
-# Public endpoint for fetching translations
 [functions.get-translations]
 verify_jwt = false
 
-# Disable JWT verification for telegram-bot-foodshare
-# Webhook endpoint called by Telegram servers
+# =============================================================================
+# Bot Webhooks
+# =============================================================================
+
 [functions.telegram-bot-foodshare]
 verify_jwt = false
 
-# Disable JWT verification for whatsapp-bot-foodshare
-# Webhook endpoint called by Meta servers
 [functions.whatsapp-bot-foodshare]
 verify_jwt = false
 
-# Disable JWT verification for subscription-webhook
-# Unified webhook for Apple App Store, Google Play, and Stripe
+# =============================================================================
+# Subscription/Payment Webhooks
+# =============================================================================
+
 [functions.subscription-webhook]
 verify_jwt = false
 
-# Disable JWT verification for subscription-cron
-# Cron handler for DLQ processing, metrics, cleanup (called by external scheduler)
 [functions.subscription-cron]
 verify_jwt = false
 
-# Disable JWT verification for send-digest-notifications
-# Called by cron jobs for processing digest notifications
-[functions.send-digest-notifications]
-verify_jwt = false
+# =============================================================================
+# Notification System
+# =============================================================================
 
-# Disable JWT verification for send-email-notification
-# Service-to-service email notification delivery
-[functions.send-email-notification]
-verify_jwt = false
-
-# Disable JWT verification for notify-new-post
-# Database trigger webhook for new post notifications
 [functions.notify-new-post]
+verify_jwt = false
+
+# =============================================================================
+# UNIFIED NOTIFICATION API v1 (MASTER)
+# =============================================================================
+# Enterprise-grade unified notification API consolidating ALL channels:
+# - Channels: Email (Resend/Brevo/SES/MailerSend), Push (FCM/APNs/WebPush), SMS, In-App
+# - Send: POST /send, /send/batch, /send/template
+# - Digest: POST /digest/process (cron)
+# - Preferences: GET/PUT /preferences, POST/DELETE /preferences/dnd
+# - Webhooks: POST /webhook/:provider (all email + push providers)
+# - Dashboard: GET /health, /stats, /dashboard
+# - Admin: /admin/* (queue, suppression, channel control)
+# Auth handled internally per-route
+
+[functions.api-v1-notifications]
 verify_jwt = false

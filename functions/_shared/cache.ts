@@ -108,6 +108,10 @@ export const CACHE_KEYS = {
   userStats: (userId: string) => `stats:user:${userId}`,
   /** Leaderboard */
   leaderboard: (type: string) => `leaderboard:${type}`,
+  /** Display name by user ID */
+  displayName: (userId: string) => `display_name:${userId}`,
+  /** Display name admin override by user ID */
+  displayNameOverride: (userId: string) => `display_name:override:${userId}`,
 } as const;
 
 /**
@@ -138,6 +142,8 @@ export const CACHE_TTLS = {
   leaderboard: 15 * 60 * 1000,
   /** Listings - 5 minutes */
   listing: 5 * 60 * 1000,
+  /** Display name - 10 minutes */
+  displayName: 10 * 60 * 1000,
 } as const;
 
 // =============================================================================
