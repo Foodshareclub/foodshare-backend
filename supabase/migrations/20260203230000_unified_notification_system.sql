@@ -36,12 +36,14 @@ CREATE INDEX IF NOT EXISTS idx_notification_delivery_log_type
 -- RLS Policies
 ALTER TABLE notification_delivery_log ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own notification logs" ON notification_delivery_log;
 CREATE POLICY "Users can view their own notification logs"
     ON notification_delivery_log
     FOR SELECT
     USING (auth.uid() = user_id);
 
 -- Service role can do everything
+DROP POLICY IF EXISTS "Service role can manage notification logs" ON notification_delivery_log;
 CREATE POLICY "Service role can manage notification logs"
     ON notification_delivery_log
     FOR ALL
@@ -82,11 +84,13 @@ CREATE INDEX IF NOT EXISTS idx_notification_queue_created_at
 -- RLS Policies
 ALTER TABLE notification_queue ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own queued notifications" ON notification_queue;
 CREATE POLICY "Users can view their own queued notifications"
     ON notification_queue
     FOR SELECT
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Service role can manage notification queue" ON notification_queue;
 CREATE POLICY "Service role can manage notification queue"
     ON notification_queue
     FOR ALL
@@ -125,6 +129,7 @@ CREATE INDEX IF NOT EXISTS idx_notification_digest_queue_scheduled_for
 -- RLS Policies
 ALTER TABLE notification_digest_queue ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Service role can manage digest queue" ON notification_digest_queue;
 CREATE POLICY "Service role can manage digest queue"
     ON notification_digest_queue
     FOR ALL
@@ -163,17 +168,20 @@ CREATE INDEX IF NOT EXISTS idx_in_app_notifications_category
 -- RLS Policies
 ALTER TABLE in_app_notifications ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own in-app notifications" ON in_app_notifications;
 CREATE POLICY "Users can view their own in-app notifications"
     ON in_app_notifications
     FOR SELECT
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own in-app notifications" ON in_app_notifications;
 CREATE POLICY "Users can update their own in-app notifications"
     ON in_app_notifications
     FOR UPDATE
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Service role can insert in-app notifications" ON in_app_notifications;
 CREATE POLICY "Service role can insert in-app notifications"
     ON in_app_notifications
     FOR INSERT
@@ -203,6 +211,7 @@ CREATE INDEX IF NOT EXISTS idx_email_suppressions_expires_at
 -- RLS Policies
 ALTER TABLE email_suppressions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Service role can manage email suppressions" ON email_suppressions;
 CREATE POLICY "Service role can manage email suppressions"
     ON email_suppressions
     FOR ALL
