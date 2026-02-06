@@ -17,8 +17,6 @@ import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { ValidationError, ServiceUnavailableError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
-import { withCircuitBreaker } from "../_shared/circuit-breaker.ts";
-import { withRetry, RETRY_PRESETS } from "../_shared/retry.ts";
 
 // =============================================================================
 // Configuration
@@ -317,10 +315,7 @@ class AIService {
     // Try Groq first
     if (GROQ_API_KEY) {
       try {
-        return await withCircuitBreaker(
-          "groq-chat",
-          () => this.groq.chat(messages, model, temperature, maxTokens, stream)
-        );
+        return await this.groq.chat(messages, model, temperature, maxTokens, stream);
       } catch (error) {
         logger.warn("Groq failed, trying z.ai", { error });
       }
@@ -329,10 +324,7 @@ class AIService {
     // Fallback to z.ai
     if (ZAI_API_KEY) {
       try {
-        return await withCircuitBreaker(
-          "zai-chat",
-          () => this.zai.chat(messages, model, temperature)
-        );
+        return await this.zai.chat(messages, model, temperature);
       } catch (error) {
         logger.warn("z.ai failed, trying OpenRouter", { error });
       }
@@ -340,10 +332,7 @@ class AIService {
 
     // Last resort: OpenRouter
     if (OPENROUTER_API_KEY) {
-      return await withCircuitBreaker(
-        "openrouter-chat",
-        () => this.openrouter.chat(messages, model, temperature, maxTokens)
-      );
+      return await this.openrouter.chat(messages, model, temperature, maxTokens);
     }
 
     throw new ServiceUnavailableError("All AI providers unavailable");
@@ -353,10 +342,7 @@ class AIService {
     // Try z.ai first (optimized for embeddings)
     if (ZAI_API_KEY) {
       try {
-        return await withCircuitBreaker(
-          "zai-embeddings",
-          () => this.zai.embeddings(input)
-        );
+        return await this.zai.embeddings(input);
       } catch (error) {
         logger.warn("z.ai embeddings failed", { error });
       }
@@ -374,10 +360,7 @@ class AIService {
       throw new ServiceUnavailableError("Structured generation unavailable");
     }
 
-    return await withCircuitBreaker(
-      "groq-structured",
-      () => this.groq.structured(messages, schema, model)
-    );
+    return await this.groq.structured(messages, schema, model);
   }
 
   getAvailableModels() {
