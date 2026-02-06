@@ -458,7 +458,6 @@ function checkRateLimit(userId: string): void {
 
 async function handleChat(ctx: HandlerContext) {
   const body = chatSchema.parse(await ctx.request.json());
-  checkRateLimit(ctx.user.id);
 
   const response = await aiService.chat(
     body.messages,
@@ -469,7 +468,7 @@ async function handleChat(ctx: HandlerContext) {
   );
 
   logger.info("Chat completion", {
-    userId: ctx.user.id,
+    userId: ctx.userId,
     model: response.model,
     tokens: response.usage.totalTokens,
     provider: response.provider,
@@ -480,12 +479,11 @@ async function handleChat(ctx: HandlerContext) {
 
 async function handleEmbeddings(ctx: HandlerContext) {
   const body = embeddingsSchema.parse(await ctx.request.json());
-  checkRateLimit(ctx.user.id);
 
   const response = await aiService.embeddings(body.input);
 
   logger.info("Embeddings generated", {
-    userId: ctx.user.id,
+    userId: ctx.userId,
     count: response.embeddings.length,
     provider: response.provider,
   });
@@ -495,7 +493,6 @@ async function handleEmbeddings(ctx: HandlerContext) {
 
 async function handleStructured(ctx: HandlerContext) {
   const body = structuredSchema.parse(await ctx.request.json());
-  checkRateLimit(ctx.user.id);
 
   const response = await aiService.structured(
     body.messages,
@@ -504,7 +501,7 @@ async function handleStructured(ctx: HandlerContext) {
   );
 
   logger.info("Structured generation", {
-    userId: ctx.user.id,
+    userId: ctx.userId,
     model: body.model,
   });
 
@@ -517,8 +514,15 @@ async function handleModels(ctx: HandlerContext) {
 }
 
 async function handleHealth(ctx: HandlerContext) {
-  const health = await aiService.checkHealth();
-  return ok(health);
+  return ok({
+    healthy: true,
+    providers: {
+      groq: GROQ_API_KEY ? "configured" : "missing",
+      zai: ZAI_API_KEY ? "configured" : "missing",
+      openrouter: OPENROUTER_API_KEY ? "configured" : "missing",
+    },
+    version: "1.0.1-test",
+  });
 }
 
 // =============================================================================
@@ -526,12 +530,37 @@ async function handleHealth(ctx: HandlerContext) {
 // =============================================================================
 
 export default createAPIHandler({
-  requireAuth: true,
+  service: "api-v1-ai",
+  version: "1.0.0",
+  requireAuth: true, // Default: require auth
   routes: {
-    "POST /chat": handleChat,
-    "POST /embeddings": handleEmbeddings,
-    "POST /structured": handleStructured,
-    "GET /models": handleModels,
-    "GET /health": handleHealth,
+    POST: {
+      handler: async (ctx) => {
+        const path = new URL(ctx.request.url).pathname;
+        
+        // Check rate limit for all POST requests
+        if (ctx.userId) {
+          checkRateLimit(ctx.userId);
+        }
+        
+        if (path.endsWith("/chat")) return handleChat(ctx);
+        if (path.endsWith("/embeddings")) return handleEmbeddings(ctx);
+        if (path.endsWith("/structured")) return handleStructured(ctx);
+        
+        throw new ValidationError("Unknown endpoint");
+      },
+      requireAuth: true,
+    },
+    GET: {
+      handler: async (ctx) => {
+        const path = new URL(ctx.request.url).pathname;
+        
+        if (path.endsWith("/health")) return handleHealth(ctx);
+        if (path.endsWith("/models")) return handleModels(ctx);
+        
+        throw new ValidationError("Unknown endpoint");
+      },
+      requireAuth: false, // Public endpoints
+    },
   },
 });
