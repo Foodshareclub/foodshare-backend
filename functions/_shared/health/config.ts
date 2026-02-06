@@ -59,6 +59,9 @@ export const API_FUNCTIONS: FunctionConfig[] = [
 
   // Unified Listings API (consolidates create-listing, update-listing)
   { name: "api-v1-listings", critical: false, requiresAuth: false },
+
+  // Unified AI API (Groq, z.ai, OpenRouter)
+  { name: "api-v1-ai", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
 ];
 
 // =============================================================================

@@ -2,6 +2,16 @@
 
 ## 📁 Documentation Structure
 
+### [AI](./ai/)
+AI services, chat completions, embeddings, and structured generation.
+
+- **[AI_SERVICES.md](./ai/AI_SERVICES.md)** - Production AI API with Groq, z.ai, OpenRouter
+  - Multi-provider fallback
+  - Chat completions with streaming
+  - Text embeddings (1536d)
+  - Structured JSON generation
+  - Circuit breakers & rate limiting
+
 ### [Images](./images/)
 Image processing, compression, and upload system documentation.
 
@@ -29,6 +39,7 @@ Security, monitoring, and error tracking documentation.
 ## 🚀 Quick Links
 
 ### Recent Updates
+- **2026-02-06**: AI API v1 deployed (see [ai/](./ai/))
 - **2026-02-06**: Image system refactoring complete (see [images/](./images/))
 
 ### Key Features
