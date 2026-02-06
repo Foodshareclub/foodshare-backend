@@ -32,7 +32,7 @@ import type {
 
 const VERSION = "1.0.0";
 const SERVICE = "api-v1-images";
-const ALLOWED_BUCKETS = ["food-images", "profiles", "forum", "challenges", "rooms", "assets"];
+const ALLOWED_BUCKETS = ["food-images", "profiles", "forum", "challenges", "rooms", "assets", "avatars", "posts"];
 
 function detectFormat(buffer: Uint8Array): string {
   if (buffer[0] === 0xFF && buffer[1] === 0xD8) return "jpeg";

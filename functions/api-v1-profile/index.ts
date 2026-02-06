@@ -242,21 +242,42 @@ async function uploadAvatar(ctx: HandlerContext<UploadAvatarBody>): Promise<Resp
   const ext = extMap[body.mimeType] || "jpg";
   const fileName = `${userId}/avatar.${ext}`;
 
-  // Upload new avatar first (upsert handles same-extension overwrites)
-  const { error: uploadError } = await supabase.storage
-    .from("avatars")
-    .upload(fileName, binaryData, {
-      contentType: body.mimeType,
-      upsert: true, // Overwrites existing file with same name
-    });
+  // Upload via api-v1-images for compression
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+  const formData = new FormData();
+  formData.append("file", new Blob([binaryData], { type: body.mimeType }));
+  formData.append("bucket", "avatars");
+  formData.append("path", fileName);
+  formData.append("generateThumbnail", "false");
+  formData.append("extractEXIF", "false");
+  formData.append("enableAI", "false");
+
+  const uploadResponse = await fetch(
+    `${supabaseUrl}/functions/v1/api-v1-images/upload`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+      },
+      body: formData,
+    }
+  );
+
+  if (!uploadResponse.ok) {
+    const error = await uploadResponse.text();
+    throw new ServerError(`Avatar upload failed: ${error}`);
+  }
+
+  const uploadResult = await uploadResponse.json();
+  const publicUrl = uploadResult.data.url;
 
   // Clean up old avatars with DIFFERENT extensions (if any)
-  // This runs after successful upload to avoid leaving user without avatar
   const otherExtensions = Object.values(extMap).filter((e) => e !== ext);
   const oldAvatarPaths = otherExtensions.map((e) => `${userId}/avatar.${e}`);
 
-  // Remove old avatars in background (don't await - fire and forget for better perf)
-  // Errors are logged but don't fail the request since new avatar is already uploaded
+  // Remove old avatars in background (don't await)
   supabase.storage
     .from("avatars")
     .remove(oldAvatarPaths)
@@ -265,18 +286,6 @@ async function uploadAvatar(ctx: HandlerContext<UploadAvatarBody>): Promise<Resp
         logger.warn("Failed to cleanup old avatars", { userId, error: error.message });
       }
     });
-
-  if (uploadError) {
-    logger.error("Failed to upload avatar", new Error(uploadError.message));
-    throw uploadError;
-  }
-
-  // Get public URL
-  const { data: urlData } = supabase.storage
-    .from("avatars")
-    .getPublicUrl(fileName);
-
-  const publicUrl = urlData.publicUrl;
 
   // Update profile with avatar URL
   const { error: updateError } = await supabase

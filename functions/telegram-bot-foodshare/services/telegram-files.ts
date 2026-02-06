@@ -80,38 +80,53 @@ export async function downloadAndUploadTelegramFile(
         console.warn("⚠️ Downloaded size mismatch:", fileBuffer.byteLength, "vs", fileSize);
       }
 
-      // Step 3: Generate unique filename
+      // Step 3: Upload via api-v1-images for compression
       const fileExtension = filePath.split(".").pop()?.toLowerCase() || "jpg";
       const timestamp = Date.now();
       const randomString = crypto.randomUUID().split("-")[0];
       const fileName = `${userId}_${timestamp}_${randomString}.${fileExtension}`;
       const storagePath = `food-photos/${fileName}`;
 
-      console.log("📤 Uploading to Supabase Storage:", storagePath);
+      console.log("📤 Uploading via api-v1-images:", storagePath);
 
-      // Step 4: Upload to Supabase Storage with retry
-      const supabase = getSupabaseClient();
+      // Upload via image API for compression
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+      const formData = new FormData();
+      formData.append("file", new Blob([fileBuffer], { type: fileBlob.type || "image/jpeg" }));
+      formData.append("bucket", "posts");
+      formData.append("path", storagePath);
+      formData.append("generateThumbnail", "false");
+      formData.append("extractEXIF", "false");
+      formData.append("enableAI", "false");
+
       let uploadError = null;
-
       for (let uploadAttempt = 1; uploadAttempt <= 2; uploadAttempt++) {
-        const { data, error } = await supabase.storage
-          .from("posts")
-          .upload(storagePath, fileBuffer, {
-            contentType: fileBlob.type || "image/jpeg",
-            upsert: false,
-            cacheControl: "3600",
-          });
+        try {
+          const uploadResponse = await fetch(
+            `${supabaseUrl}/functions/v1/api-v1-images/upload`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${serviceKey}`,
+              },
+              body: formData,
+            }
+          );
 
-        if (!error) {
-          // Step 5: Get public URL
-          const { data: urlData } = supabase.storage.from("posts").getPublicUrl(storagePath);
+          if (uploadResponse.ok) {
+            const result = await uploadResponse.json();
+            console.log("✅ File uploaded successfully:", result.data.url);
+            return result.data.url;
+          }
 
-          console.log("✅ File uploaded successfully:", urlData.publicUrl);
-          return urlData.publicUrl;
+          uploadError = await uploadResponse.text();
+          console.error(`❌ Image API upload error (attempt ${uploadAttempt}/2):`, uploadError);
+        } catch (error) {
+          uploadError = error;
+          console.error(`❌ Upload exception (attempt ${uploadAttempt}/2):`, error);
         }
-
-        uploadError = error;
-        console.error(`❌ Supabase Storage upload error (attempt ${uploadAttempt}/2):`, error);
 
         if (uploadAttempt < 2) {
           await new Promise((resolve) => setTimeout(resolve, 1000));
