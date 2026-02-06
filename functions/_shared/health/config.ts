@@ -20,7 +20,6 @@ export const CRITICAL_FUNCTIONS: FunctionConfig[] = [
   { name: "bff", critical: true, requiresAuth: false, expectedStatus: [200, 400, 401] },
   { name: "feature-flags", critical: true, requiresAuth: false },
   { name: "geolocate-user", critical: true, requiresAuth: false },
-  { name: "send-push-notification", critical: true, requiresAuth: false, skipInQuickCheck: true },
   { name: "check-login-rate", critical: true, requiresAuth: false, testPayload: { phone: "+1234567890", action: "check" } },
   // Unified Attestation API (consolidates verify-attestation, verify-android-attestation)
   { name: "api-v1-attestation", critical: true, requiresAuth: false, expectedStatus: [200, 400] },
@@ -39,6 +38,7 @@ export const CRITICAL_FUNCTIONS: FunctionConfig[] = [
 export const API_FUNCTIONS: FunctionConfig[] = [
   // Public APIs
   { name: "api-v1-products", critical: false, requiresAuth: false },
+  { name: "api-v1-search", critical: false, requiresAuth: false },
   { name: "api-v1-metrics", critical: false, requiresAuth: false },
 
   // Authenticated APIs
@@ -56,9 +56,6 @@ export const API_FUNCTIONS: FunctionConfig[] = [
 
   // Unified Geocoding API (consolidates update-coordinates, update-post-coordinates)
   { name: "api-v1-geocoding", critical: false, requiresAuth: false },
-
-  // Unified Listings API (consolidates create-listing, update-listing)
-  { name: "api-v1-listings", critical: false, requiresAuth: false },
 
   // Unified AI API (Groq, z.ai, OpenRouter)
   { name: "api-v1-ai", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
@@ -106,12 +103,9 @@ export const UTILITY_FUNCTIONS: FunctionConfig[] = [
   { name: "get-certificate-pins", critical: false, requiresAuth: false },
   { name: "get-my-chat-id", critical: false, requiresAuth: false },
   { name: "hf-inference", critical: false, requiresAuth: false, skipInQuickCheck: true },
-  { name: "search-functions", critical: false, requiresAuth: false },
 
   // Image Processing
   { name: "api-v1-images", critical: true, requiresAuth: true, skipInQuickCheck: false },
-  { name: "upload-challenge-image", critical: false, requiresAuth: true, expectedStatus: [200, 401], skipInQuickCheck: true },
-  { name: "cors-proxy-images", critical: false, requiresAuth: false },
 
   // Monitoring & Automation
   { name: "check-alerts", critical: false, requiresAuth: false },

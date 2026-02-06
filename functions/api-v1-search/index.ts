@@ -18,7 +18,6 @@
  * @version 2.0.0
  */
 
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { ValidationError, AppError } from "../_shared/errors.ts";
@@ -143,36 +142,56 @@ interface IndexResult {
 }
 
 // =============================================================================
-// Schemas
+// Query Parsing (manual — avoids Zod runtime issues on edge)
 // =============================================================================
 
-const searchQuerySchema = z.object({
-  q: z.string().min(1).max(500).optional(),
-  mode: z.enum(["semantic", "text", "hybrid", "fuzzy"]).default("hybrid"),
-  route: z.enum(["health", "stats"]).optional(),
-  lat: z.string().transform(Number).optional(),
-  lng: z.string().transform(Number).optional(),
-  radiusKm: z.string().transform(Number).optional(),
-  categoryIds: z.string().transform((s) => s.split(",").map(Number)).optional(),
-  limit: z
-    .string()
-    .transform(Number)
-    .pipe(z.number().int().min(1).max(MAX_LIMIT))
-    .default("20"),
-  offset: z
-    .string()
-    .transform(Number)
-    .pipe(z.number().int().min(0))
-    .default("0"),
-});
+interface SearchQuery {
+  q?: string;
+  mode: SearchMode;
+  route?: "health" | "stats";
+  lat?: number;
+  lng?: number;
+  radiusKm?: number;
+  categoryIds?: number[];
+  limit: number;
+  offset: number;
+}
 
-type SearchQuery = z.infer<typeof searchQuerySchema>;
+function parseSearchQuery(params: Record<string, string>): SearchQuery {
+  const mode = (["semantic", "text", "hybrid", "fuzzy"].includes(params.mode)
+    ? params.mode
+    : "hybrid") as SearchMode;
 
-const postRouteSchema = z.object({
-  route: z.enum(["index", "batch"]).optional(),
-});
+  const limit = Math.min(Math.max(1, parseInt(params.limit, 10) || DEFAULT_LIMIT), MAX_LIMIT);
+  const offset = Math.max(0, parseInt(params.offset, 10) || 0);
 
-type PostRouteQuery = z.infer<typeof postRouteSchema>;
+  const q = params.q?.slice(0, 500) || undefined;
+  const route = (["health", "stats"].includes(params.route) ? params.route : undefined) as
+    | "health"
+    | "stats"
+    | undefined;
+
+  const lat = params.lat ? Number(params.lat) : undefined;
+  const lng = params.lng ? Number(params.lng) : undefined;
+  const radiusKm = params.radiusKm ? Number(params.radiusKm) : undefined;
+  const categoryIds = params.categoryIds
+    ? params.categoryIds.split(",").map(Number).filter((n) => !isNaN(n))
+    : undefined;
+
+  return { q, mode, route, lat, lng, radiusKm, categoryIds, limit, offset };
+}
+
+interface PostRouteQuery {
+  route?: "index" | "batch";
+}
+
+function parsePostRouteQuery(params: Record<string, string>): PostRouteQuery {
+  const route = (["index", "batch"].includes(params.route) ? params.route : undefined) as
+    | "index"
+    | "batch"
+    | undefined;
+  return { route };
+}
 
 // =============================================================================
 // Request Deduplication
@@ -320,7 +339,7 @@ async function textSearch(
   const normalizedQuery = normalizeQuery(query);
 
   let queryBuilder = supabase
-    .from("posts")
+    .from("posts_with_location")
     .select(
       `id, post_name, post_description, post_address, post_type, category_id, images, latitude, longitude, categories(name), profile_id, created_at, is_active`,
       { count: "exact" },
@@ -380,7 +399,7 @@ async function textSearch(
   // Fallback to ILIKE with properly escaped query
   const escapedQuery = escapePostgresLike(normalizedQuery);
   const { data: fallbackData, error: fallbackError, count } = await supabase
-    .from("posts")
+    .from("posts_with_location")
     .select(
       `id, post_name, post_description, post_address, post_type, category_id, images, latitude, longitude, categories(name), profile_id, created_at`,
       { count: "exact" },
@@ -416,7 +435,7 @@ async function fuzzySearch(
   const escapedQuery = escapePostgresLike(sanitizeInput(query));
 
   let queryBuilder = supabase
-    .from("posts")
+    .from("posts_with_location")
     .select(
       `id, post_name, post_description, post_address, post_type, category_id, images, latitude, longitude, categories(name), profile_id, created_at`,
       { count: "exact" },
@@ -433,7 +452,12 @@ async function fuzzySearch(
     queryBuilder = queryBuilder.in("category_id", filters.categoryIds);
   }
 
-  const { data: posts, count } = await queryBuilder;
+  const { data: posts, error: fuzzyError, count } = await queryBuilder;
+
+  if (fuzzyError) {
+    logger.error("Fuzzy search failed", fuzzyError);
+    throw new AppError("Search temporarily unavailable", "SEARCH_ERROR", 503);
+  }
 
   let results = transformPostsToResults(posts || []);
 
@@ -802,9 +826,13 @@ async function verifyWebhookSignature(
 // =============================================================================
 
 async function handleGet(
-  ctx: HandlerContext<unknown, SearchQuery>,
+  ctx: HandlerContext,
 ): Promise<Response> {
-  const { supabase, query } = ctx;
+  const { supabase } = ctx;
+  const url = new URL(ctx.request.url);
+  const rawParams: Record<string, string> = {};
+  url.searchParams.forEach((v, k) => { rawParams[k] = v; });
+  const query = parseSearchQuery(rawParams);
   const { route } = query;
 
   // Sub-routes
@@ -859,9 +887,13 @@ async function handleGet(
 // =============================================================================
 
 async function handlePost(
-  ctx: HandlerContext<unknown, PostRouteQuery>,
+  ctx: HandlerContext,
 ): Promise<Response> {
-  const { supabase, query, request, body } = ctx;
+  const { supabase, request, body } = ctx;
+  const url = new URL(request.url);
+  const rawParams: Record<string, string> = {};
+  url.searchParams.forEach((v, k) => { rawParams[k] = v; });
+  const query = parsePostRouteQuery(rawParams);
   const { route } = query;
 
   // POST ?route=index — webhook indexing
@@ -1127,7 +1159,7 @@ async function handleBatchIndex(
   });
 
   let query = supabase
-    .from("posts")
+    .from("posts_with_location")
     .select(
       `id, post_name, post_description, post_address, post_type, category_id, images, latitude, longitude, profile_id, is_active, is_arranged, created_at, updated_at, pickup_time, available_hours, categories(name)`,
     )
@@ -1241,19 +1273,17 @@ function handleStats(): Record<string, unknown> {
 // Router
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: "api-v1-search",
   version: VERSION,
   requireAuth: false,
   csrf: false,
   routes: {
     GET: {
-      querySchema: searchQuerySchema,
       handler: handleGet,
     },
     POST: {
-      querySchema: postRouteSchema,
       handler: handlePost,
     },
   },
-});
+}));
