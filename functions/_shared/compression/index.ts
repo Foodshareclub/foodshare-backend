@@ -1,6 +1,6 @@
 /**
  * Shared Image Compression Service
- * Used by api-v1-images and resize-tinify-upload-image
+ * Used by api-v1-images
  * 
  * Implements TinyPNG/Cloudinary race with circuit breaker
  */

@@ -106,7 +106,7 @@ export const UTILITY_FUNCTIONS: FunctionConfig[] = [
   { name: "search-functions", critical: false, requiresAuth: false },
 
   // Image Processing
-  { name: "resize-tinify-upload-image", critical: false, requiresAuth: false, skipInQuickCheck: true },
+  { name: "api-v1-images", critical: true, requiresAuth: true, skipInQuickCheck: false },
   { name: "upload-challenge-image", critical: false, requiresAuth: true, expectedStatus: [200, 401], skipInQuickCheck: true },
   { name: "cors-proxy-images", critical: false, requiresAuth: false },
 

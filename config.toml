@@ -5,7 +5,7 @@
 # Core Functions
 # =============================================================================
 
-[functions.resize-tinify-upload-image]
+[functions.api-v1-images]
 verify_jwt = false
 
 [functions.geolocate-user]
