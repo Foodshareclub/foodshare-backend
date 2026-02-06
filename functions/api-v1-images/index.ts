@@ -161,6 +161,10 @@ Deno.serve(async (req) => {
       return await handleBatchUpload(req, corsHeaders);
     }
     
+    if (path.endsWith("/proxy") && req.method === "POST") {
+      return await handleProxy(req, corsHeaders);
+    }
+    
     return jsonResponse({ error: "Not found" }, 404, corsHeaders);
   } catch (error) {
     console.error("API error:", error);
@@ -388,6 +392,94 @@ async function handleBatchUpload(req: Request, corsHeaders: Record<string, strin
   };
   
   return jsonResponse(response, 200, corsHeaders);
+}
+
+async function handleProxy(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
+  try {
+    const body = await req.json();
+    const imageUrl = body.url;
+    const bucket = body.bucket || "assets";
+    
+    if (!imageUrl) {
+      return jsonResponse({ error: "Missing 'url' field" }, 400, corsHeaders);
+    }
+    
+    // Validate URL
+    const url = new URL(imageUrl);
+    if (!["http:", "https:"].includes(url.protocol)) {
+      return jsonResponse({ error: "Invalid URL protocol" }, 400, corsHeaders);
+    }
+    
+    // Block private IPs
+    const hostname = url.hostname.toLowerCase();
+    if (
+      hostname === "localhost" ||
+      hostname.startsWith("127.") ||
+      hostname.startsWith("192.168.") ||
+      hostname.startsWith("10.")
+    ) {
+      return jsonResponse({ error: "Private IPs not allowed" }, 400, corsHeaders);
+    }
+    
+    // Download image
+    const response = await fetch(imageUrl, {
+      headers: { "User-Agent": "FoodShare-ImageAPI/1.0" },
+      signal: AbortSignal.timeout(10000),
+    });
+    
+    if (!response.ok) {
+      return jsonResponse({ error: `Failed to fetch: ${response.status}` }, 400, corsHeaders);
+    }
+    
+    const imageData = new Uint8Array(await response.arrayBuffer());
+    
+    // Validate size
+    if (imageData.length > 10 * 1024 * 1024) {
+      return jsonResponse({ error: "Image too large (max 10MB)" }, 400, corsHeaders);
+    }
+    
+    // Compress and upload
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+    
+    const compressed = await compressImage(imageData, 800);
+    const format = detectFormat(compressed.buffer);
+    const filename = `${crypto.randomUUID()}.${format}`;
+    
+    const { error: uploadError } = await supabase.storage
+      .from(bucket)
+      .upload(filename, compressed.buffer, {
+        contentType: `image/${format}`,
+        cacheControl: "31536000",
+      });
+    
+    if (uploadError) {
+      throw new Error(`Upload failed: ${uploadError.message}`);
+    }
+    
+    const publicUrl = supabase.storage.from(bucket).getPublicUrl(filename).data.publicUrl;
+    
+    return jsonResponse({
+      success: true,
+      data: {
+        url: publicUrl,
+        path: filename,
+        originalUrl: imageUrl,
+      },
+      metadata: {
+        originalSize: imageData.length,
+        compressedSize: compressed.compressedSize,
+        savedBytes: imageData.length - compressed.compressedSize,
+        savedPercent: compressed.savedPercent,
+        format,
+      },
+    }, 200, corsHeaders);
+  } catch (error) {
+    captureException(error as Error, { route: "proxy" });
+    return jsonResponse({ error: error.message }, 500, corsHeaders);
+  }
 }
 
 function jsonResponse(body: unknown, status: number, headers: Record<string, string>): Response {
