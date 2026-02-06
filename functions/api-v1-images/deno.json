@@ -1,0 +1,10 @@
+{
+  "imports": {
+    "jsr:@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2",
+    "npm:exifreader@4.23.3": "https://esm.sh/exifreader@4.23.3"
+  },
+  "tasks": {
+    "dev": "deno run --allow-net --allow-env --allow-read index.ts",
+    "test": "deno test --allow-net --allow-env"
+  }
+}
