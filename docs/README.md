@@ -13,9 +13,8 @@ Image processing, compression, and upload system documentation.
   - 85% code reduction
 
 ### [Translations](./translations/)
-LLM-powered translation system documentation.
+LLM-powered translation system via Groq and z.ai.
 
-- **[SELF_HOSTED_LLM_TRANSLATION.md](./translations/SELF_HOSTED_LLM_TRANSLATION.md)** - Self-hosted LLM translation setup
 - **[LLM_TRANSLATION_DEPLOYMENT.md](./translations/LLM_TRANSLATION_DEPLOYMENT.md)** - Deployment guide
 - **[LLM_TRANSLATION_SUMMARY.md](./translations/LLM_TRANSLATION_SUMMARY.md)** - Feature summary
 - **[TRANSLATION_ENHANCEMENT_INVESTIGATION.md](./translations/TRANSLATION_ENHANCEMENT_INVESTIGATION.md)** - Enhancement research
