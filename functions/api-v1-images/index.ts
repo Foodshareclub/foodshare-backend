@@ -25,6 +25,7 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 import { extractEXIF, getImageDimensions } from "./services/exif.ts";
 import { compressImage, generateThumbnail } from "../_shared/compression/index.ts";
 import { analyzeImage } from "./services/ai.ts";
+import { isR2Configured, uploadToR2 } from "../_shared/r2-storage.ts";
 import type {
   ImageUploadResponse,
   BatchUploadResponse,
@@ -120,6 +121,7 @@ async function logUploadMetrics(supabase: any, metrics: {
   savedBytes: number;
   compressionMethod: string;
   processingTime: number;
+  storage?: "r2" | "supabase";
 }) {
   try {
     await supabase.from("image_upload_metrics").insert({
@@ -131,11 +133,50 @@ async function logUploadMetrics(supabase: any, metrics: {
       saved_bytes: metrics.savedBytes,
       compression_method: metrics.compressionMethod,
       processing_time_ms: metrics.processingTime,
+      storage: metrics.storage || "supabase",
       uploaded_at: new Date().toISOString(),
     });
   } catch (error) {
     console.error("Failed to log metrics:", error);
   }
+}
+
+/**
+ * Upload to R2 (primary) with Supabase Storage fallback.
+ * If R2 is not configured, goes directly to Supabase.
+ */
+async function uploadWithFallback(
+  supabase: any,
+  bucket: string,
+  path: string,
+  buffer: Uint8Array,
+  contentType: string
+): Promise<{ publicUrl: string; storage: "r2" | "supabase" }> {
+  // Try R2 first
+  if (isR2Configured()) {
+    const r2Path = `${bucket}/${path}`;
+    const result = await uploadToR2(buffer, r2Path, contentType);
+    if (result.success) {
+      return { publicUrl: result.publicUrl, storage: "r2" };
+    }
+    console.error("R2 upload failed, falling back to Supabase:", result.error);
+  }
+
+  // Fallback to Supabase Storage
+  const { error: uploadError } = await supabase.storage
+    .from(bucket)
+    .upload(path, buffer, {
+      contentType,
+      cacheControl: "31536000",
+      upsert: true,
+    });
+
+  if (uploadError) {
+    throw new Error(`Upload failed: ${uploadError.message}`);
+  }
+
+  const publicUrl = supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  return { publicUrl, storage: "supabase" };
 }
 
 Deno.serve(async (req) => {
@@ -235,97 +276,84 @@ async function handleUpload(req: Request, corsHeaders: Record<string, string>): 
     
     let thumbnailBuffer: Uint8Array | null = null;
     if (generateThumb) {
-    thumbnailBuffer = await generateThumbnail(imageData, 300);
-  }
-  
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-  );
-  
-  // Detect format from buffer
-  const format = detectFormat(compressed.buffer);
-  const filename = `${crypto.randomUUID()}.${format}`;
-  const path = customPath || filename;
-  
-  const { error: uploadError } = await supabase.storage
-    .from(bucket)
-    .upload(path, compressed.buffer, {
-      contentType: `image/${format}`,
-      cacheControl: "31536000",
-      upsert: true,
-    });
-  
-  if (uploadError) {
-    throw new Error(`Upload failed: ${uploadError.message}`);
-  }
-  
-  const publicUrl = supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
-  
-  let thumbnailUrl: string | undefined;
-  let thumbnailPath: string | undefined;
-  if (thumbnailBuffer) {
-    const thumbFilename = `${crypto.randomUUID()}_thumb.jpg`;
-    const thumbPath = customPath ? `${customPath.replace(/\.[^.]+$/, '')}_thumb.jpg` : thumbFilename;
-    
-    const { error: thumbError } = await supabase.storage.from(bucket).upload(thumbPath, thumbnailBuffer, {
-      contentType: "image/jpeg",
-      cacheControl: "31536000",
-      upsert: true,
-    });
-    
-    if (!thumbError) {
-      thumbnailUrl = supabase.storage.from(bucket).getPublicUrl(thumbPath).data.publicUrl;
-      thumbnailPath = thumbPath;
+      thumbnailBuffer = await generateThumbnail(imageData, 300);
     }
-  }
-  
-  let ai = null;
-  if (enableAI) {
-    try {
-      ai = await analyzeImage(publicUrl);
-    } catch (error) {
-      console.error("AI analysis failed:", error);
+
+    // Detect format from buffer
+    const format = detectFormat(compressed.buffer);
+    const filename = `${crypto.randomUUID()}.${format}`;
+    const path = customPath || filename;
+
+    // Upload main image: R2 primary, Supabase fallback
+    const { publicUrl, storage } = await uploadWithFallback(
+      supabase, bucket, path, compressed.buffer, `image/${format}`
+    );
+
+    let thumbnailUrl: string | undefined;
+    let thumbnailPath: string | undefined;
+    if (thumbnailBuffer) {
+      const thumbFilename = `${crypto.randomUUID()}_thumb.jpg`;
+      const thumbPath = customPath ? `${customPath.replace(/\.[^.]+$/, '')}_thumb.jpg` : thumbFilename;
+
+      try {
+        const thumbResult = await uploadWithFallback(
+          supabase, bucket, thumbPath, thumbnailBuffer, "image/jpeg"
+        );
+        thumbnailUrl = thumbResult.publicUrl;
+        thumbnailPath = thumbPath;
+      } catch (error) {
+        console.error("Thumbnail upload failed:", error);
+      }
     }
-  }
-  
-  const processingTime = Date.now() - startTime;
-  
-  const response: ImageUploadResponse = {
-    success: true,
-    data: {
-      url: publicUrl,
+
+    let ai = null;
+    if (enableAI) {
+      try {
+        ai = await analyzeImage(publicUrl);
+      } catch (error) {
+        console.error("AI analysis failed:", error);
+      }
+    }
+
+    const processingTime = Date.now() - startTime;
+
+    const response: ImageUploadResponse = {
+      success: true,
+      data: {
+        url: publicUrl,
+        path,
+        thumbnailUrl,
+        thumbnailPath,
+      },
+      metadata: {
+        originalSize,
+        finalSize: compressed.compressedSize,
+        savedBytes: compressed.savedPercent > 0 ? originalSize - compressed.compressedSize : 0,
+        savedPercent: compressed.savedPercent,
+        format: detectFormat(compressed.buffer),
+        dimensions: dimensions || undefined,
+        exif: exif || undefined,
+        ai: ai || undefined,
+        processingTime,
+        compressionMethod: compressed.method,
+        storage,
+      },
+    };
+
+    // Log metrics and audit trail
+    await logUploadMetrics(supabase, {
+      userId,
+      bucket,
       path,
-      thumbnailUrl,
-      thumbnailPath,
-    },
-    metadata: {
       originalSize,
-      finalSize: compressed.compressedSize,
-      savedBytes: compressed.savedPercent > 0 ? originalSize - compressed.compressedSize : 0,
-      savedPercent: compressed.savedPercent,
-      format: detectFormat(compressed.buffer),
-      dimensions: dimensions || undefined,
-      exif: exif || undefined,
-      ai: ai || undefined,
-      processingTime,
+      compressedSize: compressed.compressedSize,
+      savedBytes: originalSize - compressed.compressedSize,
       compressionMethod: compressed.method,
-    },
-  };
-  
-  // Log metrics and audit trail
-  await logUploadMetrics(supabase, {
-    userId,
-    bucket,
-    path,
-    originalSize,
-    compressedSize: compressed.compressedSize,
-    savedBytes: originalSize - compressed.compressedSize,
-    compressionMethod: compressed.method,
-    processingTime,
-  });
-  
-  return jsonResponse(response, 200, corsHeaders);
+      processingTime,
+      storage,
+    });
+
+    return jsonResponse(response, 200, corsHeaders);
   } catch (error) {
     captureException(error as Error, { bucket, file: file?.name });
     throw error;
@@ -443,24 +471,16 @@ async function handleProxy(req: Request, corsHeaders: Record<string, string>): P
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
-    
+
     const compressed = await compressImage(imageData, 800);
     const format = detectFormat(compressed.buffer);
     const filename = `${crypto.randomUUID()}.${format}`;
-    
-    const { error: uploadError } = await supabase.storage
-      .from(bucket)
-      .upload(filename, compressed.buffer, {
-        contentType: `image/${format}`,
-        cacheControl: "31536000",
-      });
-    
-    if (uploadError) {
-      throw new Error(`Upload failed: ${uploadError.message}`);
-    }
-    
-    const publicUrl = supabase.storage.from(bucket).getPublicUrl(filename).data.publicUrl;
-    
+
+    // Upload: R2 primary, Supabase fallback
+    const { publicUrl, storage } = await uploadWithFallback(
+      supabase, bucket, filename, compressed.buffer, `image/${format}`
+    );
+
     return jsonResponse({
       success: true,
       data: {
@@ -474,6 +494,7 @@ async function handleProxy(req: Request, corsHeaders: Record<string, string>): P
         savedBytes: imageData.length - compressed.compressedSize,
         savedPercent: compressed.savedPercent,
         format,
+        storage,
       },
     }, 200, corsHeaders);
   } catch (error) {

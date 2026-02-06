@@ -42,6 +42,7 @@ export interface ImageMetadata {
   ai?: AIData;
   processingTime: number;
   compressionMethod?: string;
+  storage?: "r2" | "supabase";
 }
 
 export interface EXIFData {
