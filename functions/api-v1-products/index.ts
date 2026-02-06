@@ -412,26 +412,8 @@ async function deleteProduct(ctx: HandlerContext): Promise<Response> {
 // =============================================================================
 
 function transformProduct(data: Record<string, unknown>) {
-  return {
-    id: data.id,
-    title: data.post_name,
-    description: data.post_description,
-    images: data.images,
-    postType: data.post_type,
-    location: {
-      lat: data.latitude,
-      lng: data.longitude,
-      address: data.pickup_address,
-    },
-    pickupTime: data.pickup_time,
-    categoryId: data.category_id,
-    isActive: data.is_active,
-    expiresAt: data.expires_at,
-    createdAt: data.created_at,
-    updatedAt: data.updated_at,
-    version: data.version,
-    userId: data.profile_id,
-  };
+  // Return raw database format (snake_case) for web compatibility
+  return data;
 }
 
 function transformProductDetail(data: Record<string, unknown>) {
