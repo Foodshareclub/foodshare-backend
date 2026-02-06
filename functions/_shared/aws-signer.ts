@@ -29,9 +29,13 @@ export class AWSV4Signer {
     const dateStamp = this.getDateStamp(now);
     const amzDate = this.getAmzDate(now);
 
+    // Compute payload hash for S3-compatible services (R2 requires x-amz-content-sha256)
+    const payloadHash = await this.sha256Hex(payload);
+
     // Add required headers
     const signedHeaders = {
       ...headers,
+      "x-amz-content-sha256": payloadHash,
       "x-amz-date": amzDate,
       host: new URL(url).host,
     };

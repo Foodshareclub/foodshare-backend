@@ -17,12 +17,19 @@ export interface R2Config {
   secretAccessKey: string;
   bucketName: string;
   publicUrl: string;
+  jurisdiction: string; // e.g. "eu" for EU-jurisdicted buckets, "" for default
 }
 
 export interface R2UploadResult {
   success: boolean;
   path: string;
   publicUrl: string;
+  error?: string;
+}
+
+export interface R2DeleteResult {
+  success: boolean;
+  path: string;
   error?: string;
 }
 
@@ -46,7 +53,8 @@ export function getR2Config(): R2Config | null {
     return null;
   }
 
-  cachedConfig = { accountId, accessKeyId, secretAccessKey, bucketName, publicUrl };
+  const jurisdiction = (Deno.env.get("R2_JURISDICTION") || "").toLowerCase();
+  cachedConfig = { accountId, accessKeyId, secretAccessKey, bucketName, publicUrl, jurisdiction };
   return cachedConfig;
 }
 
@@ -75,7 +83,8 @@ export async function uploadToR2(
   }
 
   const signer = new AWSV4Signer("auto", "s3", config.accessKeyId, config.secretAccessKey);
-  const endpoint = `https://${config.accountId}.r2.cloudflarestorage.com`;
+  const jPrefix = config.jurisdiction ? `${config.jurisdiction}.` : "";
+  const endpoint = `https://${config.accountId}.${jPrefix}r2.cloudflarestorage.com`;
   const objectUrl = `${endpoint}/${config.bucketName}/${path}`;
 
   const headers: Record<string, string> = {
@@ -107,6 +116,45 @@ export async function uploadToR2(
     success: true,
     path,
     publicUrl: getR2PublicUrl(path),
+  };
+}
+
+/**
+ * Delete a file from Cloudflare R2.
+ *
+ * @param path - Object key (e.g. "food-images/abc.jpg")
+ * @returns Result indicating success or failure. 404 is treated as success (already gone).
+ */
+export async function deleteFromR2(path: string): Promise<R2DeleteResult> {
+  const config = getR2Config();
+  if (!config) {
+    return { success: false, path, error: "R2 not configured" };
+  }
+
+  const signer = new AWSV4Signer("auto", "s3", config.accessKeyId, config.secretAccessKey);
+  const jPrefix = config.jurisdiction ? `${config.jurisdiction}.` : "";
+  const endpoint = `https://${config.accountId}.${jPrefix}r2.cloudflarestorage.com`;
+  const objectUrl = `${endpoint}/${config.bucketName}/${path}`;
+
+  const headers: Record<string, string> = {};
+  const signedHeaders = await signer.signRequest("DELETE", objectUrl, headers, "");
+
+  const response = await fetch(objectUrl, {
+    method: "DELETE",
+    headers: signedHeaders,
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  // 204 No Content = deleted, 404 = already gone — both are success
+  if (response.ok || response.status === 404) {
+    return { success: true, path };
+  }
+
+  const body = await response.text();
+  return {
+    success: false,
+    path,
+    error: `R2 delete failed (${response.status}): ${body.slice(0, 200)}`,
   };
 }
 

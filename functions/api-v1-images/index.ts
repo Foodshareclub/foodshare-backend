@@ -10,14 +10,21 @@
  * - Thumbnail generation
  * - AI food detection (optional)
  * - Batch upload support
+ * - Orphan cleanup
+ * - Recompression
+ * - External URL upload
  * 
  * Routes:
- * - POST /upload        - Single image upload
- * - POST /batch         - Batch image upload
- * - GET  /health        - Health check
+ * - POST /upload           - Single image upload
+ * - POST /batch            - Batch image upload
+ * - POST /proxy            - Proxy external image
+ * - POST /upload-from-url  - Download and upload external image
+ * - POST /cleanup          - Cleanup orphan images (cron)
+ * - POST /recompress       - Recompress old images (cron)
+ * - GET  /health           - Health check
  * 
  * @module api-v1-images
- * @version 1.0.0
+ * @version 2.0.0
  */
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -26,6 +33,10 @@ import { extractEXIF, getImageDimensions } from "./services/exif.ts";
 import { compressImage, generateThumbnail } from "../_shared/compression/index.ts";
 import { analyzeImage } from "./services/ai.ts";
 import { isR2Configured, uploadToR2 } from "../_shared/r2-storage.ts";
+import { validateImageUrl } from "../_shared/url-validation.ts";
+import { detectFormat, downloadImage, logUploadMetrics } from "../_shared/image-utils.ts";
+import { cleanupOrphanImages } from "./services/cleanup.ts";
+import { recompressOldImages } from "./services/recompression.ts";
 import type {
   ImageUploadResponse,
   BatchUploadResponse,
@@ -50,7 +61,7 @@ function captureException(error: Error, context?: Record<string, any>) {
   }).catch(() => {});
 }
 
-const VERSION = "1.0.0";
+const VERSION = "2.0.0";
 const SERVICE = "api-v1-images";
 const ALLOWED_BUCKETS = ["food-images", "profiles", "forum", "challenges", "rooms", "assets", "avatars", "posts"];
 
@@ -104,47 +115,6 @@ async function checkRateLimit(userId: string, supabase: any): Promise<boolean> {
   return true;
 }
 
-function detectFormat(buffer: Uint8Array): string {
-  if (buffer[0] === 0xFF && buffer[1] === 0xD8) return "jpeg";
-  if (buffer[0] === 0x89 && buffer[1] === 0x50) return "png";
-  if (buffer[0] === 0x47 && buffer[1] === 0x49) return "gif";
-  if (buffer[0] === 0x52 && buffer[1] === 0x49) return "webp";
-  return "jpeg";
-}
-
-async function logUploadMetrics(supabase: any, metrics: {
-  userId: string | null;
-  bucket: string;
-  path: string;
-  originalSize: number;
-  compressedSize: number;
-  savedBytes: number;
-  compressionMethod: string;
-  processingTime: number;
-  storage?: "r2" | "supabase";
-}) {
-  try {
-    await supabase.from("image_upload_metrics").insert({
-      user_id: metrics.userId,
-      bucket: metrics.bucket,
-      path: metrics.path,
-      original_size: metrics.originalSize,
-      compressed_size: metrics.compressedSize,
-      saved_bytes: metrics.savedBytes,
-      compression_method: metrics.compressionMethod,
-      processing_time_ms: metrics.processingTime,
-      storage: metrics.storage || "supabase",
-      uploaded_at: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error("Failed to log metrics:", error);
-  }
-}
-
-/**
- * Upload to R2 (primary) with Supabase Storage fallback.
- * If R2 is not configured, goes directly to Supabase.
- */
 async function uploadWithFallback(
   supabase: any,
   bucket: string,
@@ -152,7 +122,6 @@ async function uploadWithFallback(
   buffer: Uint8Array,
   contentType: string
 ): Promise<{ publicUrl: string; storage: "r2" | "supabase" }> {
-  // Try R2 first
   if (isR2Configured()) {
     const r2Path = `${bucket}/${path}`;
     const result = await uploadToR2(buffer, r2Path, contentType);
@@ -162,7 +131,6 @@ async function uploadWithFallback(
     console.error("R2 upload failed, falling back to Supabase:", result.error);
   }
 
-  // Fallback to Supabase Storage
   const { error: uploadError } = await supabase.storage
     .from(bucket)
     .upload(path, buffer, {
@@ -191,7 +159,7 @@ Deno.serve(async (req) => {
   
   try {
     if (path.endsWith("/health")) {
-      return jsonResponse({ status: "healthy", version: VERSION, service: SERVICE }, 200, corsHeaders);
+      return jsonResponse({ status: "healthy", version: VERSION, service: SERVICE, r2: isR2Configured() }, 200, corsHeaders);
     }
     
     if (path.endsWith("/upload") && req.method === "POST") {
@@ -204,6 +172,18 @@ Deno.serve(async (req) => {
     
     if (path.endsWith("/proxy") && req.method === "POST") {
       return await handleProxy(req, corsHeaders);
+    }
+    
+    if (path.endsWith("/upload-from-url") && req.method === "POST") {
+      return await handleUploadFromUrl(req, corsHeaders);
+    }
+    
+    if (path.endsWith("/cleanup") && req.method === "POST") {
+      return await handleCleanup(req, corsHeaders);
+    }
+    
+    if (path.endsWith("/recompress") && req.method === "POST") {
+      return await handleRecompress(req, corsHeaders);
     }
     
     return jsonResponse({ error: "Not found" }, 404, corsHeaders);
@@ -432,21 +412,10 @@ async function handleProxy(req: Request, corsHeaders: Record<string, string>): P
       return jsonResponse({ error: "Missing 'url' field" }, 400, corsHeaders);
     }
     
-    // Validate URL
-    const url = new URL(imageUrl);
-    if (!["http:", "https:"].includes(url.protocol)) {
-      return jsonResponse({ error: "Invalid URL protocol" }, 400, corsHeaders);
-    }
-    
-    // Block private IPs
-    const hostname = url.hostname.toLowerCase();
-    if (
-      hostname === "localhost" ||
-      hostname.startsWith("127.") ||
-      hostname.startsWith("192.168.") ||
-      hostname.startsWith("10.")
-    ) {
-      return jsonResponse({ error: "Private IPs not allowed" }, 400, corsHeaders);
+    // Validate URL with full SSRF protection
+    const urlValidation = validateImageUrl(imageUrl);
+    if (!urlValidation.valid) {
+      return jsonResponse({ error: `Invalid image URL: ${urlValidation.reason}` }, 400, corsHeaders);
     }
     
     // Download image
@@ -499,6 +468,141 @@ async function handleProxy(req: Request, corsHeaders: Record<string, string>): P
     }, 200, corsHeaders);
   } catch (error) {
     captureException(error as Error, { route: "proxy" });
+    return jsonResponse({ error: error.message }, 500, corsHeaders);
+  }
+}
+
+async function handleUploadFromUrl(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
+  const startTime = Date.now();
+  
+  try {
+    const body = await req.json();
+    const imageUrl = body.imageUrl || body.url;
+    const bucket = body.bucket || "challenges";
+    const customPath = body.path;
+    const challengeId = body.challengeId;
+    
+    if (!imageUrl) {
+      return jsonResponse({ error: "Missing imageUrl" }, 400, corsHeaders);
+    }
+    
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+    
+    const imageData = await downloadImage(imageUrl);
+    
+    if (imageData.length > 10 * 1024 * 1024) {
+      return jsonResponse({ error: "Image too large (max 10MB)" }, 400, corsHeaders);
+    }
+    
+    const originalSize = imageData.length;
+    const compressed = await compressImage(imageData, 800);
+    const format = detectFormat(compressed.buffer);
+    const filename = customPath || `${crypto.randomUUID()}.${format}`;
+    
+    const { publicUrl, storage } = await uploadWithFallback(
+      supabase, bucket, filename, compressed.buffer, `image/${format}`
+    );
+    
+    if (challengeId) {
+      await supabase
+        .from("challenges")
+        .update({ challenge_image: publicUrl })
+        .eq("id", challengeId);
+    }
+    
+    const processingTime = Date.now() - startTime;
+    
+    await logUploadMetrics(supabase, {
+      userId: null,
+      bucket,
+      path: filename,
+      originalSize,
+      compressedSize: compressed.compressedSize,
+      savedBytes: originalSize - compressed.compressedSize,
+      compressionMethod: compressed.method,
+      processingTime,
+      storage,
+    });
+    
+    return jsonResponse({
+      success: true,
+      challengeId,
+      publicUrl,
+      filePath: filename,
+      metadata: {
+        originalSize,
+        compressedSize: compressed.compressedSize,
+        savedBytes: originalSize - compressed.compressedSize,
+        storage,
+      },
+    }, 200, corsHeaders);
+  } catch (error) {
+    captureException(error as Error, { route: "upload-from-url" });
+    return jsonResponse({ error: error.message }, 500, corsHeaders);
+  }
+}
+
+async function handleCleanup(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
+  try {
+    const cronSecret = Deno.env.get("CRON_SECRET");
+    const authHeader = req.headers.get("authorization");
+    
+    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+      return jsonResponse({ error: "Unauthorized" }, 401, corsHeaders);
+    }
+    
+    const body = await req.json().catch(() => ({}));
+    
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+    
+    const stats = await cleanupOrphanImages(supabase, {
+      gracePeriodHours: body.gracePeriodHours,
+      batchSize: body.batchSize,
+      dryRun: body.dryRun,
+    });
+    
+    return jsonResponse({ success: true, ...stats }, 200, corsHeaders);
+  } catch (error) {
+    captureException(error as Error, { route: "cleanup" });
+    return jsonResponse({ error: error.message }, 500, corsHeaders);
+  }
+}
+
+async function handleRecompress(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
+  try {
+    const cronSecret = Deno.env.get("CRON_SECRET");
+    const authHeader = req.headers.get("authorization");
+    
+    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+      return jsonResponse({ error: "Unauthorized" }, 401, corsHeaders);
+    }
+    
+    const body = await req.json().catch(() => ({}));
+    
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+    
+    const results = await recompressOldImages(supabase, {
+      batchSize: body.batchSize,
+      cutoffDate: body.cutoffDate,
+    });
+    
+    return jsonResponse({
+      success: true,
+      version: VERSION,
+      service: SERVICE,
+      results,
+    }, 200, corsHeaders);
+  } catch (error) {
+    captureException(error as Error, { route: "recompress" });
     return jsonResponse({ error: error.message }, 500, corsHeaders);
   }
 }
