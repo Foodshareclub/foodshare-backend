@@ -30,9 +30,78 @@ import type {
   BatchUploadResponse,
 } from "./types/index.ts";
 
+// Sentry integration
+const SENTRY_DSN = Deno.env.get("SENTRY_DSN");
+function captureException(error: Error, context?: Record<string, any>) {
+  if (!SENTRY_DSN) {
+    console.error("Error:", error, context);
+    return;
+  }
+  
+  fetch(`https://sentry.io/api/0/envelope/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-sentry-envelope" },
+    body: JSON.stringify({
+      dsn: SENTRY_DSN,
+      exception: { values: [{ type: error.name, value: error.message, stacktrace: error.stack }] },
+      extra: context,
+    }),
+  }).catch(() => {});
+}
+
 const VERSION = "1.0.0";
 const SERVICE = "api-v1-images";
 const ALLOWED_BUCKETS = ["food-images", "profiles", "forum", "challenges", "rooms", "assets", "avatars", "posts"];
+
+// Rate limiting: 100 uploads per user per day
+const RATE_LIMIT_KEY = "image_upload_count";
+const RATE_LIMIT_MAX = 100;
+const RATE_LIMIT_WINDOW = 86400; // 24 hours
+
+async function checkRateLimit(userId: string, supabase: any): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("user_rate_limits")
+    .select("count, reset_at")
+    .eq("user_id", userId)
+    .eq("key", RATE_LIMIT_KEY)
+    .single();
+  
+  if (error || !data) {
+    // First upload, create record
+    await supabase.from("user_rate_limits").insert({
+      user_id: userId,
+      key: RATE_LIMIT_KEY,
+      count: 1,
+      reset_at: new Date(Date.now() + RATE_LIMIT_WINDOW * 1000).toISOString(),
+    });
+    return true;
+  }
+  
+  // Check if window expired
+  if (new Date(data.reset_at) < new Date()) {
+    await supabase.from("user_rate_limits")
+      .update({
+        count: 1,
+        reset_at: new Date(Date.now() + RATE_LIMIT_WINDOW * 1000).toISOString(),
+      })
+      .eq("user_id", userId)
+      .eq("key", RATE_LIMIT_KEY);
+    return true;
+  }
+  
+  // Check limit
+  if (data.count >= RATE_LIMIT_MAX) {
+    return false;
+  }
+  
+  // Increment
+  await supabase.from("user_rate_limits")
+    .update({ count: data.count + 1 })
+    .eq("user_id", userId)
+    .eq("key", RATE_LIMIT_KEY);
+  
+  return true;
+}
 
 function detectFormat(buffer: Uint8Array): string {
   if (buffer[0] === 0xFF && buffer[1] === 0xD8) return "jpeg";
@@ -40,6 +109,33 @@ function detectFormat(buffer: Uint8Array): string {
   if (buffer[0] === 0x47 && buffer[1] === 0x49) return "gif";
   if (buffer[0] === 0x52 && buffer[1] === 0x49) return "webp";
   return "jpeg";
+}
+
+async function logUploadMetrics(supabase: any, metrics: {
+  userId: string | null;
+  bucket: string;
+  path: string;
+  originalSize: number;
+  compressedSize: number;
+  savedBytes: number;
+  compressionMethod: string;
+  processingTime: number;
+}) {
+  try {
+    await supabase.from("image_upload_metrics").insert({
+      user_id: metrics.userId,
+      bucket: metrics.bucket,
+      path: metrics.path,
+      original_size: metrics.originalSize,
+      compressed_size: metrics.compressedSize,
+      saved_bytes: metrics.savedBytes,
+      compression_method: metrics.compressionMethod,
+      processing_time_ms: metrics.processingTime,
+      uploaded_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Failed to log metrics:", error);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -79,36 +175,62 @@ Deno.serve(async (req) => {
 async function handleUpload(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
   const startTime = Date.now();
   
-  const formData = await req.formData();
-  const file = formData.get("file") as File | null;
-  const bucket = (formData.get("bucket") as string) || "food-images";
-  const customPath = formData.get("path") as string | null;
-  const generateThumb = formData.get("generateThumbnail") !== "false";
-  const extractEXIFData = formData.get("extractEXIF") !== "false";
-  const enableAI = formData.get("enableAI") === "true";
-  
-  if (!file) {
-    return jsonResponse({ error: "No file provided" }, 400, corsHeaders);
-  }
-  
-  if (!ALLOWED_BUCKETS.includes(bucket)) {
-    return jsonResponse({ error: `Invalid bucket: ${bucket}` }, 400, corsHeaders);
-  }
-  
-  // Validate file size (max 10MB)
-  if (file.size > 10 * 1024 * 1024) {
-    return jsonResponse({ error: "File too large (max 10MB)" }, 400, corsHeaders);
-  }
-  
-  const imageData = new Uint8Array(await file.arrayBuffer());
-  const originalSize = imageData.length;
-  
-  const exif = extractEXIFData ? await extractEXIF(imageData) : null;
-  const dimensions = getImageDimensions(imageData);
-  const compressed = await compressImage(imageData, 800);
-  
-  let thumbnailBuffer: Uint8Array | null = null;
-  if (generateThumb) {
+  try {
+    const formData = await req.formData();
+    const file = formData.get("file") as File | null;
+    const bucket = (formData.get("bucket") as string) || "food-images";
+    const customPath = formData.get("path") as string | null;
+    const generateThumb = formData.get("generateThumbnail") !== "false";
+    const extractEXIFData = formData.get("extractEXIF") !== "false";
+    const enableAI = formData.get("enableAI") === "true";
+    
+    if (!file) {
+      return jsonResponse({ error: "No file provided" }, 400, corsHeaders);
+    }
+    
+    if (!ALLOWED_BUCKETS.includes(bucket)) {
+      return jsonResponse({ error: `Invalid bucket: ${bucket}` }, 400, corsHeaders);
+    }
+    
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      return jsonResponse({ error: "File too large (max 10MB)" }, 400, corsHeaders);
+    }
+    
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+    
+    // Get user ID from auth header
+    const authHeader = req.headers.get("authorization");
+    const token = authHeader?.replace("Bearer ", "");
+    let userId: string | null = null;
+    
+    if (token) {
+      const { data: { user } } = await supabase.auth.getUser(token);
+      userId = user?.id || null;
+      
+      // Check rate limit
+      if (userId) {
+        const allowed = await checkRateLimit(userId, supabase);
+        if (!allowed) {
+          return jsonResponse({ 
+            error: "Rate limit exceeded. Maximum 100 uploads per day." 
+          }, 429, corsHeaders);
+        }
+      }
+    }
+    
+    const imageData = new Uint8Array(await file.arrayBuffer());
+    const originalSize = imageData.length;
+    
+    const exif = extractEXIFData ? await extractEXIF(imageData) : null;
+    const dimensions = getImageDimensions(imageData);
+    const compressed = await compressImage(imageData, 800);
+    
+    let thumbnailBuffer: Uint8Array | null = null;
+    if (generateThumb) {
     thumbnailBuffer = await generateThumbnail(imageData, 300);
   }
   
@@ -187,7 +309,23 @@ async function handleUpload(req: Request, corsHeaders: Record<string, string>): 
     },
   };
   
+  // Log metrics and audit trail
+  await logUploadMetrics(supabase, {
+    userId,
+    bucket,
+    path,
+    originalSize,
+    compressedSize: compressed.compressedSize,
+    savedBytes: originalSize - compressed.compressedSize,
+    compressionMethod: compressed.method,
+    processingTime,
+  });
+  
   return jsonResponse(response, 200, corsHeaders);
+  } catch (error) {
+    captureException(error as Error, { bucket, file: file?.name });
+    throw error;
+  }
 }
 
 async function handleBatchUpload(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
