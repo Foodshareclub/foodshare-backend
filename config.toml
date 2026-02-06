@@ -8,6 +8,14 @@
 [functions.api-v1-images]
 verify_jwt = false
 
+# Unified Search & Indexing API v2
+# - GET ?q=...&mode=hybrid — search
+# - GET ?route=health|stats — monitoring
+# - POST ?route=index — webhook indexing (HMAC verified)
+# - POST ?route=batch — admin batch indexing (API key auth)
+[functions.api-v1-search]
+verify_jwt = false
+
 [functions.geolocate-user]
 verify_jwt = false
 
@@ -99,18 +107,6 @@ verify_jwt = false
 # - POST /geocode - Geocode address (no DB update)
 # - GET /health - Health check
 [functions.api-v1-geocoding]
-verify_jwt = false
-
-# =============================================================================
-# UNIFIED LISTINGS API v1
-# =============================================================================
-# Consolidates listing CRUD operations (replaces create-listing, update-listing):
-# - POST / - Create new listing
-# - PUT /:id - Update listing
-# - DELETE /:id - Delete listing
-# - GET /:id - Get listing details
-# - GET /health - Health check
-[functions.api-v1-listings]
 verify_jwt = false
 
 # =============================================================================
