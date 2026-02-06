@@ -23,7 +23,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { extractEXIF, getImageDimensions } from "./services/exif.ts";
-import { compressImage, generateThumbnail } from "./services/compression.ts";
+import { compressImage, generateThumbnail } from "../_shared/compression/index.ts";
 import { analyzeImage } from "./services/ai.ts";
 import type {
   ImageUploadResponse,
@@ -33,6 +33,14 @@ import type {
 const VERSION = "1.0.0";
 const SERVICE = "api-v1-images";
 const ALLOWED_BUCKETS = ["food-images", "profiles", "forum", "challenges", "rooms", "assets"];
+
+function detectFormat(buffer: Uint8Array): string {
+  if (buffer[0] === 0xFF && buffer[1] === 0xD8) return "jpeg";
+  if (buffer[0] === 0x89 && buffer[1] === 0x50) return "png";
+  if (buffer[0] === 0x47 && buffer[1] === 0x49) return "gif";
+  if (buffer[0] === 0x52 && buffer[1] === 0x49) return "webp";
+  return "jpeg";
+}
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -74,6 +82,7 @@ async function handleUpload(req: Request, corsHeaders: Record<string, string>): 
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
   const bucket = (formData.get("bucket") as string) || "food-images";
+  const customPath = formData.get("path") as string | null;
   const generateThumb = formData.get("generateThumbnail") !== "false";
   const extractEXIFData = formData.get("extractEXIF") !== "false";
   const enableAI = formData.get("enableAI") === "true";
@@ -86,16 +95,21 @@ async function handleUpload(req: Request, corsHeaders: Record<string, string>): 
     return jsonResponse({ error: `Invalid bucket: ${bucket}` }, 400, corsHeaders);
   }
   
+  // Validate file size (max 10MB)
+  if (file.size > 10 * 1024 * 1024) {
+    return jsonResponse({ error: "File too large (max 10MB)" }, 400, corsHeaders);
+  }
+  
   const imageData = new Uint8Array(await file.arrayBuffer());
   const originalSize = imageData.length;
   
   const exif = extractEXIFData ? await extractEXIF(imageData) : null;
   const dimensions = getImageDimensions(imageData);
-  const compressed = await compressImage(imageData);
+  const compressed = await compressImage(imageData, 800);
   
   let thumbnailBuffer: Uint8Array | null = null;
   if (generateThumb) {
-    thumbnailBuffer = await generateThumbnail(imageData);
+    thumbnailBuffer = await generateThumbnail(imageData, 300);
   }
   
   const supabase = createClient(
@@ -103,14 +117,17 @@ async function handleUpload(req: Request, corsHeaders: Record<string, string>): 
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
   
-  const filename = `${crypto.randomUUID()}.${compressed.format === "jpeg" ? "jpg" : compressed.format}`;
-  const path = `${bucket}/${filename}`;
+  // Detect format from buffer
+  const format = detectFormat(compressed.buffer);
+  const filename = `${crypto.randomUUID()}.${format}`;
+  const path = customPath || filename;
   
   const { error: uploadError } = await supabase.storage
     .from(bucket)
     .upload(path, compressed.buffer, {
-      contentType: `image/${compressed.format}`,
+      contentType: `image/${format}`,
       cacheControl: "31536000",
+      upsert: true,
     });
   
   if (uploadError) {
@@ -123,20 +140,27 @@ async function handleUpload(req: Request, corsHeaders: Record<string, string>): 
   let thumbnailPath: string | undefined;
   if (thumbnailBuffer) {
     const thumbFilename = `${crypto.randomUUID()}_thumb.jpg`;
-    const thumbPath = `${bucket}/${thumbFilename}`;
+    const thumbPath = customPath ? `${customPath.replace(/\.[^.]+$/, '')}_thumb.jpg` : thumbFilename;
     
-    await supabase.storage.from(bucket).upload(thumbPath, thumbnailBuffer, {
+    const { error: thumbError } = await supabase.storage.from(bucket).upload(thumbPath, thumbnailBuffer, {
       contentType: "image/jpeg",
       cacheControl: "31536000",
+      upsert: true,
     });
     
-    thumbnailUrl = supabase.storage.from(bucket).getPublicUrl(thumbPath).data.publicUrl;
-    thumbnailPath = thumbPath;
+    if (!thumbError) {
+      thumbnailUrl = supabase.storage.from(bucket).getPublicUrl(thumbPath).data.publicUrl;
+      thumbnailPath = thumbPath;
+    }
   }
   
   let ai = null;
   if (enableAI) {
-    ai = await analyzeImage(publicUrl);
+    try {
+      ai = await analyzeImage(publicUrl);
+    } catch (error) {
+      console.error("AI analysis failed:", error);
+    }
   }
   
   const processingTime = Date.now() - startTime;
@@ -152,13 +176,14 @@ async function handleUpload(req: Request, corsHeaders: Record<string, string>): 
     metadata: {
       originalSize,
       finalSize: compressed.compressedSize,
-      savedBytes: originalSize - compressed.compressedSize,
+      savedBytes: compressed.savedPercent > 0 ? originalSize - compressed.compressedSize : 0,
       savedPercent: compressed.savedPercent,
-      format: compressed.format,
+      format: detectFormat(compressed.buffer),
       dimensions: dimensions || undefined,
       exif: exif || undefined,
       ai: ai || undefined,
       processingTime,
+      compressionMethod: compressed.method,
     },
   };
   

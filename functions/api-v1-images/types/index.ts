@@ -41,6 +41,7 @@ export interface ImageMetadata {
   exif?: EXIFData;
   ai?: AIData;
   processingTime: number;
+  compressionMethod?: string;
 }
 
 export interface EXIFData {
