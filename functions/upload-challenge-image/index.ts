@@ -75,62 +75,66 @@ async function handleUploadChallengeImage(
     throw new ValidationError(`Failed to fetch image: ${imageResponse.status}`);
   }
 
-  const contentType = imageResponse.headers.get("content-type") || "image/jpeg";
   const imageData = await imageResponse.arrayBuffer();
 
-  // Determine file extension
-  let ext = "jpg";
-  if (contentType.includes("png")) ext = "png";
-  else if (contentType.includes("webp")) ext = "webp";
-  else if (contentType.includes("gif")) ext = "gif";
+  // Use api-v1-images for compression and upload
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-  const filePath = `${challengeId}/image.${ext}`;
+  const formData = new FormData();
+  formData.append("file", new Blob([imageData]), "image.jpg");
+  formData.append("bucket", "challenges");
+  formData.append("path", `${challengeId}/image.jpg`);
+  formData.append("generateThumbnail", "true");
+  formData.append("extractEXIF", "false");
+  formData.append("enableAI", "false");
 
-  // Upload to storage
-  const { error: uploadError } = await supabase.storage
-    .from("challenges")
-    .upload(filePath, imageData, {
-      contentType,
-      upsert: true,
-    });
+  const uploadResponse = await fetch(
+    `${supabaseUrl}/functions/v1/api-v1-images/upload`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+      },
+      body: formData,
+    }
+  );
 
-  if (uploadError) {
-    logger.error("Upload failed", { error: uploadError.message, challengeId });
-    throw new ServerError(`Upload failed: ${uploadError.message}`);
+  if (!uploadResponse.ok) {
+    const error = await uploadResponse.text();
+    logger.error("Image API upload failed", { error, challengeId });
+    throw new ServerError(`Upload failed: ${error}`);
   }
 
-  // Get public URL
-  const { data: urlData } = supabase.storage
-    .from("challenges")
-    .getPublicUrl(filePath);
+  const uploadResult = await uploadResponse.json();
+  const publicUrl = uploadResult.data.url;
 
   // Update the challenges table
   const { error: updateError } = await supabase
     .from("challenges")
-    .update({ challenge_image: urlData.publicUrl })
+    .update({ challenge_image: publicUrl })
     .eq("id", challengeId);
 
   if (updateError) {
     logger.error("DB update failed", {
       error: updateError.message,
       challengeId,
-      publicUrl: urlData.publicUrl,
+      publicUrl,
     });
     throw new ServerError(`DB update failed: ${updateError.message}`);
   }
 
   logger.info("Challenge image uploaded successfully", {
     challengeId,
-    filePath,
-    publicUrl: urlData.publicUrl,
+    publicUrl,
     requestId: requestCtx?.requestId,
   });
 
   const result: UploadResponse = {
     success: true,
     challengeId: typeof challengeId === "number" ? challengeId : parseInt(String(challengeId), 10),
-    publicUrl: urlData.publicUrl,
-    filePath,
+    publicUrl,
+    filePath: uploadResult.data.path,
   };
 
   return ok(result, ctx);
