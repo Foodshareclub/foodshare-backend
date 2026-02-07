@@ -8,6 +8,11 @@
 [functions.api-v1-cache]
 verify_jwt = false
 
+# Unified Localization API (replaces locale + localization)
+# UI strings, content translation, locale sync, backfills
+[functions.api-v1-localization]
+verify_jwt = false
+
 [functions.api-v1-images]
 verify_jwt = false
 

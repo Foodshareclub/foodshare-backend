@@ -15,7 +15,7 @@
  * - Metrics tracking
  *
  * Usage (from BFF or other edge functions):
- *   import { translationCache } from "../../localization/services/translation-cache.ts";
+ *   import { translationCache } from "../services/translation-cache.ts";
  *
  *   // Get single translation
  *   const translation = await translationCache.get("post", "123", "title", "ru");
@@ -426,7 +426,7 @@ interface CachedUserLocale {
  * - 7-day TTL with automatic refresh on updates
  *
  * Usage:
- *   import { userLocaleCache } from "../../localization/services/translation-cache.ts";
+ *   import { userLocaleCache } from "../services/translation-cache.ts";
  *
  *   // Get user's cached locale
  *   const locale = await userLocaleCache.get(userId);

@@ -10,7 +10,7 @@
  */
 
 import { getCorsHeaders } from "../../_shared/cors.ts";
-import { userLocaleCache } from "../../localization/services/translation-cache.ts";
+import { userLocaleCache } from "../services/translation-cache.ts";
 
 interface SyncToRedisRequest {
   userId: string;

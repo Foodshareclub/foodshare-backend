@@ -1,3 +1,0 @@
-[functions.locale]
-# Allow service role JWT calls from database triggers
-verify_jwt = false
