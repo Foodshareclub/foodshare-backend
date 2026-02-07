@@ -20,7 +20,7 @@ export const CRITICAL_FUNCTIONS: FunctionConfig[] = [
   { name: "api-v1-products", critical: true, requiresAuth: false, expectedStatus: [200, 400, 401] },
   { name: "api-v1-feature-flags", critical: true, requiresAuth: false },
   { name: "geolocate-user", critical: true, requiresAuth: false },
-  { name: "check-login-rate", critical: true, requiresAuth: false, testPayload: { phone: "+1234567890", action: "check" } },
+  { name: "api-v1-auth", critical: true, requiresAuth: false },
   // Unified Attestation API (consolidates verify-attestation, verify-android-attestation)
   { name: "api-v1-attestation", critical: true, requiresAuth: false, expectedStatus: [200, 400] },
   // Unified Notification System (consolidates ALL notifications: email, push, preferences, digests, triggers)
@@ -105,7 +105,7 @@ export const UTILITY_FUNCTIONS: FunctionConfig[] = [
   { name: "api-v1-images", critical: true, requiresAuth: true, skipInQuickCheck: false },
 
   // Monitoring & Automation
-  { name: "check-alerts", critical: false, requiresAuth: false },
+  { name: "api-v1-alerts", critical: false, requiresAuth: false },
   { name: "domain-monitor", critical: false, requiresAuth: false },
   { name: "process-automation-queue", critical: false, requiresAuth: false, skipInQuickCheck: true },
   { name: "process-email-queue", critical: false, requiresAuth: false, skipInQuickCheck: true },

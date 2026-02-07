@@ -1,5 +1,5 @@
 /**
- * Check Alerts Edge Function
+ * Alerts API Edge Function (api-v1-alerts)
  *
  * Monitors system health and triggers alerts when thresholds are breached.
  * Designed to run via cron trigger every 5 minutes.
@@ -18,8 +18,8 @@
  * - Database alert log
  *
  * Usage:
- * POST /check-alerts { "force": true } // Bypass cooldowns
- * GET /check-alerts
+ * POST /api-v1-alerts { "force": true } // Bypass cooldowns
+ * GET /api-v1-alerts
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
@@ -398,7 +398,7 @@ async function getSecretSafe(
       secret_name: secretName,
       requesting_user_id: "system",
       request_metadata: {
-        source: "check-alerts",
+        source: "api-v1-alerts",
         timestamp: new Date().toISOString(),
       },
     });
@@ -517,7 +517,7 @@ async function handleCheckAlerts(
 // =============================================================================
 
 export default createAPIHandler({
-  service: "check-alerts",
+  service: "api-v1-alerts",
   version: CONFIG.version,
   requireAuth: false, // Cron job - service-level
   routes: {

@@ -39,7 +39,7 @@ verify_jwt = false
 [functions.api-v1-ai]
 verify_jwt = false
 
-[functions.geolocate-user]
+[functions.api-v1-auth]
 verify_jwt = false
 
 [functions.get-translations]
@@ -129,13 +129,20 @@ verify_jwt = false
 # =============================================================================
 # UNIFIED GEOCODING API v1
 # =============================================================================
-# Consolidates all geocoding operations (replaces update-coordinates, update-post-coordinates):
+# Consolidates all geocoding + map operations (replaces update-coordinates, update-post-coordinates, geolocate-user, map-services):
 # - POST /address - Geocode and update user address
 # - POST /post - Geocode single post
 # - POST /post/batch - Batch process posts from queue
 # - GET /post/stats - Queue statistics
 # - POST /post/cleanup - Cleanup old queue entries
 # - POST /geocode - Geocode address (no DB update)
+# - POST /signup-location - Before User Created webhook (IP geolocation)
+# - GET /signup-location - Signup location health sub-check
+# - GET/POST /map/preferences - Map preferences per user/platform
+# - POST /map/analytics - Track map interactions
+# - GET /map/analytics - Detect map hotspots
+# - GET/POST /map/quality - Adaptive quality settings
+# - GET /map/preload - Predictive tile URL generation
 # - GET /health - Health check
 [functions.api-v1-geocoding]
 verify_jwt = false
@@ -163,6 +170,11 @@ verify_jwt = false
 # - POST /sync - Trigger sync (mode=full|incremental)
 # Cron: hourly incremental sync
 [functions.api-v1-analytics]
+verify_jwt = false
+
+# System health monitoring & alerting (cron every 5 min)
+# Checks error rates, latency, circuit breakers, login spikes, vault failures
+[functions.api-v1-alerts]
 verify_jwt = false
 
 [functions.api-v1-analytics.schedule]
