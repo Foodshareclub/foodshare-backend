@@ -2,6 +2,8 @@
  * Shared Image Utilities
  */
 
+import { logger } from "./logger.ts";
+
 export function detectFormat(buffer: Uint8Array): string {
   if (buffer[0] === 0xFF && buffer[1] === 0xD8) return "jpeg";
   if (buffer[0] === 0x89 && buffer[1] === 0x50) return "png";
@@ -49,6 +51,6 @@ export async function logUploadMetrics(supabase: any, metrics: {
       uploaded_at: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("Failed to log metrics:", error);
+    logger.error("Failed to log metrics", error instanceof Error ? error : new Error(String(error)));
   }
 }
