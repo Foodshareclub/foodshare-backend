@@ -17,6 +17,36 @@
 import { getContext, getElapsedMs } from "./context.ts";
 import { logger } from "./logger.ts";
 
+// =============================================================================
+// Standardized Error Codes
+// =============================================================================
+
+/**
+ * Canonical error code constants used across all Edge Functions.
+ * Prefer these over string literals to prevent typos and enable refactoring.
+ */
+export const ERROR_CODES = {
+  VALIDATION: "VALIDATION_ERROR",
+  AUTH: "AUTHENTICATION_ERROR",
+  AUTHORIZATION: "AUTHORIZATION_ERROR",
+  NOT_FOUND: "NOT_FOUND",
+  CONFLICT: "CONFLICT",
+  RATE_LIMIT: "RATE_LIMIT_EXCEEDED",
+  CIRCUIT_OPEN: "CIRCUIT_OPEN",
+  EXTERNAL_SERVICE: "EXTERNAL_SERVICE_ERROR",
+  TIMEOUT: "TIMEOUT",
+  DATABASE: "DATABASE_ERROR",
+  CONFIGURATION: "CONFIGURATION_ERROR",
+  FORBIDDEN: "FORBIDDEN",
+  SERVER: "SERVER_ERROR",
+  SERVICE_UNAVAILABLE: "SERVICE_UNAVAILABLE",
+  BAD_GATEWAY: "BAD_GATEWAY",
+  PAYLOAD_TOO_LARGE: "PAYLOAD_TOO_LARGE",
+  UNPROCESSABLE: "UNPROCESSABLE_ENTITY",
+  INTERNAL: "INTERNAL_ERROR",
+  UNKNOWN: "UNKNOWN_ERROR",
+} as const;
+
 /**
  * Base application error with standard properties
  */

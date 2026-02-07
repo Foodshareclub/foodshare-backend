@@ -11,7 +11,7 @@
  * @module rate-limiter
  */
 
-import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
+import { getSupabaseClient } from "./supabase.ts";
 import { RateLimitError } from "./errors.ts";
 import { logger } from "./logger.ts";
 
@@ -126,21 +126,7 @@ export function checkMemoryRateLimit(
 // Distributed Store (Database-backed)
 // =============================================================================
 
-let supabaseClient: SupabaseClient | null = null;
-
-function getSupabaseClient(): SupabaseClient {
-  if (!supabaseClient) {
-    const url = Deno.env.get("SUPABASE_URL");
-    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!url || !key) {
-      throw new Error("Missing Supabase configuration for distributed rate limiting");
-    }
-    supabaseClient = createClient(url, key, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-  }
-  return supabaseClient;
-}
+// Service role client from shared singleton (./supabase.ts)
 
 /**
  * Check rate limit using distributed database store

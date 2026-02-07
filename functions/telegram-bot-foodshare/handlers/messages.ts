@@ -2,6 +2,7 @@
  * Message handlers for text, photo, and location messages
  */
 
+import { logger } from "../../_shared/logger.ts";
 import { sendMessage } from "../services/telegram-api.ts";
 import { getUserState, setUserState } from "../services/user-state.ts";
 import { getProfileByTelegramId, updateProfile } from "../services/profile.ts";
@@ -218,8 +219,8 @@ export async function handleTextMessage(message: TelegramMessage): Promise<void>
 
   // Handle food sharing location (text address)
   if (userState?.action === "sharing_food" && userState.step === "location") {
-    console.log("📍 Processing text address:", text);
-    console.log("📍 User state:", JSON.stringify(userState));
+    logger.info("Processing text address", { text });
+    logger.debug("User state for location", { userState });
 
     const { extractCoordinates } = await import("../services/geocoding.ts");
     const { getSupabaseClient } = await import("../services/supabase.ts");
@@ -283,16 +284,15 @@ export async function handleTextMessage(message: TelegramMessage): Promise<void>
         // Validate the URL is a proper Supabase Storage URL
         if (validateImageUrl(uploadResult.value)) {
           imageUrls = [uploadResult.value];
-          console.log("✅ Photo uploaded and validated:", uploadResult.value);
+          logger.info("Photo uploaded and validated", { url: uploadResult.value });
         } else {
-          console.error("❌ Invalid image URL returned:", uploadResult.value);
+          logger.error("Invalid image URL returned", { url: uploadResult.value });
           photoWarning = `\n\n${emoji.WARNING} <i>Note: Photo upload failed validation.</i>`;
         }
       } else {
-        console.warn(
-          "⚠️ Failed to upload photo:",
-          uploadResult.status === "rejected" ? uploadResult.reason : "No result"
-        );
+        logger.warn("Failed to upload photo", {
+          reason: uploadResult.status === "rejected" ? String(uploadResult.reason) : "No result",
+        });
         photoWarning = `\n\n${emoji.WARNING} <i>Note: Photo upload failed, but your post was created.</i>`;
       }
     }
@@ -455,12 +455,11 @@ export async function handleLocationMessage(message: TelegramMessage): Promise<v
     if (userState.data.photo) {
       if (uploadResult.status === "fulfilled" && uploadResult.value) {
         imageUrls = [uploadResult.value];
-        console.log("✅ Photo uploaded:", uploadResult.value);
+        logger.info("Photo uploaded", { url: uploadResult.value });
       } else {
-        console.warn(
-          "⚠️ Failed to upload photo:",
-          uploadResult.status === "rejected" ? uploadResult.reason : "No result"
-        );
+        logger.warn("Failed to upload photo", {
+          reason: uploadResult.status === "rejected" ? String(uploadResult.reason) : "No result",
+        });
         photoWarning = `\n\n${emoji.WARNING} <i>Note: Photo upload failed, but your post was created.</i>`;
       }
     }

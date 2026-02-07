@@ -25,8 +25,10 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { getCorsHeaders, handleCorsPrelight } from "../_shared/cors.ts";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
+import { ValidationError } from "../_shared/errors.ts";
+import { parseRoute, type ParsedRoute } from "../_shared/routing.ts";
 import {
   validateListing,
   validateProfile,
@@ -77,47 +79,6 @@ const batchSchema = z.object({
     data: z.record(z.unknown()),
   })).min(1).max(20),
 });
-
-// =============================================================================
-// Response Helpers
-// =============================================================================
-
-function jsonResponse(
-  data: unknown,
-  corsHeaders: Record<string, string>,
-  status = 200
-): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
-function errorResponse(
-  error: string,
-  corsHeaders: Record<string, string>,
-  status = 400,
-  requestId?: string
-): Response {
-  return jsonResponse({ success: false, error, requestId }, corsHeaders, status);
-}
-
-// =============================================================================
-// Route Parser
-// =============================================================================
-
-interface ParsedRoute {
-  endpoint: string;
-  method: string;
-}
-
-function parseRoute(url: URL, method: string): ParsedRoute {
-  const path = url.pathname
-    .replace(/^\/api-v1-validation\/?/, "")
-    .replace(/^\/*/, "");
-
-  return { endpoint: path || "health", method };
-}
 
 // =============================================================================
 // Validation Handlers
@@ -215,93 +176,87 @@ function handleBatchValidation(body: unknown): { results: BatchValidationItem[] 
 }
 
 // =============================================================================
-// Main Router
+// Route Handlers
 // =============================================================================
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return handleCorsPrelight(req);
-  }
+async function handleGet(ctx: HandlerContext): Promise<Response> {
+  const route = parseRoute(new URL(ctx.request.url), ctx.request.method, SERVICE);
 
-  const requestId = crypto.randomUUID();
-  const corsHeaders = getCorsHeaders(req);
-  const url = new URL(req.url);
-  const route = parseRoute(url, req.method);
+  switch (route.resource) {
+    case "health":
+    case "":
+      return ok({
+        status: "healthy",
+        version: VERSION,
+        service: SERVICE,
+        timestamp: new Date().toISOString(),
+        endpoints: ["listing", "profile", "review", "email", "password", "batch", "rules"],
+      }, ctx);
+
+    case "rules":
+      return ok({
+        success: true,
+        rules: VALIDATION,
+        version: VERSION,
+      }, ctx);
+
+    default:
+      throw new ValidationError(`Not found: ${route.resource}`);
+  }
+}
+
+async function handlePost(ctx: HandlerContext): Promise<Response> {
+  const route = parseRoute(new URL(ctx.request.url), ctx.request.method, SERVICE);
+  const body = ctx.body;
 
   try {
-    // GET endpoints (no body parsing)
-    if (route.method === "GET") {
-      switch (route.endpoint) {
-        case "health":
-        case "":
-          return jsonResponse({
-            status: "healthy",
-            version: VERSION,
-            service: SERVICE,
-            timestamp: new Date().toISOString(),
-            endpoints: ["listing", "profile", "review", "email", "password", "batch", "rules"],
-          }, corsHeaders);
-
-        case "rules":
-          return jsonResponse({
-            success: true,
-            rules: VALIDATION,
-            version: VERSION,
-          }, corsHeaders);
-
-        default:
-          return errorResponse("Not found", corsHeaders, 404, requestId);
-      }
+    switch (route.resource) {
+      case "listing":
+        return ok(handleValidateListing(body), ctx);
+      case "profile":
+        return ok(handleValidateProfile(body), ctx);
+      case "review":
+        return ok(handleValidateReview(body), ctx);
+      case "email":
+        return ok(handleValidateEmail(body), ctx);
+      case "password":
+        return ok(handleValidatePassword(body), ctx);
+      case "batch":
+        return ok(handleBatchValidation(body), ctx);
+      default:
+        throw new ValidationError(`Not found: ${route.resource}`);
     }
-
-    // POST endpoints (require body)
-    if (route.method === "POST") {
-      const body = await req.json().catch(() => ({}));
-
-      switch (route.endpoint) {
-        case "listing":
-          return jsonResponse(handleValidateListing(body), corsHeaders);
-
-        case "profile":
-          return jsonResponse(handleValidateProfile(body), corsHeaders);
-
-        case "review":
-          return jsonResponse(handleValidateReview(body), corsHeaders);
-
-        case "email":
-          return jsonResponse(handleValidateEmail(body), corsHeaders);
-
-        case "password":
-          return jsonResponse(handleValidatePassword(body), corsHeaders);
-
-        case "batch":
-          return jsonResponse(handleBatchValidation(body), corsHeaders);
-
-        default:
-          return errorResponse("Not found", corsHeaders, 404, requestId);
-      }
-    }
-
-    return errorResponse("Method not allowed", corsHeaders, 405, requestId);
   } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-
-    // Handle Zod validation errors
-    if (err.name === "ZodError") {
-      const zodError = error as z.ZodError;
-      return jsonResponse({
-        isValid: false,
-        errors: zodError.errors.map((e) => `${e.path.join(".")}: ${e.message}`),
-        requestId,
-      }, corsHeaders, 400);
+    // Handle Zod validation errors as ValidationError
+    if (error instanceof z.ZodError) {
+      throw new ValidationError(
+        "Validation failed",
+        error.errors.map((e) => ({
+          field: e.path.join("."),
+          message: e.message,
+        }))
+      );
     }
-
-    logger.error("Validation request failed", err, { requestId, path: url.pathname });
-
-    return jsonResponse({
-      success: false,
-      error: err.message,
-      requestId,
-    }, corsHeaders, 500);
+    throw error;
   }
+}
+
+// =============================================================================
+// API Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: SERVICE,
+  version: VERSION,
+  requireAuth: false,
+  csrf: false,
+  rateLimit: {
+    limit: 60,
+    windowMs: 60_000,
+    keyBy: "ip",
+  },
+  routes: {
+    GET: { handler: handleGet },
+    POST: { handler: handlePost },
+  },
 });

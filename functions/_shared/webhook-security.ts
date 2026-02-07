@@ -13,6 +13,7 @@
  */
 
 import { logger } from "./logger.ts";
+import { timingSafeEqual } from "./utils.ts";
 
 // =============================================================================
 // Types
@@ -159,19 +160,9 @@ export async function computeHmacBase64(
 
 /**
  * Constant-time string comparison to prevent timing attacks
+ * Delegates to the shared timingSafeEqual implementation in utils.ts
  */
-export function constantTimeCompare(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-
-  return result === 0;
-}
+export const constantTimeCompare = timingSafeEqual;
 
 // =============================================================================
 // Provider-Specific Verification

@@ -16,7 +16,7 @@
  * - Skip intentionally identical strings (URLs, emails, brand names)
  */
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 import { getCorsHeaders } from "../../_shared/cors.ts";
 
 const VERSION = "2.0.0";
@@ -24,14 +24,6 @@ const SUPPORTED_LOCALES = [
   "cs", "de", "es", "fr", "pt", "ru", "uk", "zh", "hi", "ar",
   "it", "pl", "nl", "ja", "ko", "tr", "sv", "vi", "id", "th"
 ];
-
-function createSupabaseClient() {
-  return createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    { auth: { persistSession: false, autoRefreshToken: false } }
-  );
-}
 
 /**
  * Recursively flatten nested object to dot-notation paths
@@ -107,7 +99,7 @@ export default async function auditHandler(req: Request): Promise<Response> {
   }
 
   const url = new URL(req.url);
-  const supabase = createSupabaseClient();
+  const supabase = getSupabaseClient();
 
   // Get query parameters
   const locale = url.searchParams.get("locale");

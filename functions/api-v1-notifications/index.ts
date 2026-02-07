@@ -28,8 +28,11 @@
  * @version 1.0.0
  */
 
-import { getCorsHeaders, handleCorsPrelight, getPermissiveCorsHeaders } from "../_shared/cors.ts";
+import { createAPIHandler, type HandlerContext } from "../_shared/api-handler.ts";
+import { getPermissiveCorsHeaders } from "../_shared/cors.ts";
 import { logger } from "../_shared/logger.ts";
+import { AppError } from "../_shared/errors.ts";
+import { parseRoute } from "../_shared/routing.ts";
 import { authenticate, getServiceClient } from "./lib/auth.ts";
 import {
   handleSend,
@@ -53,65 +56,14 @@ const VERSION = "1.0.0";
 const SERVICE = "api-v1-notifications";
 
 // =============================================================================
-// Route Parser
+// Shared Router Logic
 // =============================================================================
 
-interface ParsedRoute {
-  path: string;
-  segments: string[];
-  params: Record<string, string>;
-}
-
-function parseRoute(url: URL): ParsedRoute {
-  const path = url.pathname
-    .replace(/^\/api-v1-notifications\/?/, "")
-    .replace(/^\/+/, "");
-
-  const segments = path.split("/").filter(Boolean);
-  const params: Record<string, string> = {};
-
-  return { path, segments, params };
-}
-
-// =============================================================================
-// Response Helpers
-// =============================================================================
-
-function jsonResponse(
-  data: unknown,
-  corsHeaders: Record<string, string>,
-  status = 200
-): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
-function errorResponse(
-  error: string,
-  corsHeaders: Record<string, string>,
-  status = 400
-): Response {
-  return jsonResponse({ success: false, error }, corsHeaders, status);
-}
-
-// =============================================================================
-// Main Router
-// =============================================================================
-
-Deno.serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return handleCorsPrelight(req);
-  }
-
-  const startTime = performance.now();
-  const requestId = crypto.randomUUID();
-
-  const url = new URL(req.url);
-  const { segments } = parseRoute(url);
-  const method = req.method;
+async function routeRequest(ctx: HandlerContext): Promise<Response> {
+  const url = new URL(ctx.request.url);
+  const route = parseRoute(url, ctx.request.method, SERVICE);
+  const { segments } = route;
+  const method = ctx.request.method;
 
   // Determine auth mode and CORS based on route
   let authMode: AuthMode = "jwt";
@@ -135,14 +87,13 @@ Deno.serve(async (req) => {
     authMode = "webhook";
     provider = segments[1];
     usePermissiveCors = true;
-    rawBody = await req.text();
+    rawBody = await ctx.request.text();
   } else if (isTrigger) {
-    // Triggers: database webhooks (none) or new-listing (jwt)
     const triggerType = segments[1];
     if (triggerType === "new-listing") {
-      authMode = "jwt"; // User-facing, needs auth
+      authMode = "jwt";
     } else {
-      authMode = "none"; // Database webhooks
+      authMode = "none";
       usePermissiveCors = true;
     }
   } else if (isDigestProcess) {
@@ -153,242 +104,218 @@ Deno.serve(async (req) => {
 
   const corsHeaders = usePermissiveCors
     ? getPermissiveCorsHeaders()
-    : getCorsHeaders(req);
+    : ctx.corsHeaders;
 
-  try {
-    // Authenticate
-    const auth = await authenticate(req, authMode, provider, rawBody);
-    if (!auth.authenticated) {
-      logger.warn("Authentication failed", {
-        requestId,
-        path: url.pathname,
-        method,
-        authMode,
-        error: auth.error,
-      });
-      return errorResponse(auth.error || "Authentication failed", corsHeaders, 401);
-    }
+  const requestId = ctx.ctx.requestId;
 
-    // Create context
-    const context: NotificationContext = {
-      supabase: getServiceClient(),
-      requestId,
-      userId: auth.userId,
-      isAdmin: auth.isAdmin,
-    };
-
-    logger.info("Request received", {
+  // Authenticate
+  const auth = await authenticate(ctx.request, authMode, provider, rawBody);
+  if (!auth.authenticated) {
+    logger.warn("Authentication failed", {
       requestId,
       path: url.pathname,
       method,
-      userId: auth.userId,
       authMode,
+      error: auth.error,
+    });
+    return new Response(JSON.stringify({ success: false, error: auth.error || "Authentication failed" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // Create context
+  const context: NotificationContext = {
+    supabase: getServiceClient(),
+    requestId,
+    userId: auth.userId,
+    isAdmin: auth.isAdmin,
+  };
+
+  logger.info("Request received", {
+    requestId,
+    path: url.pathname,
+    method,
+    userId: auth.userId,
+    authMode,
+  });
+
+  const jsonResponse = (data: unknown, status = 200) =>
+    new Response(JSON.stringify(data), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
-    // =========================================================================
-    // Public Routes
-    // =========================================================================
+  // =========================================================================
+  // Public Routes
+  // =========================================================================
 
-    // GET / or GET /health
-    if (isHealth && method === "GET") {
-      const result = await handleHealth(context);
-      return jsonResponse(result, corsHeaders);
-    }
+  if (isHealth && method === "GET") {
+    const result = await handleHealth(context);
+    return jsonResponse(result);
+  }
 
-    // GET /stats
-    if (isStats && method === "GET") {
-      const result = await handleStats(context);
-      return jsonResponse(result, corsHeaders, result.success ? 200 : 500);
-    }
+  if (isStats && method === "GET") {
+    const result = await handleStats(context);
+    return jsonResponse(result, result.success ? 200 : 500);
+  }
 
-    // =========================================================================
-    // Webhook Routes
-    // =========================================================================
+  // =========================================================================
+  // Webhook Routes
+  // =========================================================================
 
-    // POST /webhook/:provider
-    if (isWebhook && method === "POST" && provider) {
-      const body = JSON.parse(rawBody!);
-      const result = await handleWebhook(provider, body, context);
-      return jsonResponse(result, corsHeaders);
-    }
+  if (isWebhook && method === "POST" && provider) {
+    const body = JSON.parse(rawBody!);
+    const result = await handleWebhook(provider, body, context);
+    return jsonResponse(result);
+  }
 
-    // =========================================================================
-    // Service Routes
-    // =========================================================================
+  // =========================================================================
+  // Service Routes
+  // =========================================================================
 
-    // POST /digest/process
-    if (isDigestProcess && method === "POST") {
-      const body = await req.json().catch(() => ({}));
-      const result = await handleDigestProcess(body, context);
-      return jsonResponse(result, corsHeaders, result.success ? 200 : 500);
-    }
+  if (isDigestProcess && method === "POST") {
+    const body = await ctx.request.json().catch(() => ({}));
+    const result = await handleDigestProcess(body, context);
+    return jsonResponse(result, result.success ? 200 : 500);
+  }
 
-    // =========================================================================
-    // Send Routes (JWT)
-    // =========================================================================
+  // =========================================================================
+  // Send Routes (JWT)
+  // =========================================================================
 
-    // POST /send
-    if (segments[0] === "send" && segments.length === 1 && method === "POST") {
-      const body = await req.json();
-      const result = await handleSend(body, context);
-      return jsonResponse(result, corsHeaders, result.success ? 200 : 400);
-    }
+  if (segments[0] === "send" && segments.length === 1 && method === "POST") {
+    const body = await ctx.request.json();
+    const result = await handleSend(body, context);
+    return jsonResponse(result, result.success ? 200 : 400);
+  }
 
-    // POST /send/batch
-    if (segments[0] === "send" && segments[1] === "batch" && method === "POST") {
-      const body = await req.json();
-      const result = await handleSendBatch(body, context);
-      return jsonResponse(result, corsHeaders, result.success ? 200 : 400);
-    }
+  if (segments[0] === "send" && segments[1] === "batch" && method === "POST") {
+    const body = await ctx.request.json();
+    const result = await handleSendBatch(body, context);
+    return jsonResponse(result, result.success ? 200 : 400);
+  }
 
-    // POST /send/template
-    if (segments[0] === "send" && segments[1] === "template" && method === "POST") {
-      const body = await req.json();
-      const result = await handleSendTemplate(body, context);
-      return jsonResponse(result, corsHeaders, result.success ? 200 : 400);
-    }
+  if (segments[0] === "send" && segments[1] === "template" && method === "POST") {
+    const body = await ctx.request.json();
+    const result = await handleSendTemplate(body, context);
+    return jsonResponse(result, result.success ? 200 : 400);
+  }
 
-    // =========================================================================
-    // Preference Routes (JWT)
-    // =========================================================================
+  // =========================================================================
+  // Preference Routes (JWT)
+  // =========================================================================
 
-    // GET /preferences
-    if (segments[0] === "preferences" && segments.length === 1 && method === "GET") {
-      const result = await handleGetPreferences(context);
-      return jsonResponse(result, corsHeaders, result.success ? 200 : 400);
-    }
+  if (segments[0] === "preferences" && segments.length === 1 && method === "GET") {
+    const result = await handleGetPreferences(context);
+    return jsonResponse(result, result.success ? 200 : 400);
+  }
 
-    // PUT /preferences
-    if (segments[0] === "preferences" && segments.length === 1 && method === "PUT") {
-      const body = await req.json();
-      const result = await handleUpdatePreferences(body, context);
-      return jsonResponse(result, corsHeaders, result.success ? 200 : 400);
-    }
+  if (segments[0] === "preferences" && segments.length === 1 && method === "PUT") {
+    const body = await ctx.request.json();
+    const result = await handleUpdatePreferences(body, context);
+    return jsonResponse(result, result.success ? 200 : 400);
+  }
 
-    // POST /preferences/dnd
-    if (
-      segments[0] === "preferences" &&
-      segments[1] === "dnd" &&
-      method === "POST"
-    ) {
-      const body = await req.json().catch(() => ({}));
-      const result = await handleEnableDnd(body, context);
-      return jsonResponse(result, corsHeaders, result.success ? 200 : 400);
-    }
+  if (segments[0] === "preferences" && segments[1] === "dnd" && method === "POST") {
+    const body = await ctx.request.json().catch(() => ({}));
+    const result = await handleEnableDnd(body, context);
+    return jsonResponse(result, result.success ? 200 : 400);
+  }
 
-    // DELETE /preferences/dnd
-    if (
-      segments[0] === "preferences" &&
-      segments[1] === "dnd" &&
-      method === "DELETE"
-    ) {
-      const result = await handleDisableDnd(context);
-      return jsonResponse(result, corsHeaders, result.success ? 200 : 400);
-    }
+  if (segments[0] === "preferences" && segments[1] === "dnd" && method === "DELETE") {
+    const result = await handleDisableDnd(context);
+    return jsonResponse(result, result.success ? 200 : 400);
+  }
 
-    // =========================================================================
-    // Dashboard Routes (JWT)
-    // =========================================================================
+  // =========================================================================
+  // Dashboard Routes (JWT)
+  // =========================================================================
 
-    // GET /dashboard
-    if (segments[0] === "dashboard" && segments.length === 1 && method === "GET") {
-      const result = await handleDashboard(context);
-      return jsonResponse(result, corsHeaders, result.success ? 200 : 500);
-    }
+  if (segments[0] === "dashboard" && segments.length === 1 && method === "GET") {
+    const result = await handleDashboard(context);
+    return jsonResponse(result, result.success ? 200 : 500);
+  }
 
-    // =========================================================================
-    // Trigger Routes (Database Webhooks)
-    // Consolidates: notify-new-post, notify-new-user, notify-forum-post,
-    //               notify-new-report, notify-new-listing
-    // =========================================================================
+  // =========================================================================
+  // List Notifications (JWT)
+  // =========================================================================
 
-    // POST /trigger/:type
-    if (isTrigger && method === "POST" && segments[1]) {
-      const triggerType = segments[1];
-      const body = await req.json().catch(() => ({}));
-      const result = await handleTrigger(triggerType, body, context);
-      return jsonResponse(result, corsHeaders, result.success ? 200 : 400);
-    }
+  if (segments.length === 0 && method === "GET") {
+    const { handleListNotifications } = await import("./lib/handlers/index.ts");
+    const result = await handleListNotifications(url, context);
+    return jsonResponse(result, result.success ? 200 : 400);
+  }
 
-    // =========================================================================
-    // Admin Routes
-    // =========================================================================
+  // =========================================================================
+  // Trigger Routes (Database Webhooks)
+  // =========================================================================
 
-    if (isAdmin) {
-      const body = ["POST", "PUT", "PATCH"].includes(method)
-        ? await req.json().catch(() => ({}))
-        : {};
-      const result = await handleAdminRoute(segments, method, body, context);
-      return jsonResponse(result, corsHeaders, result.status || (result.success ? 200 : 400));
-    }
+  if (isTrigger && method === "POST" && segments[1]) {
+    const triggerType = segments[1];
+    const body = await ctx.request.json().catch(() => ({}));
+    const result = await handleTrigger(triggerType, body, context);
+    return jsonResponse(result, result.success ? 200 : 400);
+  }
 
-    // =========================================================================
-    // 404 Not Found
-    // =========================================================================
+  // =========================================================================
+  // Admin Routes
+  // =========================================================================
 
-    return jsonResponse(
-      {
-        success: false,
-        error: "Not found",
-        path: url.pathname,
-        method,
-        service: SERVICE,
-        version: VERSION,
-        availableRoutes: [
-          "GET  /health",
-          "GET  /stats",
-          "GET  /dashboard",
-          "POST /send",
-          "POST /send/batch",
-          "POST /send/template",
-          "GET  /preferences",
-          "PUT  /preferences",
-          "POST /preferences/dnd",
-          "DELETE /preferences/dnd",
-          "POST /digest/process",
-          "POST /webhook/:provider",
-          "POST /trigger/new-post",
-          "POST /trigger/new-user",
-          "POST /trigger/forum-post",
-          "POST /trigger/new-report",
-          "POST /trigger/new-listing",
-          "GET  /admin/providers/status",
-          "POST /admin/providers/sync",
-          "GET  /admin/providers/health",
-          "GET  /admin/stats",
-        ],
-      },
-      corsHeaders,
-      404
-    );
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    logger.error("Request failed", err, {
-      requestId,
+  if (isAdmin) {
+    const body = ["POST", "PUT", "PATCH"].includes(method)
+      ? await ctx.request.json().catch(() => ({}))
+      : {};
+    const result = await handleAdminRoute(segments, method, body, context);
+    return jsonResponse(result, result.status || (result.success ? 200 : 400));
+  }
+
+  // =========================================================================
+  // 404 Not Found
+  // =========================================================================
+
+  throw new AppError("Not found", "NOT_FOUND", 404, {
+    details: {
       path: url.pathname,
       method,
-    });
+      availableRoutes: [
+        "GET  /health",
+        "GET  /stats",
+        "GET  /dashboard",
+        "POST /send",
+        "POST /send/batch",
+        "POST /send/template",
+        "GET  /preferences",
+        "PUT  /preferences",
+        "POST /preferences/dnd",
+        "DELETE /preferences/dnd",
+        "POST /digest/process",
+        "POST /webhook/:provider",
+        "POST /trigger/:type",
+        "GET  /admin/*",
+      ],
+    },
+  });
+}
 
-    return jsonResponse(
-      {
-        success: false,
-        error: err.message,
-        service: SERVICE,
-        version: VERSION,
-        requestId,
-      },
-      corsHeaders,
-      500
-    );
-  } finally {
-    const duration = performance.now() - startTime;
-    if (duration > 5000) {
-      logger.warn("Slow request", {
-        requestId,
-        path: url.pathname,
-        method,
-        durationMs: Math.round(duration),
-      });
-    }
-  }
+// =============================================================================
+// API Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: SERVICE,
+  version: VERSION,
+  requireAuth: false, // Auth handled per-route
+  csrf: false,
+  rateLimit: {
+    limit: 60,
+    windowMs: 60_000,
+    keyBy: "user",
+  },
+  routes: {
+    GET: { handler: routeRequest },
+    POST: { handler: routeRequest },
+    PUT: { handler: routeRequest },
+    DELETE: { handler: routeRequest },
+  },
 });

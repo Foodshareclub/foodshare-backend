@@ -381,6 +381,51 @@ export interface PushPayload {
   channelId?: string;
   category?: string;
   threadId?: string;
+  // Platform-specific options
+  ios?: {
+    interruptionLevel?: "passive" | "active" | "time-sensitive" | "critical";
+    relevanceScore?: number;
+    targetContentId?: string;
+    subtitle?: string;
+    category?: string;
+    threadId?: string;
+    liveActivityToken?: string;
+  };
+  android?: {
+    channelId?: "default" | "messages" | "listings" | "alerts" | "updates" | "social";
+    visibility?: "private" | "public" | "secret";
+    groupKey?: string;
+    groupSummary?: boolean;
+    ongoing?: boolean;
+    autoCancel?: boolean;
+    localOnly?: boolean;
+    ticker?: string;
+    vibrationPattern?: number[];
+    lightColor?: string;
+    smallIcon?: string;
+    largeIcon?: string;
+  };
+  web?: {
+    requireInteraction?: boolean;
+    renotify?: boolean;
+    silent?: boolean;
+    vibrate?: number[];
+    timestamp?: number;
+    dir?: "auto" | "ltr" | "rtl";
+  };
+  deepLink?: {
+    entityType: "listing" | "profile" | "chat" | "notification";
+    entityId: string;
+  };
+}
+
+export interface DeviceToken {
+  profile_id: string;
+  token: string;
+  platform: "ios" | "android" | "web";
+  endpoint?: string;
+  p256dh?: string;
+  auth?: string;
 }
 
 export interface SmsPayload {

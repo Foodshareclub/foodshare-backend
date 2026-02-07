@@ -26,8 +26,9 @@
  * }
  */
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 import { getCorsHeaders } from "../../_shared/cors.ts";
+import { logger } from "../../_shared/logger.ts";
 
 interface BackfillRequest {
   limit?: number;
@@ -94,10 +95,7 @@ export default async function backfillPostsHandler(req: Request): Promise<Respon
     }
 
     // Initialize Supabase client
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabase = getSupabaseClient();
 
     // ========== Job Locking: Check if previous job still running ==========
     const { data: inProgressJob } = await supabase
@@ -114,7 +112,7 @@ export default async function backfillPostsHandler(req: Request): Promise<Respon
 
       if (jobAge < STALE_THRESHOLD_MS) {
         // Job still running - skip this cron run
-        console.log(`Skipping ${JOB_TYPE} backfill - previous job still running (${Math.round(jobAge / 60000)} mins)`);
+        logger.info("Skipping backfill - previous job still running", { jobType: JOB_TYPE, jobAgeMinutes: Math.round(jobAge / 60000) });
         return new Response(JSON.stringify({
           success: true,
           skipped: true,
@@ -127,7 +125,7 @@ export default async function backfillPostsHandler(req: Request): Promise<Respon
         });
       } else {
         // Stale job - mark as failed
-        console.log(`Marking stale ${JOB_TYPE} job as failed (${Math.round(jobAge / 60000)} mins old)`);
+        logger.info("Marking stale job as failed", { jobType: JOB_TYPE, jobAgeMinutes: Math.round(jobAge / 60000) });
         await supabase
           .from("translation_backfill_jobs")
           .update({
@@ -151,7 +149,7 @@ export default async function backfillPostsHandler(req: Request): Promise<Respon
       .single();
 
     if (jobError) {
-      console.error("Failed to create job record:", jobError.message);
+      logger.error("Failed to create job record", { error: jobError.message });
     }
     // ========== End Job Locking ==========
 
@@ -173,7 +171,7 @@ export default async function backfillPostsHandler(req: Request): Promise<Respon
         posts = data;
         count = posts?.length || 0;
       }
-      console.log(`Fetching untranslated posts (limit: ${limit}, offset: ${offset})`);
+      logger.info("Fetching untranslated posts", { limit, offset });
     } else {
       // Build query based on mode
       let query = supabase
@@ -203,7 +201,7 @@ export default async function backfillPostsHandler(req: Request): Promise<Respon
     }
 
     if (error) {
-      console.error("Failed to fetch posts:", error.message);
+      logger.error("Failed to fetch posts", { error: error.message });
       return new Response(JSON.stringify({
         success: false,
         error: `Failed to fetch posts: ${error.message}`,
@@ -226,7 +224,7 @@ export default async function backfillPostsHandler(req: Request): Promise<Respon
     }
 
     const effectiveMode = onlyUntranslated ? "onlyUntranslated" : mode;
-    console.log(`Found ${posts.length} posts to translate (mode: ${effectiveMode}, offset: ${offset}, total: ${count})`);
+    logger.info("Found posts to translate", { count: posts.length, mode: effectiveMode, offset, total: count });
 
     // If dry run, just return counts
     if (dryRun) {
@@ -274,18 +272,18 @@ export default async function backfillPostsHandler(req: Request): Promise<Respon
         });
 
         if (response.error) {
-          console.warn(`Failed to trigger translation for post ${post.id}:`, response.error);
+          logger.warn("Failed to trigger translation for post", { postId: post.id, error: response.error });
         } else {
-          console.log(`Triggered translation for post ${post.id}`);
+          logger.info("Triggered translation for post", { postId: post.id });
         }
       } catch (error) {
-        console.warn(`Error triggering translation for post ${post.id}:`, (error as Error).message);
+        logger.warn("Error triggering translation for post", { postId: post.id, error: (error as Error).message });
       }
     });
 
     // Don't await all - fire and forget, but wait a bit to ensure they're queued
     Promise.all(translationPromises).catch((error) => {
-      console.error("Some translations failed:", (error as Error).message);
+      logger.error("Some translations failed", { error: (error as Error).message });
     });
 
     const totalTranslations = posts.length * FIELDS_PER_POST * TARGET_LOCALES_COUNT;
@@ -313,21 +311,18 @@ export default async function backfillPostsHandler(req: Request): Promise<Respon
         .eq("id", newJob.id);
     }
 
-    console.log("Backfill triggered", response);
+    logger.info("Backfill triggered", response);
 
     return new Response(JSON.stringify(response), {
       status: 202, // Accepted
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Backfill error:", (error as Error).message);
+    logger.error("Backfill error", { error: (error as Error).message });
 
     // Mark job as failed (best effort - supabase may not be available)
     try {
-      const supabase = createClient(
-        Deno.env.get("SUPABASE_URL")!,
-        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-      );
+      const supabase = getSupabaseClient();
       await supabase
         .from("translation_backfill_jobs")
         .update({

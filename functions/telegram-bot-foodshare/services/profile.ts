@@ -2,6 +2,7 @@
  * Profile management service with error classification
  */
 
+import { logger } from "../../_shared/logger.ts";
 import type { Profile } from "../types/index.ts";
 import { getSupabaseClient } from "./supabase.ts";
 
@@ -70,17 +71,13 @@ function logDatabaseError(
   context: Record<string, unknown> = {}
 ): void {
   const errorType = classifyError(error);
-  console.error(
-    JSON.stringify({
-      level: errorType === DatabaseErrorType.TRANSIENT ? "warn" : "error",
-      message: `Database ${operation} failed`,
-      errorType,
-      errorCode: error.code,
-      errorMessage: error.message,
-      ...context,
-      timestamp: new Date().toISOString(),
-    })
-  );
+  const logFn = errorType === DatabaseErrorType.TRANSIENT ? logger.warn : logger.error;
+  logFn(`Database ${operation} failed`, {
+    errorType,
+    errorCode: error.code,
+    errorMessage: error.message,
+    ...context,
+  });
 }
 
 export async function getProfileByTelegramId(telegramId: number): Promise<Profile | null> {

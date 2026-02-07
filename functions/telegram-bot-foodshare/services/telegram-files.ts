@@ -2,6 +2,7 @@
  * Telegram file download and upload to Supabase Storage
  */
 
+import { logger } from "../../_shared/logger.ts";
 import { getSupabaseClient } from "./supabase.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
@@ -16,7 +17,7 @@ export async function downloadAndUploadTelegramFile(
 ): Promise<string | null> {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`📥 Downloading Telegram file (attempt ${attempt}/${maxRetries}):`, fileId);
+      logger.info("Downloading Telegram file", { attempt, maxRetries, fileId });
 
       // Step 1: Get file path from Telegram with timeout
       const fileInfoController = new AbortController();
@@ -29,7 +30,7 @@ export async function downloadAndUploadTelegramFile(
       clearTimeout(fileInfoTimeout);
 
       if (!fileInfoResponse.ok) {
-        console.error("Failed to get file info from Telegram:", fileInfoResponse.status);
+        logger.error("Failed to get file info from Telegram", { status: fileInfoResponse.status });
         if (attempt < maxRetries) {
           await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
           continue;
@@ -40,17 +41,17 @@ export async function downloadAndUploadTelegramFile(
       const fileInfo = await fileInfoResponse.json();
 
       if (!fileInfo.ok || !fileInfo.result?.file_path) {
-        console.error("Invalid file info response:", fileInfo);
+        logger.error("Invalid file info response", { fileInfo });
         return null;
       }
 
       const filePath = fileInfo.result.file_path;
       const fileSize = fileInfo.result.file_size || 0;
-      console.log("📄 File path:", filePath, "Size:", fileSize, "bytes");
+      logger.info("File info retrieved", { filePath, fileSize });
 
       // Validate file size (max 20MB)
       if (fileSize > 20 * 1024 * 1024) {
-        console.error("❌ File too large:", fileSize, "bytes");
+        logger.error("File too large", { fileSize });
         return null;
       }
 
@@ -63,7 +64,7 @@ export async function downloadAndUploadTelegramFile(
       clearTimeout(fileTimeout);
 
       if (!fileResponse.ok) {
-        console.error("Failed to download file from Telegram:", fileResponse.status);
+        logger.error("Failed to download file from Telegram", { status: fileResponse.status });
         if (attempt < maxRetries) {
           await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
           continue;
@@ -73,11 +74,11 @@ export async function downloadAndUploadTelegramFile(
 
       const fileBlob = await fileResponse.blob();
       const fileBuffer = await fileBlob.arrayBuffer();
-      console.log("📦 Downloaded file size:", fileBuffer.byteLength, "bytes");
+      logger.info("Downloaded file", { byteLength: fileBuffer.byteLength });
 
       // Validate downloaded size matches
       if (fileSize > 0 && fileBuffer.byteLength !== fileSize) {
-        console.warn("⚠️ Downloaded size mismatch:", fileBuffer.byteLength, "vs", fileSize);
+        logger.warn("Downloaded size mismatch", { downloadedSize: fileBuffer.byteLength, expectedSize: fileSize });
       }
 
       // Step 3: Upload via api-v1-images for compression
@@ -87,7 +88,7 @@ export async function downloadAndUploadTelegramFile(
       const fileName = `${userId}_${timestamp}_${randomString}.${fileExtension}`;
       const storagePath = `food-photos/${fileName}`;
 
-      console.log("📤 Uploading via api-v1-images:", storagePath);
+      logger.info("Uploading via api-v1-images", { storagePath });
 
       // Upload via image API for compression
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -117,15 +118,15 @@ export async function downloadAndUploadTelegramFile(
 
           if (uploadResponse.ok) {
             const result = await uploadResponse.json();
-            console.log("✅ File uploaded successfully:", result.data.url);
+            logger.info("File uploaded successfully", { url: result.data.url });
             return result.data.url;
           }
 
           uploadError = await uploadResponse.text();
-          console.error(`❌ Image API upload error (attempt ${uploadAttempt}/2):`, uploadError);
+          logger.error("Image API upload error", { uploadAttempt, maxAttempts: 2, error: String(uploadError) });
         } catch (error) {
           uploadError = error;
-          console.error(`❌ Upload exception (attempt ${uploadAttempt}/2):`, error);
+          logger.error("Upload exception", { uploadAttempt, maxAttempts: 2, error: String(error) });
         }
 
         if (uploadAttempt < 2) {
@@ -135,21 +136,18 @@ export async function downloadAndUploadTelegramFile(
 
       // If we got here, upload failed after retries
       if (attempt < maxRetries) {
-        console.log(`🔄 Retrying entire process (attempt ${attempt + 1}/${maxRetries})...`);
+        logger.info("Retrying entire download/upload process", { nextAttempt: attempt + 1, maxRetries });
         await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
         continue;
       }
 
-      console.error("❌ All upload attempts failed:", uploadError);
+      logger.error("All upload attempts failed", { error: String(uploadError) });
       return null;
     } catch (error) {
-      console.error(
-        `❌ Error downloading/uploading file (attempt ${attempt}/${maxRetries}):`,
-        error
-      );
+      logger.error("Error downloading/uploading file", { attempt, maxRetries, error: String(error) });
 
       if (error instanceof Error && error.name === "AbortError") {
-        console.error("❌ Request timeout");
+        logger.error("Request timeout");
       }
 
       if (attempt < maxRetries) {

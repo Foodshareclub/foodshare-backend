@@ -9,6 +9,8 @@
  * - Health checks
  */
 
+import { logger } from "../_shared/logger.ts";
+import { isDevelopment } from "../_shared/utils.ts";
 import { WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET } from "./config/index.ts";
 import { verifyMetaWebhook, handleMetaWebhookChallenge } from "../_shared/webhook-security.ts";
 import { checkRateLimitDistributed } from "./services/rate-limiter.ts";
@@ -55,24 +57,10 @@ try {
   }
 
   isInitialized = true;
-  console.log(
-    JSON.stringify({
-      level: "info",
-      message: "WhatsApp bot initialized successfully",
-      version: VERSION,
-      timestamp: new Date().toISOString(),
-    })
-  );
+  logger.info("WhatsApp bot initialized successfully", { version: VERSION });
 } catch (error) {
   initError = error instanceof Error ? error : new Error(String(error));
-  console.error(
-    JSON.stringify({
-      level: "error",
-      message: "Initialization failed",
-      error: initError.message,
-      timestamp: new Date().toISOString(),
-    })
-  );
+  logger.error("Initialization failed", initError);
 }
 
 // ============================================================================
@@ -84,22 +72,20 @@ function generateRequestId(): string {
 }
 
 function log(level: string, message: string, context: Record<string, unknown> = {}): void {
-  console.log(
-    JSON.stringify({
-      level,
-      message,
-      ...context,
-      timestamp: new Date().toISOString(),
-    })
-  );
-}
-
-/**
- * Check if we're running in development/local environment
- */
-function isDevelopment(): boolean {
-  const env = Deno.env.get("DENO_ENV") || Deno.env.get("ENVIRONMENT") || "";
-  return env === "development" || env === "local" || env === "test";
+  switch (level) {
+    case "error":
+      logger.error(message, context);
+      break;
+    case "warn":
+      logger.warn(message, context);
+      break;
+    case "debug":
+      logger.debug(message, context);
+      break;
+    default:
+      logger.info(message, context);
+      break;
+  }
 }
 
 /**

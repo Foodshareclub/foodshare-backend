@@ -5,6 +5,29 @@
  */
 
 /**
+ * Check if running in development/local/test environment
+ */
+export function isDevelopment(): boolean {
+  const env = Deno.env.get("DENO_ENV") || Deno.env.get("ENVIRONMENT") || "";
+  return env === "development" || env === "local" || env === "test";
+}
+
+/**
+ * Constant-time string comparison to prevent timing attacks
+ */
+export function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  const encoder = new TextEncoder();
+  const aBytes = encoder.encode(a);
+  const bBytes = encoder.encode(b);
+  let result = 0;
+  for (let i = 0; i < aBytes.length; i++) {
+    result |= aBytes[i] ^ bBytes[i];
+  }
+  return result === 0;
+}
+
+/**
  * Retry with exponential backoff and jitter
  */
 export async function retryWithJitter<T>(

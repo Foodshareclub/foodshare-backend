@@ -2,11 +2,13 @@
  * Products API v1
  *
  * Unified REST API for product/listing operations.
+ * Consolidates api-v1-listings into this single endpoint.
  * Supports Web, iOS, and Android clients with consistent interface.
  *
  * Endpoints:
  * - GET    /api-v1-products              - List products with filters
  * - GET    /api-v1-products?id=<id>      - Get single product
+ * - GET    /api-v1-products?mode=feed    - Aggregated feed with counts
  * - POST   /api-v1-products              - Create product
  * - PUT    /api-v1-products?id=<id>      - Update product
  * - DELETE /api-v1-products?id=<id>      - Delete product
@@ -30,21 +32,26 @@ import {
 } from "../_shared/api-handler.ts";
 import { NotFoundError, ValidationError, ConflictError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
-import { sanitizeHtml, parseIntSafe, parseFloatSafe, parseFloatSafeWithBounds } from "../_shared/validation-rules.ts";
+import { cache } from "../_shared/cache.ts";
+import { sanitizeHtml, LISTING, parseIntSafe, parseFloatSafe, parseFloatSafeWithBounds } from "../_shared/validation-rules.ts";
+import { validateProductImageUrls } from "../_shared/storage-urls.ts";
 import {
   decodeCursor,
   encodeCursor,
   normalizeLimit,
   type CompositeCursor,
 } from "../_shared/pagination.ts";
+import { aggregateCounts } from "../_shared/aggregation.ts";
+
+const VERSION = "2.0.0";
 
 // =============================================================================
 // Schemas
 // =============================================================================
 
 const createProductSchema = z.object({
-  title: z.string().min(3).max(100),
-  description: z.string().max(2000).optional(),
+  title: z.string().min(LISTING.title.minLength).max(LISTING.title.maxLength),
+  description: z.string().max(LISTING.description.maxLength).optional(),
   images: z.array(z.string().url()).min(1).max(5),
   postType: z.enum(["food", "non-food", "request"]),
   latitude: z.number().min(-90).max(90),
@@ -56,8 +63,8 @@ const createProductSchema = z.object({
 });
 
 const updateProductSchema = z.object({
-  title: z.string().min(3).max(100).optional(),
-  description: z.string().max(2000).optional(),
+  title: z.string().min(LISTING.title.minLength).max(LISTING.title.maxLength).optional(),
+  description: z.string().max(LISTING.description.maxLength).optional(),
   images: z.array(z.string().url()).min(1).max(5).optional(),
   pickupAddress: z.string().max(500).optional(),
   pickupTime: z.string().max(200).optional(),
@@ -68,11 +75,15 @@ const updateProductSchema = z.object({
 });
 
 const listQuerySchema = z.object({
+  mode: z.enum(["feed"]).optional(),
+  id: z.string().optional(),
+  include: z.string().optional(), // e.g., "owner,related"
   postType: z.enum(["food", "non-food", "request"]).optional(),
   categoryId: z.string().optional(),
   lat: z.string().optional(),
   lng: z.string().optional(),
   radius: z.string().optional(),
+  radiusKm: z.string().optional(), // alias for radius (feed compat)
   cursor: z.string().optional(),
   limit: z.string().optional(),
   userId: z.string().uuid().optional(),
@@ -87,11 +98,63 @@ type ListQuery = z.infer<typeof listQuerySchema>;
 // =============================================================================
 
 /**
+ * Aggregated feed with unread counts (ported from api-v1-listings)
+ * Returns nearby listings + notification/message/request counts in a single call.
+ */
+async function getFeed(ctx: HandlerContext<unknown, ListQuery>): Promise<Response> {
+  const { supabase, userId, query } = ctx;
+
+  if (!userId) {
+    throw new ValidationError("Authentication required");
+  }
+
+  const lat = parseFloatSafe(query.lat, 0);
+  const lng = parseFloatSafe(query.lng, 0);
+  const radiusKm = parseFloatSafeWithBounds(query.radiusKm || query.radius, 0.1, 1000, 50);
+  const limit = parseIntSafe(query.limit, 20);
+
+  const [listings, counts] = await Promise.all([
+    supabase.rpc("get_nearby_posts", {
+      user_lat: lat,
+      user_lng: lng,
+      radius_km: radiusKm,
+      result_limit: limit,
+    }),
+    aggregateCounts(supabase, userId),
+  ]);
+
+  if (listings.error) {
+    logger.error("Feed query failed", new Error(listings.error.message));
+    throw listings.error;
+  }
+
+  return ok({ listings: listings.data || [], counts }, ctx);
+}
+
+/**
  * List products with filters and composite cursor pagination
  * Uses (timestamp, id) composite cursor for precise pagination
  */
 async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Response> {
   const { supabase, query } = ctx;
+
+  // Cache public list queries for 60 seconds (keyed by query params)
+  const cacheKey = `products:list:${JSON.stringify(query)}`;
+  interface CachedListResult {
+    items: Record<string, unknown>[];
+    total: number;
+    nextCursor: string | null;
+    limit: number;
+  }
+  const cached = cache.get<CachedListResult>(cacheKey);
+  if (cached) {
+    return paginated(cached.items, ctx, {
+      offset: 0,
+      limit: cached.limit,
+      total: cached.total,
+      nextCursor: cached.nextCursor,
+    });
+  }
 
   // Use safe numeric parsing with bounds to prevent invalid values
   const limit = normalizeLimit(parseIntSafe(query.limit, 20), 50);
@@ -172,8 +235,18 @@ async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Re
       })
     : null;
 
+  const transformedItems = resultItems.map(transformProduct);
+
+  // Cache the result for 60 seconds
+  cache.set(cacheKey, {
+    items: transformedItems,
+    total: count || resultItems.length,
+    nextCursor,
+    limit,
+  }, 60_000);
+
   return paginated(
-    resultItems.map(transformProduct),
+    transformedItems,
     ctx,
     {
       offset: 0,
@@ -187,24 +260,29 @@ async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Re
 /**
  * Get single product by ID
  */
-async function getProduct(ctx: HandlerContext): Promise<Response> {
-  const { supabase, query } = ctx;
-  const productId = (query as Record<string, string>).id;
+async function getProduct(ctx: HandlerContext<unknown, ListQuery>): Promise<Response> {
+  const { supabase, query, userId } = ctx;
+  const productId = query.id;
 
   if (!productId) {
     throw new ValidationError("Product ID is required");
   }
 
+  const includes = query.include?.split(",").map(s => s.trim()) || [];
+  const includeOwner = includes.includes("owner");
+  const includeRelated = includes.includes("related");
+
+  // Build profile select fields
+  const profileFields = includeOwner
+    ? "id, display_name, avatar_url, created_at, bio, rating_average, rating_count, is_volunteer"
+    : "id, display_name, avatar_url, created_at";
+
+  // Base product query
   const { data, error } = await supabase
     .from("posts_with_location")
     .select(`
       *,
-      profile:profiles!posts_profile_id_fkey(
-        id,
-        display_name,
-        avatar_url,
-        created_at
-      ),
+      profile:profiles!posts_profile_id_fkey(${profileFields}),
       category:categories(id, name, icon)
     `)
     .eq("id", productId)
@@ -214,7 +292,43 @@ async function getProduct(ctx: HandlerContext): Promise<Response> {
     throw new NotFoundError("Product", productId);
   }
 
-  return ok(transformProductDetail(data), ctx);
+  const result: any = transformProductDetail(data);
+
+  // Add related listings if requested
+  if (includeRelated && data.latitude && data.longitude) {
+    const { data: related } = await supabase
+      .from("posts_with_location")
+      .select("id, title, images, post_type, created_at, latitude, longitude")
+      .neq("id", productId)
+      .eq("status", "active")
+      .or(`category_id.eq.${data.category_id},post_type.eq.${data.post_type}`)
+      .limit(6);
+
+    if (related) {
+      result.relatedListings = related.map(r => ({
+        id: r.id,
+        title: r.title,
+        imageUrl: r.images?.[0],
+        postType: r.post_type,
+        createdAt: r.created_at,
+      }));
+    }
+  }
+
+  // Add user interaction state if authenticated
+  if (userId && includeOwner) {
+    const { data: favorite } = await supabase
+      .from("favorites")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("post_id", productId)
+      .single();
+
+    result.isFavorited = !!favorite;
+    result.canContact = userId !== data.profile_id;
+  }
+
+  return ok(result, ctx);
 }
 
 /**
@@ -225,6 +339,15 @@ async function createProduct(ctx: HandlerContext<CreateProductBody>): Promise<Re
 
   if (!userId) {
     throw new ValidationError("Authentication required");
+  }
+
+  // Validate image URLs belong to our storage
+  const imageCheck = validateProductImageUrls(body.images);
+  if (!imageCheck.valid) {
+    throw new ValidationError(
+      "All image URLs must be uploaded through our image API",
+      { invalidUrls: imageCheck.invalidUrls }
+    );
   }
 
   // Sanitize user inputs to prevent XSS
@@ -278,15 +401,38 @@ async function createProduct(ctx: HandlerContext<CreateProductBody>): Promise<Re
 
   logger.info("Product created", { productId: data.id, userId });
 
+  // Fire-and-forget notification for nearby users
+  try {
+    EdgeRuntime.waitUntil(
+      supabase.functions.invoke("api-v1-notifications", {
+        body: {
+          route: "trigger/new-listing",
+          food_item_id: data.id,
+          user_id: userId,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          post_name: data.post_name,
+          post_type: data.post_type,
+        },
+      }).catch((err: unknown) => {
+        logger.warn("Failed to trigger new-listing notification", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      })
+    );
+  } catch {
+    // EdgeRuntime.waitUntil may not be available in all environments
+  }
+
   return created(transformProduct(data), ctx);
 }
 
 /**
  * Update product with optimistic locking
  */
-async function updateProduct(ctx: HandlerContext<UpdateProductBody>): Promise<Response> {
+async function updateProduct(ctx: HandlerContext<UpdateProductBody, ListQuery>): Promise<Response> {
   const { supabase, userId, body, query } = ctx;
-  const productId = (query as Record<string, string>).id;
+  const productId = query.id;
 
   if (!productId) {
     throw new ValidationError("Product ID is required");
@@ -317,6 +463,17 @@ async function updateProduct(ctx: HandlerContext<UpdateProductBody>): Promise<Re
       "Product was modified by another request. Please refresh and try again.",
       { currentVersion: existing.version, expectedVersion: body.version }
     );
+  }
+
+  // Validate image URLs belong to our storage (when provided)
+  if (body.images !== undefined) {
+    const imageCheck = validateProductImageUrls(body.images);
+    if (!imageCheck.valid) {
+      throw new ValidationError(
+        "All image URLs must be uploaded through our image API",
+        { invalidUrls: imageCheck.invalidUrls }
+      );
+    }
   }
 
   // Build update object with sanitized values
@@ -361,9 +518,9 @@ async function updateProduct(ctx: HandlerContext<UpdateProductBody>): Promise<Re
 /**
  * Delete product (soft delete)
  */
-async function deleteProduct(ctx: HandlerContext): Promise<Response> {
+async function deleteProduct(ctx: HandlerContext<unknown, ListQuery>): Promise<Response> {
   const { supabase, userId, query } = ctx;
-  const productId = (query as Record<string, string>).id;
+  const productId = query.id;
 
   if (!productId) {
     throw new ValidationError("Product ID is required");
@@ -449,9 +606,17 @@ function transformProductDetail(data: Record<string, unknown>) {
  * Route to appropriate handler based on query params
  */
 async function handleGet(ctx: HandlerContext<unknown, ListQuery>): Promise<Response> {
-  const productId = (ctx.query as Record<string, string>).id;
+  // Health check
+  const url = new URL(ctx.request.url);
+  if (url.pathname.endsWith("/health")) {
+    return ok({ status: "healthy", service: "api-v1-products", version: VERSION, timestamp: new Date().toISOString() }, ctx);
+  }
 
-  if (productId) {
+  if (ctx.query.mode === "feed") {
+    return getFeed(ctx);
+  }
+
+  if (ctx.query.id) {
     return getProduct(ctx);
   }
 

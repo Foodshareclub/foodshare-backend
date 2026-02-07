@@ -1,7 +1,7 @@
 /**
  * Engagement API v1
  *
- * REST API for post engagement operations (likes, bookmarks, shares).
+ * REST API for post engagement operations (likes, bookmarks, favorites, shares).
  * Supports Web, iOS, and Android clients with consistent interface.
  *
  * Endpoints:
@@ -9,7 +9,9 @@
  * - GET    /api-v1-engagement?postIds=1,2,3         - Batch get engagement
  * - POST   /api-v1-engagement?action=like           - Toggle like
  * - POST   /api-v1-engagement?action=bookmark       - Toggle bookmark
+ * - POST   /api-v1-engagement?action=favorite       - Toggle favorite (atomic)
  * - POST   /api-v1-engagement?action=share          - Record share
+ * - POST   /api-v1-engagement/batch                 - Batch operations
  * - GET    /api-v1-engagement?action=bookmarks      - Get user's bookmarks
  *
  * Headers:
@@ -24,8 +26,10 @@ import {
   ok,
   type HandlerContext,
 } from "../_shared/api-handler.ts";
-import { ValidationError } from "../_shared/errors.ts";
+import { ValidationError, ServerError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
+
+const VERSION = "1.0.0";
 
 // =============================================================================
 // Schemas
@@ -40,15 +44,29 @@ const shareSchema = z.object({
   method: z.enum(["link", "social", "email", "other"]).default("link"),
 });
 
+const batchOperationSchema = z.object({
+  correlationId: z.string().uuid(),
+  type: z.enum(["toggle_favorite", "toggle_like", "toggle_bookmark", "mark_read", "archive_room"]),
+  entityId: z.string(),
+  payload: z.record(z.unknown()).optional(),
+});
+
+const batchOperationsSchema = z.object({
+  operations: z.array(batchOperationSchema).min(1).max(50),
+});
+
 const querySchema = z.object({
   postId: z.string().optional(),
   postIds: z.string().optional(), // Comma-separated for batch
-  action: z.enum(["like", "bookmark", "share", "bookmarks"]).optional(),
+  action: z.enum(["like", "bookmark", "favorite", "share", "bookmarks"]).optional(),
+  mode: z.enum(["toggle", "add", "remove"]).optional(), // For favorite action
   limit: z.string().optional(),
 });
 
 type ToggleBody = z.infer<typeof toggleEngagementSchema>;
 type ShareBody = z.infer<typeof shareSchema>;
+type BatchOperation = z.infer<typeof batchOperationSchema>;
+type BatchOperationsBody = z.infer<typeof batchOperationsSchema>;
 type QueryParams = z.infer<typeof querySchema>;
 
 // =============================================================================
@@ -316,6 +334,92 @@ async function recordShare(ctx: HandlerContext<ShareBody>): Promise<Response> {
   return ok({ success: true }, ctx);
 }
 
+/**
+ * Toggle favorite (atomic operation)
+ */
+async function toggleFavorite(ctx: HandlerContext<ToggleBody, QueryParams>): Promise<Response> {
+  const { supabase, userId, body, query } = ctx;
+
+  if (!userId) {
+    throw new ValidationError("Authentication required");
+  }
+
+  const mode = query.mode || "toggle";
+
+  logger.info("Favorite operation", { mode, postId: body.postId, userId });
+
+  let isFavorited: boolean;
+  let action: "added" | "removed" | "unchanged";
+
+  if (mode === "toggle") {
+    // Use RPC for atomic toggle
+    const { data, error } = await supabase.rpc("toggle_post_favorite_atomic", {
+      p_user_id: userId,
+      p_post_id: body.postId,
+    });
+
+    if (error) {
+      logger.error("Toggle favorite failed", { error, postId: body.postId, userId });
+      throw new ValidationError(`Failed to toggle favorite: ${error.message}`);
+    }
+
+    isFavorited = data.is_favorited;
+    action = data.was_added ? "added" : "removed";
+  } else if (mode === "add") {
+    // Add favorite (upsert)
+    const { error } = await supabase
+      .from("favorites")
+      .upsert(
+        { user_id: userId, post_id: body.postId },
+        { onConflict: "user_id,post_id", ignoreDuplicates: true }
+      );
+
+    if (error) {
+      logger.error("Add favorite failed", { error, postId: body.postId, userId });
+      throw new ValidationError(`Failed to add favorite: ${error.message}`);
+    }
+
+    isFavorited = true;
+    action = "added";
+  } else {
+    // Remove favorite
+    const { error } = await supabase
+      .from("favorites")
+      .delete()
+      .eq("user_id", userId)
+      .eq("post_id", body.postId);
+
+    if (error) {
+      logger.error("Remove favorite failed", { error, postId: body.postId, userId });
+      throw new ValidationError(`Failed to remove favorite: ${error.message}`);
+    }
+
+    isFavorited = false;
+    action = "removed";
+  }
+
+  // Get updated like count
+  const { data: post } = await supabase
+    .from("posts")
+    .select("post_like_counter")
+    .eq("id", body.postId)
+    .single();
+
+  logger.info("Favorite operation completed", {
+    mode,
+    postId: body.postId,
+    action,
+    isFavorited,
+  });
+
+  return ok({
+    postId: body.postId,
+    isFavorited,
+    likeCount: post?.post_like_counter ?? 0,
+    action,
+  }, ctx);
+}
+
 // =============================================================================
 // Helpers
 // =============================================================================
@@ -348,14 +452,26 @@ async function logActivity(
 // Route Handlers
 // =============================================================================
 
-async function handleGet(ctx: HandlerContext<unknown, QueryParams>): Promise<Response> {
+function handleGet(ctx: HandlerContext<unknown, QueryParams>): Promise<Response> {
+  // Health check
+  const url = new URL(ctx.request.url);
+  if (url.pathname.endsWith("/health")) {
+    return ok({ status: "healthy", service: "api-v1-engagement", version: VERSION, timestamp: new Date().toISOString() }, ctx);
+  }
+
   if (ctx.query.action === "bookmarks") {
     return getUserBookmarks(ctx);
   }
   return getEngagement(ctx);
 }
 
-async function handlePost(ctx: HandlerContext<ToggleBody | ShareBody, QueryParams>): Promise<Response> {
+function handlePost(ctx: HandlerContext<ToggleBody | ShareBody | BatchOperationsBody, QueryParams>): Promise<Response> {
+  const url = new URL(ctx.request.url);
+  
+  if (url.pathname.endsWith("/batch")) {
+    return handleBatchOperations(ctx as HandlerContext<BatchOperationsBody, QueryParams>);
+  }
+  
   const action = ctx.query.action;
 
   switch (action) {
@@ -363,11 +479,120 @@ async function handlePost(ctx: HandlerContext<ToggleBody | ShareBody, QueryParam
       return toggleLike(ctx as HandlerContext<ToggleBody, QueryParams>);
     case "bookmark":
       return toggleBookmark(ctx as HandlerContext<ToggleBody, QueryParams>);
+    case "favorite":
+      return toggleFavorite(ctx as HandlerContext<ToggleBody, QueryParams>);
     case "share":
       return recordShare(ctx as HandlerContext<ShareBody, QueryParams>);
     default:
-      throw new ValidationError("action query param required (like, bookmark, share)");
+      throw new ValidationError("action query param required (like, bookmark, favorite, share)");
   }
+}
+
+async function handleBatchOperations(ctx: HandlerContext<BatchOperationsBody, QueryParams>): Promise<Response> {
+  const { operations } = ctx.body;
+  const { userId, supabase } = ctx;
+
+  if (!userId) {
+    throw new ValidationError("Authentication required");
+  }
+
+  logger.info("Processing batch operations", {
+    count: operations.length,
+    userId: userId.substring(0, 8),
+    types: [...new Set(operations.map(op => op.type))],
+  });
+
+  const results = await Promise.all(
+    operations.map(async (operation) => {
+      try {
+        let data: unknown;
+        const entityId = parseInt(operation.entityId, 10);
+
+        switch (operation.type) {
+          case "toggle_favorite": {
+            const { data: result, error } = await supabase.rpc("toggle_post_favorite_atomic", {
+              p_user_id: userId,
+              p_post_id: entityId,
+            });
+            if (error) throw new ServerError(error.message);
+            data = { isFavorited: result.is_favorited, likeCount: result.like_count };
+            break;
+          }
+          case "toggle_like": {
+            const { data: existing } = await supabase
+              .from("post_likes")
+              .select("id")
+              .eq("post_id", entityId)
+              .eq("profile_id", userId)
+              .single();
+
+            if (existing) {
+              await supabase.from("post_likes").delete().eq("post_id", entityId).eq("profile_id", userId);
+              data = { isLiked: false };
+            } else {
+              await supabase.from("post_likes").insert({ post_id: entityId, profile_id: userId });
+              data = { isLiked: true };
+            }
+            break;
+          }
+          case "toggle_bookmark": {
+            const { data: existing } = await supabase
+              .from("post_bookmarks")
+              .select("id")
+              .eq("post_id", entityId)
+              .eq("profile_id", userId)
+              .single();
+
+            if (existing) {
+              await supabase.from("post_bookmarks").delete().eq("post_id", entityId).eq("profile_id", userId);
+              data = { isBookmarked: false };
+            } else {
+              await supabase.from("post_bookmarks").insert({ post_id: entityId, profile_id: userId });
+              data = { isBookmarked: true };
+            }
+            break;
+          }
+          case "mark_read": {
+            const { error } = await supabase.rpc("mark_messages_read", {
+              p_room_id: operation.entityId,
+              p_user_id: userId,
+            });
+            if (error) throw new ServerError(error.message);
+            data = { markedRead: true };
+            break;
+          }
+          case "archive_room": {
+            const { error } = await supabase
+              .from("room_members")
+              .update({ is_archived: true })
+              .eq("room_id", operation.entityId)
+              .eq("profile_id", userId);
+            if (error) throw new ServerError(error.message);
+            data = { archived: true };
+            break;
+          }
+        }
+
+        return { correlationId: operation.correlationId, success: true, data };
+      } catch (error) {
+        return {
+          correlationId: operation.correlationId,
+          success: false,
+          error: (error as Error).message,
+        };
+      }
+    })
+  );
+
+  const successful = results.filter(r => r.success).length;
+  const failed = results.filter(r => !r.success).length;
+
+  return ok({
+    totalOperations: operations.length,
+    successful,
+    failed,
+    results,
+  }, ctx);
 }
 
 // =============================================================================

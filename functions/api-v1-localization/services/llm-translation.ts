@@ -14,7 +14,9 @@
  * @version 2.0.0 - Enterprise Grade
  */
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
+import { logger as sharedLogger } from "../../_shared/logger.ts";
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -54,17 +56,6 @@ class TranslationError extends Error {
     super(message);
     this.name = 'TranslationError';
   }
-}
-
-/** Log entry for structured logging */
-interface LogEntry {
-  timestamp: string;
-  level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
-  requestId: string;
-  service: string;
-  action: string;
-  duration_ms?: number;
-  metadata?: Record<string, unknown>;
 }
 
 /** Circuit breaker state per service */
@@ -122,33 +113,29 @@ class StructuredLogger {
     return this.requestId;
   }
 
-  private formatEntry(level: LogEntry['level'], action: string, metadata?: Record<string, unknown>): string {
-    const entry: LogEntry = {
-      timestamp: new Date().toISOString(),
-      level,
+  private context(metadata?: Record<string, unknown>): Record<string, unknown> {
+    return {
       requestId: this.requestId,
       service: this.serviceName,
-      action,
       duration_ms: Date.now() - this.startTime,
-      ...(metadata && { metadata }),
+      ...metadata,
     };
-    return JSON.stringify(entry);
   }
 
   debug(action: string, metadata?: Record<string, unknown>): void {
-    console.debug(this.formatEntry('DEBUG', action, metadata));
+    sharedLogger.debug(action, this.context(metadata));
   }
 
   info(action: string, metadata?: Record<string, unknown>): void {
-    console.info(this.formatEntry('INFO', action, metadata));
+    sharedLogger.info(action, this.context(metadata));
   }
 
   warn(action: string, metadata?: Record<string, unknown>): void {
-    console.warn(this.formatEntry('WARN', action, metadata));
+    sharedLogger.warn(action, this.context(metadata));
   }
 
   error(action: string, metadata?: Record<string, unknown>): void {
-    console.error(this.formatEntry('ERROR', action, metadata));
+    sharedLogger.error(action, this.context(metadata));
   }
 }
 
@@ -355,7 +342,7 @@ class LLMTranslationService {
   };
 
   // Supabase client for quota tracking
-  private supabase: ReturnType<typeof import("jsr:@supabase/supabase-js@2").createClient> | null = null;
+  private supabase: SupabaseClient | null = null;
 
   // Exhausted services cache (fail-safe quota enforcement)
   private exhaustedServices: Map<string, number> = new Map();
@@ -553,14 +540,11 @@ class LLMTranslationService {
   // ============================================================================
 
   /**
-   * Get or create Supabase client for quota tracking
+   * Get Supabase client for quota tracking (shared singleton)
    */
-  private getSupabaseClient() {
+  private getSupabaseClientInstance() {
     if (!this.supabase) {
-      this.supabase = createClient(
-        Deno.env.get("SUPABASE_URL")!,
-        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-      );
+      this.supabase = getSupabaseClient();
     }
     return this.supabase;
   }
@@ -605,7 +589,7 @@ class LLMTranslationService {
    */
   private async hasQuotaRemaining(service: string, charCount: number, logger: StructuredLogger): Promise<boolean> {
     try {
-      const supabase = this.getSupabaseClient();
+      const supabase = this.getSupabaseClientInstance();
       const monthYear = this.getCurrentMonth();
 
       const { data, error } = await supabase.rpc('get_translation_usage', {
@@ -643,7 +627,7 @@ class LLMTranslationService {
     const monthYear = this.getCurrentMonth();
 
     try {
-      const supabase = this.getSupabaseClient();
+      const supabase = this.getSupabaseClientInstance();
 
       for (const [service, limit] of Object.entries(this.FREE_LIMITS)) {
         const { data } = await supabase.rpc('get_translation_usage', {
@@ -673,7 +657,7 @@ class LLMTranslationService {
    */
   private async recordUsage(service: string, charCount: number, logger: StructuredLogger): Promise<void> {
     try {
-      const supabase = this.getSupabaseClient();
+      const supabase = this.getSupabaseClientInstance();
       const monthYear = this.getCurrentMonth();
 
       const { data, error } = await supabase.rpc('increment_translation_usage', {
@@ -882,7 +866,7 @@ class LLMTranslationService {
     const deeplKey = this.config.deeplApiKey || Deno.env.get("DEEPL_API_KEY");
 
     if (!deeplKey) {
-      console.warn("DeepL API key not configured, skipping fallback");
+      sharedLogger.warn("DeepL API key not configured, skipping fallback");
       return { text, cached: false, quality: 0, service: 'deepl' };
     }
 
@@ -916,7 +900,7 @@ class LLMTranslationService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`DeepL API error: ${response.status} - ${errorText}`);
+        sharedLogger.error("DeepL API error", { status: response.status, error: errorText });
         return { text, cached: false, quality: 0, service: 'deepl' };
       }
 
@@ -929,7 +913,7 @@ class LLMTranslationService {
 
       // DeepL translations are high quality
       const quality = this.calculateQuality(text, translatedText);
-      console.log(`DeepL fallback success: quality=${quality.toFixed(2)}`);
+      sharedLogger.info("DeepL fallback success", { quality: quality.toFixed(2) });
 
       // Cache the result
       if (quality > 0.5) {
@@ -944,7 +928,7 @@ class LLMTranslationService {
       return { text: translatedText, cached: false, quality, service: 'deepl' };
     } catch (error) {
       const err = error as Error;
-      console.error(`DeepL fallback failed: ${err.message}`);
+      sharedLogger.error("DeepL fallback failed", { error: err.message });
       return { text, cached: false, quality: 0, service: 'deepl' };
     }
   }
@@ -961,7 +945,7 @@ class LLMTranslationService {
     const googleKey = this.config.googleApiKey || Deno.env.get("GOOGLE_TRANSLATE_API_KEY");
 
     if (!googleKey) {
-      console.warn("Google Translate API key not configured, skipping fallback");
+      sharedLogger.warn("Google Translate API key not configured, skipping fallback");
       return { text, cached: false, quality: 0, service: 'google' };
     }
 
@@ -993,7 +977,7 @@ class LLMTranslationService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`Google Translate API error: ${response.status} - ${errorText}`);
+        sharedLogger.error("Google Translate API error", { status: response.status, error: errorText });
         return { text, cached: false, quality: 0, service: 'google' };
       }
 
@@ -1006,7 +990,7 @@ class LLMTranslationService {
 
       // Google translations are high quality
       const quality = this.calculateQuality(text, translatedText);
-      console.log(`Google Translate fallback success: quality=${quality.toFixed(2)}`);
+      sharedLogger.info("Google Translate fallback success", { quality: quality.toFixed(2) });
 
       // Cache the result
       if (quality > 0.5) {
@@ -1021,7 +1005,7 @@ class LLMTranslationService {
       return { text: translatedText, cached: false, quality, service: 'google' };
     } catch (error) {
       const err = error as Error;
-      console.error(`Google Translate fallback failed: ${err.message}`);
+      sharedLogger.error("Google Translate fallback failed", { error: err.message });
       return { text, cached: false, quality: 0, service: 'google' };
     }
   }
@@ -1039,7 +1023,7 @@ class LLMTranslationService {
     const msRegion = this.config.microsoftRegion || Deno.env.get("MICROSOFT_TRANSLATOR_REGION") || "global";
 
     if (!msKey) {
-      console.warn("Microsoft Translator API key not configured, skipping fallback");
+      sharedLogger.warn("Microsoft Translator API key not configured, skipping fallback");
       return { text, cached: false, quality: 0, service: 'microsoft' };
     }
 
@@ -1068,7 +1052,7 @@ class LLMTranslationService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`Microsoft Translator API error: ${response.status} - ${errorText}`);
+        sharedLogger.error("Microsoft Translator API error", { status: response.status, error: errorText });
         return { text, cached: false, quality: 0, service: 'microsoft' };
       }
 
@@ -1081,7 +1065,7 @@ class LLMTranslationService {
 
       // Microsoft translations are high quality
       const quality = this.calculateQuality(text, translatedText);
-      console.log(`Microsoft Translator fallback success: quality=${quality.toFixed(2)}`);
+      sharedLogger.info("Microsoft Translator fallback success", { quality: quality.toFixed(2) });
 
       // Cache the result
       if (quality > 0.5) {
@@ -1096,7 +1080,7 @@ class LLMTranslationService {
       return { text: translatedText, cached: false, quality, service: 'microsoft' };
     } catch (error) {
       const err = error as Error;
-      console.error(`Microsoft Translator fallback failed: ${err.message}`);
+      sharedLogger.error("Microsoft Translator fallback failed", { error: err.message });
       return { text, cached: false, quality: 0, service: 'microsoft' };
     }
   }
@@ -1194,7 +1178,7 @@ class LLMTranslationService {
     const awsRegion = this.config.awsRegion || Deno.env.get("AWS_REGION") || "us-east-1";
 
     if (!awsAccessKeyId || !awsSecretAccessKey) {
-      console.warn("AWS credentials not configured, skipping Amazon Translate fallback");
+      sharedLogger.warn("AWS credentials not configured, skipping Amazon Translate fallback");
       return { text, cached: false, quality: 0, service: 'amazon' };
     }
 
@@ -1228,7 +1212,7 @@ class LLMTranslationService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`Amazon Translate API error: ${response.status} - ${errorText}`);
+        sharedLogger.error("Amazon Translate API error", { status: response.status, error: errorText });
         return { text, cached: false, quality: 0, service: 'amazon' };
       }
 
@@ -1241,7 +1225,7 @@ class LLMTranslationService {
 
       // Amazon translations are high quality
       const quality = this.calculateQuality(text, translatedText);
-      console.log(`Amazon Translate fallback success: quality=${quality.toFixed(2)}`);
+      sharedLogger.info("Amazon Translate fallback success", { quality: quality.toFixed(2) });
 
       // Cache the result
       if (quality > 0.5) {
@@ -1256,7 +1240,7 @@ class LLMTranslationService {
       return { text: translatedText, cached: false, quality, service: 'amazon' };
     } catch (error) {
       const err = error as Error;
-      console.error(`Amazon Translate fallback failed: ${err.message}`);
+      sharedLogger.error("Amazon Translate fallback failed", { error: err.message });
       return { text, cached: false, quality: 0, service: 'amazon' };
     }
   }
@@ -1545,7 +1529,7 @@ class LLMTranslationService {
 
       if (originalTags !== translatedTags) {
         quality *= 0.5; // Penalize if HTML structure changed
-        console.warn(`HTML structure changed: expected ${originalTags.split(',').length} tags, got ${translatedTags.split(',').length}`);
+        sharedLogger.warn("HTML structure changed during translation", { expectedTags: originalTags.split(',').length, gotTags: translatedTags.split(',').length });
       }
     }
 
@@ -2005,7 +1989,7 @@ class LLMTranslationService {
 function createTranslationService(): LLMTranslationService {
   const apiKey = Deno.env.get("LLM_TRANSLATION_API_KEY");
   if (!apiKey) {
-    console.error('CRITICAL: LLM_TRANSLATION_API_KEY environment variable is required');
+    sharedLogger.error("CRITICAL: LLM_TRANSLATION_API_KEY environment variable is required");
     // Don't throw here - let the constructor handle validation
   }
 

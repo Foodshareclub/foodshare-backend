@@ -19,7 +19,7 @@ export const CRITICAL_FUNCTIONS: FunctionConfig[] = [
   // Core Infrastructure
   { name: "api-v1-products", critical: true, requiresAuth: false, expectedStatus: [200, 400, 401] },
   { name: "api-v1-feature-flags", critical: true, requiresAuth: false },
-  { name: "geolocate-user", critical: true, requiresAuth: false },
+  { name: "api-v1-geocoding", critical: true, requiresAuth: false },
   { name: "api-v1-auth", critical: true, requiresAuth: false },
   // Unified Attestation API (consolidates verify-attestation, verify-android-attestation)
   { name: "api-v1-attestation", critical: true, requiresAuth: false, expectedStatus: [200, 400] },
@@ -44,7 +44,6 @@ export const API_FUNCTIONS: FunctionConfig[] = [
   // Authenticated APIs
   { name: "api-v1-chat", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
   { name: "api-v1-engagement", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
-  { name: "api-v1-food-chat", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
   { name: "api-v1-profile", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
   { name: "api-v1-reviews", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
 
@@ -69,15 +68,9 @@ export const API_FUNCTIONS: FunctionConfig[] = [
  * Functions handling data operations (CRUD, sync, validation).
  */
 export const DATA_FUNCTIONS: FunctionConfig[] = [
-  // User Operations
-  { name: "delete-user", critical: false, requiresAuth: true, expectedStatus: [200, 401], skipInQuickCheck: true },
-
   // Sync & Analytics
-  { name: "sync", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
+  { name: "api-v1-sync", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
   { name: "api-v1-analytics", critical: false, requiresAuth: false },
-
-  // Location Services
-  { name: "match-users", critical: false, requiresAuth: false },
 ];
 
 // =============================================================================
@@ -93,23 +86,18 @@ export const UTILITY_FUNCTIONS: FunctionConfig[] = [
   { name: "check-upstash-services", critical: false, requiresAuth: false },
 
   // Localization
-  { name: "locale", critical: false, requiresAuth: false },
-  { name: "localization", critical: false, requiresAuth: false },
+  { name: "api-v1-localization", critical: false, requiresAuth: false },
 
   // Security & Utilities
-  { name: "get-certificate-pins", critical: false, requiresAuth: false },
-  { name: "get-my-chat-id", critical: false, requiresAuth: false },
   { name: "api-v1-ai", critical: false, requiresAuth: false, skipInQuickCheck: true },
 
   // Image Processing
   { name: "api-v1-images", critical: true, requiresAuth: true, skipInQuickCheck: false },
 
-  // Monitoring & Automation
+  // Monitoring & Automation (api-v1-monitor + sentry-telegram-webhook merged into api-v1-alerts)
   { name: "api-v1-alerts", critical: false, requiresAuth: false },
-  { name: "domain-monitor", critical: false, requiresAuth: false },
-  { name: "process-automation-queue", critical: false, requiresAuth: false, skipInQuickCheck: true },
-  { name: "process-email-queue", critical: false, requiresAuth: false, skipInQuickCheck: true },
-  { name: "sentry-telegram-webhook", critical: false, requiresAuth: false },
+  // process-automation-queue merged into api-v1-email/process/automation
+  { name: "api-v1-email", critical: false, requiresAuth: false, skipInQuickCheck: true },
 
   // Bots (webhooks, not directly callable)
   { name: "telegram-bot-foodshare", critical: false, requiresAuth: false, skipInQuickCheck: true },

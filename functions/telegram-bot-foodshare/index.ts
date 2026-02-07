@@ -12,6 +12,8 @@
  * See README.md for architecture documentation.
  */
 
+import { logger } from "../_shared/logger.ts";
+import { isDevelopment } from "../_shared/utils.ts";
 import { setWebhook, getTelegramApiStatus } from "./services/telegram-api.ts";
 import { verifyTelegramWebhook as verifyTelegramSignature } from "../_shared/webhook-security.ts";
 import { handleCallbackQuery } from "./handlers/callbacks.ts";
@@ -105,34 +107,6 @@ function getMetrics(): Record<string, unknown> {
 // ============================================================================
 
 /**
- * Constant-time string comparison to prevent timing attacks
- */
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-
-  const encoder = new TextEncoder();
-  const aBytes = encoder.encode(a);
-  const bBytes = encoder.encode(b);
-
-  let result = 0;
-  for (let i = 0; i < aBytes.length; i++) {
-    result |= aBytes[i] ^ bBytes[i];
-  }
-
-  return result === 0;
-}
-
-/**
- * Check if we're running in development/local environment
- */
-function isDevelopment(): boolean {
-  const env = Deno.env.get("DENO_ENV") || Deno.env.get("ENVIRONMENT") || "";
-  return env === "development" || env === "local" || env === "test";
-}
-
-/**
  * Verify Telegram webhook signature using shared webhook-security module
  * SECURITY: Rejects requests in production if secret is not configured
  */
@@ -179,24 +153,10 @@ try {
   }
 
   isInitialized = true;
-  console.log(
-    JSON.stringify({
-      level: "info",
-      message: "Telegram bot initialized successfully",
-      version: VERSION,
-      timestamp: new Date().toISOString(),
-    })
-  );
+  logger.info("Telegram bot initialized successfully", { version: VERSION });
 } catch (error) {
   initError = error instanceof Error ? error : new Error(String(error));
-  console.error(
-    JSON.stringify({
-      level: "error",
-      message: "Initialization failed",
-      error: initError.message,
-      timestamp: new Date().toISOString(),
-    })
-  );
+  logger.error("Initialization failed", { error: initError.message });
 }
 
 // ============================================================================
@@ -208,14 +168,20 @@ function generateRequestId(): string {
 }
 
 function log(level: string, message: string, context: Record<string, unknown> = {}): void {
-  console.log(
-    JSON.stringify({
-      level,
-      message,
-      ...context,
-      timestamp: new Date().toISOString(),
-    })
-  );
+  switch (level) {
+    case "error":
+      logger.error(message, context);
+      break;
+    case "warn":
+      logger.warn(message, context);
+      break;
+    case "debug":
+      logger.debug(message, context);
+      break;
+    default:
+      logger.info(message, context);
+      break;
+  }
 }
 
 // ============================================================================
@@ -284,6 +250,69 @@ Deno.serve(async (req) => {
         headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
       }
     );
+  }
+
+  // Chat ID lookup endpoint (folded from get-my-chat-id)
+  if (pathname.endsWith("/chat-id") && req.method === "GET") {
+    const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN") || Deno.env.get("BOT_TOKEN");
+    if (!botToken) {
+      return new Response(JSON.stringify({ error: "Bot token not configured", requestId }), {
+        status: 500,
+        headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
+      });
+    }
+
+    try {
+      const tgResponse = await fetch(
+        `https://api.telegram.org/bot${botToken}/getUpdates?limit=10`
+      );
+      const tgResult = await tgResponse.json();
+
+      if (!tgResult.ok) {
+        return new Response(
+          JSON.stringify({ error: `Telegram API error: ${tgResult.description}`, requestId }),
+          { status: 502, headers: { "Content-Type": "application/json", "X-Request-ID": requestId } }
+        );
+      }
+
+      const chatIds = new Set<number>();
+      const messages: { chat_id: number; chat_type: string; from: string; username: string; text: string; date: string }[] = [];
+
+      for (const update of tgResult.result) {
+        if (update.message) {
+          const msg = update.message;
+          chatIds.add(msg.chat.id);
+          messages.push({
+            chat_id: msg.chat.id,
+            chat_type: msg.chat.type,
+            from: msg.from.first_name + (msg.from.last_name ? " " + msg.from.last_name : ""),
+            username: msg.from.username || "N/A",
+            text: msg.text || "[media]",
+            date: new Date(msg.date * 1000).toISOString(),
+          });
+        }
+      }
+
+      log("info", "Chat ID lookup", { requestId, chatIdsFound: chatIds.size });
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          instructions: "Send any message to your bot, then call this endpoint again to see your chat_id",
+          unique_chat_ids: Array.from(chatIds),
+          recent_messages: messages,
+          requestId,
+        }),
+        { headers: { "Content-Type": "application/json", "X-Request-ID": requestId } }
+      );
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log("error", "Chat ID lookup failed", { requestId, error: errorMessage });
+      return new Response(
+        JSON.stringify({ error: errorMessage, requestId }),
+        { status: 500, headers: { "Content-Type": "application/json", "X-Request-ID": requestId } }
+      );
+    }
   }
 
   // Enhanced health check endpoint

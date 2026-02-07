@@ -2,6 +2,7 @@
  * Internationalization (i18n) Helper
  */
 
+import { logger } from "../../_shared/logger.ts";
 import { en } from "../locales/en.ts";
 import { ru } from "../locales/ru.ts";
 import { de } from "../locales/de.ts";
@@ -30,7 +31,7 @@ export function t(
   for (const k of keys) {
     value = value?.[k];
     if (value === undefined) {
-      console.warn(`Translation missing: ${lang}.${key}`);
+      logger.warn("Translation missing", { lang, key });
       // Fallback to English
       value = translations.en;
       for (const k of keys) {
@@ -93,7 +94,7 @@ export async function getUserLanguage(userId: number, languageCode?: string): Pr
         return data.language as Language;
       }
     } catch (error) {
-      console.error("Error fetching user language preference:", error);
+      logger.error("Error fetching user language preference", { error: String(error) });
     }
   }
 
@@ -107,8 +108,8 @@ export async function saveUserLanguage(userId: number, language: Language): Prom
   try {
     const supabase = getSupabaseClient();
     await supabase.from("profiles").update({ language }).eq("telegram_id", userId);
-    console.log(`Saved language preference: ${language} for user ${userId}`);
+    logger.info("Saved language preference", { language, userId });
   } catch (error) {
-    console.error("Error saving user language preference:", error);
+    logger.error("Error saving user language preference", { error: String(error) });
   }
 }

@@ -2,6 +2,7 @@
  * Internationalization (i18n) Helper for WhatsApp
  */
 
+import { logger } from "../../_shared/logger.ts";
 import { en } from "../locales/en.ts";
 import { ru } from "../locales/ru.ts";
 import { de } from "../locales/de.ts";
@@ -30,7 +31,7 @@ export function t(
   for (const k of keys) {
     value = (value as Record<string, unknown>)?.[k];
     if (value === undefined) {
-      console.warn(`Translation missing: ${lang}.${key}`);
+      logger.warn("Translation missing", { lang, key });
       // Fallback to English
       value = translations.en;
       for (const k of keys) {
@@ -93,7 +94,7 @@ export async function getUserLanguage(phoneNumber: string): Promise<Language> {
       return data.language as Language;
     }
   } catch (error) {
-    console.error("Error fetching user language preference:", error);
+    logger.error("Error fetching user language preference", { error: String(error) });
   }
 
   return "en";
@@ -108,11 +109,9 @@ export async function saveUserLanguage(phoneNumber: string, language: Language):
 
     await supabase.from("profiles").update({ language }).eq("whatsapp_phone", phoneNumber);
 
-    console.log(
-      `Saved language preference: ${language} for phone ${phoneNumber.substring(0, 4)}***`
-    );
+    logger.info("Saved language preference", { language, phone: phoneNumber.substring(0, 4) + "***" });
   } catch (error) {
-    console.error("Error saving user language preference:", error);
+    logger.error("Error saving user language preference", { error: String(error) });
   }
 }
 

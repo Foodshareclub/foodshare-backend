@@ -10,6 +10,7 @@
  *
  * Routes:
  * - GET    /health           - Health check
+ * - GET    /certificate-pins - Dynamic SSL certificate pins
  * - POST   /                 - Verify attestation (auto-detects platform)
  * - POST   /ios              - iOS attestation only
  * - POST   /android          - Android attestation only
@@ -18,9 +19,12 @@
  * @version 1.0.0
  */
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
+import { getSupabaseClient } from "../_shared/supabase.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { getCorsHeaders, handleCorsPrelight } from "../_shared/cors.ts";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { parseRoute } from "../_shared/routing.ts";
+import { AppError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
 
 const VERSION = "1.0.0";
@@ -29,9 +33,6 @@ const SERVICE = "api-v1-attestation";
 // =============================================================================
 // Environment Configuration
 // =============================================================================
-
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 // iOS configuration
 const APPLE_TEAM_ID = Deno.env.get("APPLE_TEAM_ID") || "";
@@ -119,30 +120,6 @@ const androidAttestationSchema = z.object({
 });
 
 const unifiedSchema = z.union([iosAttestationSchema, androidAttestationSchema]);
-
-// =============================================================================
-// Response Helpers
-// =============================================================================
-
-function jsonResponse(
-  data: unknown,
-  corsHeaders: Record<string, string>,
-  status = 200
-): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
-function errorResponse(
-  error: string,
-  corsHeaders: Record<string, string>,
-  status = 400,
-  requestId?: string
-): Response {
-  return jsonResponse({ success: false, error, requestId }, corsHeaders, status);
-}
 
 // =============================================================================
 // iOS: CBOR Decoder
@@ -799,7 +776,7 @@ async function generateDeviceId(keyId: string): Promise<string> {
 }
 
 async function getDeviceRecord(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   keyId: string
 ): Promise<DeviceRecord | null> {
   const { data } = await supabase
@@ -812,7 +789,7 @@ async function getDeviceRecord(
 }
 
 async function updateDeviceRecord(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   keyId: string,
   verified: boolean,
   trustLevel: TrustLevel,
@@ -876,12 +853,307 @@ function calculateTrustLevel(verified: boolean, riskScore: number, verificationC
 }
 
 // =============================================================================
+// Certificate Pins (merged from get-certificate-pins)
+// =============================================================================
+
+type CertPinPlatform = "ios" | "android" | "web" | "unknown";
+
+interface CertificatePin {
+  hash: string;
+  type: "leaf" | "intermediate" | "root";
+  expires: string;
+  priority: number;
+  description?: string;
+  commonName?: string;
+  organization?: string;
+}
+
+interface IOSPinFormat {
+  sha256: string[];
+  publicKeyHashes: string[];
+}
+
+interface AndroidPinFormat {
+  sha256: string[];
+  networkSecurityConfig: string;
+  pinSetExpiration: string;
+}
+
+interface WebPinFormat {
+  sha256: string[];
+  publicKeyPinsHeader: string;
+}
+
+interface PlatformPins {
+  ios: IOSPinFormat;
+  android: AndroidPinFormat;
+  web: WebPinFormat;
+}
+
+interface RotationWarning {
+  active: boolean;
+  severity: "info" | "warning" | "critical";
+  message?: string;
+  nextRotation?: string;
+  daysUntilExpiry?: number;
+}
+
+interface PinResponse {
+  pins: CertificatePin[];
+  minAppVersion: string;
+  gracePeriodDays: number;
+  refreshIntervalHours: number;
+  lastUpdated: string;
+  nextRotation?: string;
+  platformPins?: PlatformPins;
+  minAppVersions?: Record<CertPinPlatform, string>;
+  validUntil?: string;
+  rotationWarning?: RotationWarning;
+}
+
+/**
+ * Current certificate pins for Supabase
+ *
+ * SHA-256 hashes of the Subject Public Key Info (SPKI).
+ * To generate: openssl s_client -connect host:443 | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64
+ *
+ * UPDATE THESE when certificates are rotated!
+ */
+const CURRENT_PINS: CertificatePin[] = [
+  {
+    hash: "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    type: "leaf",
+    expires: "2025-06-01",
+    priority: 1,
+    description: "Supabase primary leaf certificate",
+  },
+  {
+    hash: "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
+    type: "intermediate",
+    expires: "2026-01-01",
+    priority: 2,
+    description: "Let's Encrypt R3 intermediate",
+  },
+  {
+    hash: "sha256/CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=",
+    type: "root",
+    expires: "2030-01-01",
+    priority: 3,
+    description: "ISRG Root X1",
+  },
+];
+
+/** Upcoming pins for rotation (added during grace period) */
+const UPCOMING_PINS: CertificatePin[] = [];
+
+const PIN_CONFIG = {
+  minAppVersions: {
+    ios: "3.0.0",
+    android: "1.0.0",
+    web: "1.0.0",
+    unknown: "1.0.0",
+  } as Record<CertPinPlatform, string>,
+  minAppVersion: "3.0.0",
+  gracePeriodDays: 14,
+  refreshIntervalHours: 24,
+  nextRotation: "2025-05-15",
+  warningThresholdDays: 30,
+  criticalThresholdDays: 7,
+  supabaseHost: "supabase.co",
+};
+
+function detectCertPinPlatform(request: Request): CertPinPlatform {
+  const platformHeader = request.headers.get("x-platform")?.toLowerCase();
+  if (platformHeader === "ios" || platformHeader === "android" || platformHeader === "web") return platformHeader;
+
+  const clientPlatform = request.headers.get("x-client-platform")?.toLowerCase();
+  if (clientPlatform === "ios" || clientPlatform === "android" || clientPlatform === "web") return clientPlatform;
+
+  const ua = request.headers.get("user-agent") || "";
+  if (ua.includes("iPhone") || ua.includes("iPad") || ua.includes("iOS") || ua.includes("Darwin")) return "ios";
+  if (ua.includes("Android") || ua.includes("okhttp")) return "android";
+  if (ua.includes("Mozilla") || ua.includes("Chrome") || ua.includes("Safari") || ua.includes("Firefox")) return "web";
+
+  return "unknown";
+}
+
+function formatIOSPins(pins: CertificatePin[]): IOSPinFormat {
+  return {
+    sha256: pins.map(p => p.hash),
+    publicKeyHashes: pins.map(p => p.hash.replace("sha256/", "")),
+  };
+}
+
+function formatAndroidPins(pins: CertificatePin[], validUntil: string): AndroidPinFormat {
+  const pinEntries = pins
+    .map(p => `            <pin digest="SHA-256">${p.hash.replace("sha256/", "")}</pin>`)
+    .join("\n");
+
+  return {
+    sha256: pins.map(p => p.hash),
+    networkSecurityConfig: `<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">${PIN_CONFIG.supabaseHost}</domain>
+        <domain includeSubdomains="true">foodshare.app</domain>
+        <pin-set expiration="${validUntil}">
+${pinEntries}
+        </pin-set>
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </domain-config>
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="user"/>
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>`,
+    pinSetExpiration: validUntil,
+  };
+}
+
+function formatWebPins(pins: CertificatePin[]): WebPinFormat {
+  const pinDirectives = pins
+    .map(p => `pin-sha256="${p.hash.replace("sha256/", "")}"`)
+    .join("; ");
+
+  return {
+    sha256: pins.map(p => p.hash),
+    publicKeyPinsHeader: `${pinDirectives}; max-age=2592000; includeSubDomains`,
+  };
+}
+
+function generatePlatformPins(pins: CertificatePin[], validUntil: string): PlatformPins {
+  return {
+    ios: formatIOSPins(pins),
+    android: formatAndroidPins(pins, validUntil),
+    web: formatWebPins(pins),
+  };
+}
+
+function calculateRotationWarning(pins: CertificatePin[]): RotationWarning {
+  const now = new Date();
+  let earliestExpiry: Date | null = null;
+  for (const pin of pins) {
+    const expiry = new Date(pin.expires);
+    if (!earliestExpiry || expiry < earliestExpiry) earliestExpiry = expiry;
+  }
+
+  if (!earliestExpiry) return { active: false, severity: "info" };
+
+  const daysUntilExpiry = Math.ceil((earliestExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (daysUntilExpiry <= PIN_CONFIG.criticalThresholdDays) {
+    return { active: true, severity: "critical", message: `Certificate pins expire in ${daysUntilExpiry} days! Immediate rotation required.`, nextRotation: PIN_CONFIG.nextRotation, daysUntilExpiry };
+  }
+  if (daysUntilExpiry <= PIN_CONFIG.warningThresholdDays) {
+    return { active: true, severity: "warning", message: `Certificate pins expire in ${daysUntilExpiry} days. Please plan rotation.`, nextRotation: PIN_CONFIG.nextRotation, daysUntilExpiry };
+  }
+  if (PIN_CONFIG.nextRotation) {
+    const daysUntilRotation = Math.ceil((new Date(PIN_CONFIG.nextRotation).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysUntilRotation <= PIN_CONFIG.warningThresholdDays) {
+      return { active: true, severity: "info", message: `Planned certificate rotation in ${daysUntilRotation} days.`, nextRotation: PIN_CONFIG.nextRotation, daysUntilExpiry };
+    }
+  }
+  return { active: false, severity: "info", daysUntilExpiry };
+}
+
+function isVersionLessThan(version: string, minimum: string): boolean {
+  const v1Parts = version.split(".").map(p => parseInt(p, 10) || 0);
+  const v2Parts = minimum.split(".").map(p => parseInt(p, 10) || 0);
+  for (let i = 0; i < Math.max(v1Parts.length, v2Parts.length); i++) {
+    const v1 = v1Parts[i] || 0;
+    const v2 = v2Parts[i] || 0;
+    if (v1 < v2) return true;
+    if (v1 > v2) return false;
+  }
+  return false;
+}
+
+function hashPins(pins: CertificatePin[]): string {
+  const content = pins.map(p => p.hash).join(",");
+  let hash = 0;
+  for (let i = 0; i < content.length; i++) {
+    const char = content.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(16);
+}
+
+function handleCertificatePins(req: Request, corsHeaders: Record<string, string>): Response {
+  const platform = detectCertPinPlatform(req);
+  const appVersion = req.headers.get("x-app-version") || "unknown";
+  const wantsLegacyFormat = (req.headers.get("accept") || "").includes("application/vnd.foodshare.pins.v1");
+
+  logger.info("Certificate pins requested", { platform, appVersion, legacy: wantsLegacyFormat });
+
+  const now = new Date();
+  const validPins = CURRENT_PINS.filter(pin => new Date(pin.expires) > now);
+
+  const gracePeriodMs = PIN_CONFIG.gracePeriodDays * 24 * 60 * 60 * 1000;
+  const inGracePeriod = CURRENT_PINS.some(pin => {
+    const expires = new Date(pin.expires);
+    return now >= new Date(expires.getTime() - gracePeriodMs) && now < expires;
+  });
+
+  const allPins = inGracePeriod ? [...validPins, ...UPCOMING_PINS] : validPins;
+  allPins.sort((a, b) => a.priority - b.priority);
+
+  const earliestExpiry = allPins.reduce((earliest, pin) => {
+    const expires = new Date(pin.expires);
+    return !earliest || expires < earliest ? expires : earliest;
+  }, null as Date | null);
+
+  const validUntil = earliestExpiry?.toISOString().split("T")[0] || "2025-12-31";
+
+  const minVersion = PIN_CONFIG.minAppVersions[platform] || PIN_CONFIG.minAppVersion;
+  if (isVersionLessThan(appVersion, minVersion)) {
+    logger.warn("App version below minimum", { platform, appVersion, minVersion });
+  }
+
+  const rotationWarning = calculateRotationWarning(allPins);
+
+  const response: PinResponse = {
+    pins: allPins,
+    minAppVersion: PIN_CONFIG.minAppVersion,
+    gracePeriodDays: PIN_CONFIG.gracePeriodDays,
+    refreshIntervalHours: PIN_CONFIG.refreshIntervalHours,
+    lastUpdated: new Date().toISOString(),
+    nextRotation: PIN_CONFIG.nextRotation,
+    platformPins: wantsLegacyFormat ? undefined : generatePlatformPins(allPins, validUntil),
+    minAppVersions: wantsLegacyFormat ? undefined : PIN_CONFIG.minAppVersions,
+    validUntil: wantsLegacyFormat ? undefined : validUntil,
+    rotationWarning: wantsLegacyFormat ? undefined : rotationWarning,
+  };
+
+  const responseHeaders: Record<string, string> = {
+    ...corsHeaders,
+    "Content-Type": "application/json",
+    "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400",
+    "ETag": `"${hashPins(allPins)}"`,
+    "X-Platform-Detected": platform,
+    "X-Pins-Valid-Until": validUntil,
+  };
+
+  if (rotationWarning.active) {
+    responseHeaders["X-Pin-Rotation-Warning"] = rotationWarning.severity;
+    if (rotationWarning.daysUntilExpiry !== undefined) {
+      responseHeaders["X-Pin-Days-Until-Expiry"] = String(rotationWarning.daysUntilExpiry);
+    }
+  }
+
+  return new Response(JSON.stringify(response), { status: 200, headers: responseHeaders });
+}
+
+// =============================================================================
 // Route Handlers
 // =============================================================================
 
 async function handleIOSAttestation(
   body: z.infer<typeof iosAttestationSchema>,
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   requestId: string,
   corsHeaders: Record<string, string>
 ): Promise<Response> {
@@ -889,7 +1161,10 @@ async function handleIOSAttestation(
 
   if (body.type === "attestation") {
     if (!body.keyId || !body.attestation || !body.challenge) {
-      return errorResponse("Missing required App Attest fields: keyId, attestation, challenge", corsHeaders, 400, requestId);
+      return new Response(
+        JSON.stringify({ success: false, error: "Missing required App Attest fields: keyId, attestation, challenge", requestId }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const result = await verifyAppAttest(body.keyId, body.attestation, body.challenge, bundleId);
@@ -906,39 +1181,51 @@ async function handleIOSAttestation(
       "ios"
     );
 
-    return jsonResponse({
-      verified: result.verified,
-      trustLevel,
-      message: result.message,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      riskScore: result.riskScore,
-      deviceId,
-      platform: "ios",
-    } as AttestationResponse, corsHeaders);
+    return new Response(
+      JSON.stringify({
+        verified: result.verified,
+        trustLevel,
+        message: result.message,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        riskScore: result.riskScore,
+        deviceId,
+        platform: "ios",
+      } as AttestationResponse),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
   if (body.type === "assertion") {
     if (!body.keyId || !body.assertion || !body.clientDataHash) {
-      return errorResponse("Missing required assertion fields: keyId, assertion, clientDataHash", corsHeaders, 400, requestId);
+      return new Response(
+        JSON.stringify({ success: false, error: "Missing required assertion fields: keyId, assertion, clientDataHash", requestId }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const deviceRecord = await getDeviceRecord(supabase, body.keyId);
     if (!deviceRecord) {
-      return jsonResponse({
-        verified: false,
-        trustLevel: "unknown",
-        message: "Device not registered. Please perform attestation first.",
-        platform: "ios",
-      } as AttestationResponse, corsHeaders);
+      return new Response(
+        JSON.stringify({
+          verified: false,
+          trustLevel: "unknown",
+          message: "Device not registered. Please perform attestation first.",
+          platform: "ios",
+        } as AttestationResponse),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     if (!deviceRecord.public_key) {
-      return jsonResponse({
-        verified: false,
-        trustLevel: "unknown",
-        message: "Device public key not available",
-        platform: "ios",
-      } as AttestationResponse, corsHeaders);
+      return new Response(
+        JSON.stringify({
+          verified: false,
+          trustLevel: "unknown",
+          message: "Device public key not available",
+          platform: "ios",
+        } as AttestationResponse),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const result = await verifyAssertion(
@@ -962,20 +1249,26 @@ async function handleIOSAttestation(
       "ios"
     );
 
-    return jsonResponse({
-      verified: result.verified,
-      trustLevel,
-      message: result.message,
-      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-      riskScore: result.riskScore,
-      deviceId,
-      platform: "ios",
-    } as AttestationResponse, corsHeaders);
+    return new Response(
+      JSON.stringify({
+        verified: result.verified,
+        trustLevel,
+        message: result.message,
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+        riskScore: result.riskScore,
+        deviceId,
+        platform: "ios",
+      } as AttestationResponse),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
   if (body.type === "device_check") {
     if (!body.token) {
-      return errorResponse("Missing DeviceCheck token", corsHeaders, 400, requestId);
+      return new Response(
+        JSON.stringify({ success: false, error: "Missing DeviceCheck token", requestId }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const result = await verifyDeviceCheck(body.token);
@@ -997,23 +1290,29 @@ async function handleIOSAttestation(
       "ios"
     );
 
-    return jsonResponse({
-      verified: result.verified,
-      trustLevel: result.trustLevel,
-      message: result.message,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      riskScore: result.riskScore,
-      deviceId,
-      platform: "ios",
-    } as AttestationResponse, corsHeaders);
+    return new Response(
+      JSON.stringify({
+        verified: result.verified,
+        trustLevel: result.trustLevel,
+        message: result.message,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        riskScore: result.riskScore,
+        deviceId,
+        platform: "ios",
+      } as AttestationResponse),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
-  return errorResponse(`Unknown iOS attestation type: ${body.type}`, corsHeaders, 400, requestId);
+  return new Response(
+    JSON.stringify({ success: false, error: `Unknown iOS attestation type: ${body.type}`, requestId }),
+    { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
 }
 
 async function handleAndroidAttestation(
   body: z.infer<typeof androidAttestationSchema>,
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   requestId: string,
   corsHeaders: Record<string, string>
 ): Promise<Response> {
@@ -1035,16 +1334,19 @@ async function handleAndroidAttestation(
       result.verdicts
     );
 
-    return jsonResponse({
-      verified: result.verified,
-      trustLevel: result.trustLevel,
-      message: result.message,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      riskScore: result.riskScore,
-      deviceId,
-      platform: "android",
-      verdicts: result.verdicts,
-    } as AttestationResponse, corsHeaders);
+    return new Response(
+      JSON.stringify({
+        verified: result.verified,
+        trustLevel: result.trustLevel,
+        message: result.message,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        riskScore: result.riskScore,
+        deviceId,
+        platform: "android",
+        verdicts: result.verdicts,
+      } as AttestationResponse),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
   if (body.type === "safetynet") {
@@ -1062,100 +1364,125 @@ async function handleAndroidAttestation(
       "android"
     );
 
-    return jsonResponse({
-      verified: result.verified,
-      trustLevel: result.trustLevel,
-      message: result.message,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      riskScore: result.riskScore,
-      deviceId,
-      platform: "android",
-    } as AttestationResponse, corsHeaders);
+    return new Response(
+      JSON.stringify({
+        verified: result.verified,
+        trustLevel: result.trustLevel,
+        message: result.message,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        riskScore: result.riskScore,
+        deviceId,
+        platform: "android",
+      } as AttestationResponse),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
-  return errorResponse(`Unknown Android attestation type: ${body.type}`, corsHeaders, 400, requestId);
+  return new Response(
+    JSON.stringify({ success: false, error: `Unknown Android attestation type: ${body.type}`, requestId }),
+    { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
 }
 
 // =============================================================================
-// Main Router
+// GET / POST Route Handlers (for createAPIHandler)
 // =============================================================================
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return handleCorsPrelight(req);
+async function handleGet(ctx: HandlerContext): Promise<Response> {
+  const route = parseRoute(new URL(ctx.request.url), ctx.request.method, SERVICE);
+
+  // Health check
+  if (route.resource === "health" || route.resource === "") {
+    return ok({
+      status: "healthy",
+      version: VERSION,
+      service: SERVICE,
+      timestamp: new Date().toISOString(),
+      platforms: ["ios", "android"],
+      types: {
+        ios: ["attestation", "assertion", "device_check"],
+        android: ["integrity", "safetynet"],
+      },
+      routes: ["health", "certificate-pins", "ios", "android"],
+    }, ctx);
   }
 
-  const requestId = crypto.randomUUID();
-  const corsHeaders = getCorsHeaders(req);
-  const url = new URL(req.url);
-  const path = url.pathname.replace(/^\/api-v1-attestation\/?/, "").replace(/^\/+/, "");
-
-  try {
-    // Health check
-    if ((req.method === "GET" && (path === "health" || path === "")) || (req.method === "GET" && !path)) {
-      return jsonResponse({
-        status: "healthy",
-        version: VERSION,
-        service: SERVICE,
-        timestamp: new Date().toISOString(),
-        platforms: ["ios", "android"],
-        types: {
-          ios: ["attestation", "assertion", "device_check"],
-          android: ["integrity", "safetynet"],
-        },
-      }, corsHeaders);
-    }
-
-    // POST only for attestation
-    if (req.method !== "POST") {
-      return errorResponse("Method not allowed", corsHeaders, 405, requestId);
-    }
-
-    const body = await req.json().catch(() => ({}));
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-
-    // Route to platform-specific handler
-    if (path === "ios") {
-      const parsed = iosAttestationSchema.safeParse(body);
-      if (!parsed.success) {
-        return errorResponse(parsed.error.errors.map(e => e.message).join(", "), corsHeaders, 400, requestId);
-      }
-      return handleIOSAttestation(parsed.data, supabase, requestId, corsHeaders);
-    }
-
-    if (path === "android") {
-      const parsed = androidAttestationSchema.safeParse(body);
-      if (!parsed.success) {
-        return errorResponse(parsed.error.errors.map(e => e.message).join(", "), corsHeaders, 400, requestId);
-      }
-      return handleAndroidAttestation(parsed.data, supabase, requestId, corsHeaders);
-    }
-
-    // Auto-detect platform from type
-    if (path === "" || path === "/") {
-      const iosParsed = iosAttestationSchema.safeParse(body);
-      if (iosParsed.success) {
-        return handleIOSAttestation(iosParsed.data, supabase, requestId, corsHeaders);
-      }
-
-      const androidParsed = androidAttestationSchema.safeParse(body);
-      if (androidParsed.success) {
-        return handleAndroidAttestation(androidParsed.data, supabase, requestId, corsHeaders);
-      }
-
-      return errorResponse("Invalid attestation request. Provide iOS type (attestation/assertion/device_check) or Android type (integrity/safetynet)", corsHeaders, 400, requestId);
-    }
-
-    return errorResponse("Not found", corsHeaders, 404, requestId);
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    logger.error("Attestation request failed", err, { requestId, path });
-
-    return jsonResponse({
-      verified: false,
-      trustLevel: "unknown",
-      message: "Internal server error",
-      requestId,
-    } as AttestationResponse, corsHeaders, 500);
+  // Certificate pins
+  if (route.resource === "certificate-pins") {
+    return handleCertificatePins(ctx.request, ctx.corsHeaders);
   }
+
+  throw new AppError("Not found", "NOT_FOUND", 404);
+}
+
+async function handlePost(ctx: HandlerContext): Promise<Response> {
+  const route = parseRoute(new URL(ctx.request.url), ctx.request.method, SERVICE);
+  const requestId = ctx.ctx.requestId;
+  const corsHeaders = ctx.corsHeaders;
+
+  const body = await ctx.request.json().catch(() => ({}));
+  const supabase = getSupabaseClient();
+
+  // Route to platform-specific handler
+  if (route.resource === "ios") {
+    const parsed = iosAttestationSchema.safeParse(body);
+    if (!parsed.success) {
+      return new Response(
+        JSON.stringify({ success: false, error: parsed.error.errors.map(e => e.message).join(", "), requestId }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    return handleIOSAttestation(parsed.data, supabase, requestId, corsHeaders);
+  }
+
+  if (route.resource === "android") {
+    const parsed = androidAttestationSchema.safeParse(body);
+    if (!parsed.success) {
+      return new Response(
+        JSON.stringify({ success: false, error: parsed.error.errors.map(e => e.message).join(", "), requestId }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    return handleAndroidAttestation(parsed.data, supabase, requestId, corsHeaders);
+  }
+
+  // Auto-detect platform from type
+  if (route.resource === "") {
+    const iosParsed = iosAttestationSchema.safeParse(body);
+    if (iosParsed.success) {
+      return handleIOSAttestation(iosParsed.data, supabase, requestId, corsHeaders);
+    }
+
+    const androidParsed = androidAttestationSchema.safeParse(body);
+    if (androidParsed.success) {
+      return handleAndroidAttestation(androidParsed.data, supabase, requestId, corsHeaders);
+    }
+
+    return new Response(
+      JSON.stringify({ success: false, error: "Invalid attestation request. Provide iOS type (attestation/assertion/device_check) or Android type (integrity/safetynet)", requestId }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  throw new AppError("Not found", "NOT_FOUND", 404);
+}
+
+// =============================================================================
+// API Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: SERVICE,
+  version: VERSION,
+  requireAuth: false,
+  csrf: false,
+  rateLimit: {
+    limit: 30,
+    windowMs: 60_000,
+    keyBy: "ip",
+  },
+  routes: {
+    GET: { handler: handleGet },
+    POST: { handler: handlePost },
+  },
 });

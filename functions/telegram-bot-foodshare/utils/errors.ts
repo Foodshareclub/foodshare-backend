@@ -2,6 +2,8 @@
  * Custom error classes and error handling utilities
  */
 
+import { logger } from "../../_shared/logger.ts";
+
 export class BotError extends Error {
   constructor(
     message: string,
@@ -65,15 +67,11 @@ export function logError(error: unknown, context: Record<string, unknown> = {}) 
   delete sanitizedContext.api_key;
   delete sanitizedContext.verification_code;
 
-  console.error(
-    JSON.stringify({
-      timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : String(error),
-      errorType: error instanceof Error ? error.name : "Unknown",
-      stack: error instanceof Error ? error.stack : undefined,
-      context: sanitizedContext,
-    })
-  );
+  logger.error(error instanceof Error ? error.message : String(error), {
+    errorType: error instanceof Error ? error.name : "Unknown",
+    stack: error instanceof Error ? error.stack : undefined,
+    context: sanitizedContext,
+  });
 }
 
 /**
@@ -153,15 +151,12 @@ export async function withRetry<T>(
       // Exponential backoff with jitter
       const delay = Math.min(baseDelayMs * Math.pow(2, attempt) + Math.random() * 100, maxDelayMs);
 
-      console.log(
-        JSON.stringify({
-          level: "warn",
-          message: `Retry attempt ${attempt + 1}/${maxRetries}`,
-          error: error instanceof Error ? error.message : String(error),
-          delayMs: Math.round(delay),
-          timestamp: new Date().toISOString(),
-        })
-      );
+      logger.warn("Retry attempt", {
+        attempt: attempt + 1,
+        maxRetries,
+        error: error instanceof Error ? error.message : String(error),
+        delayMs: Math.round(delay),
+      });
 
       await new Promise((resolve) => setTimeout(resolve, delay));
     }

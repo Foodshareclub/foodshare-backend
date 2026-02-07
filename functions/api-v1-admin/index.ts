@@ -27,9 +27,11 @@
  * @version 1.0.0
  */
 
-import { getCorsHeaders, handleCorsPrelight } from "../_shared/cors.ts";
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { getSupabaseClient } from "../_shared/supabase.ts";
 import { logger } from "../_shared/logger.ts";
+import { AppError, AuthenticationError, AuthorizationError } from "../_shared/errors.ts";
+import { parseRoute } from "../_shared/routing.ts";
 import { handleListingsRoute } from "./lib/listings.ts";
 import { handleUsersRoute } from "./lib/users.ts";
 
@@ -90,150 +92,91 @@ async function authenticateAdmin(
 }
 
 // =============================================================================
-// Response Helpers
+// Route Handlers
 // =============================================================================
 
-function jsonResponse(
-  data: unknown,
-  corsHeaders: Record<string, string>,
-  status = 200
-): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+async function handleRequest(ctx: HandlerContext): Promise<Response> {
+  const url = new URL(ctx.request.url);
+  const route = parseRoute(url, ctx.request.method, SERVICE);
+  const requestId = ctx.ctx.requestId;
+
+  // Health check (no auth required)
+  if (route.resource === "health" || route.resource === "") {
+    return ok({
+      status: "healthy",
+      version: VERSION,
+      service: SERVICE,
+      timestamp: new Date().toISOString(),
+    }, ctx);
+  }
+
+  // Authenticate admin
+  const supabase = getSupabaseClient();
+  const auth = await authenticateAdmin(ctx.request, supabase);
+
+  if (!auth.authenticated) {
+    logger.warn("Admin auth failed", {
+      requestId,
+      path: url.pathname,
+      error: auth.error,
+    });
+    throw new AuthenticationError(auth.error || "Unauthorized");
+  }
+
+  const context: AdminContext = {
+    supabase,
+    requestId,
+    adminId: auth.adminId!,
+    corsHeaders: ctx.corsHeaders,
+  };
+
+  logger.info("Admin request", {
+    requestId,
+    path: url.pathname,
+    method: ctx.request.method,
+    adminId: auth.adminId,
   });
-}
 
-function errorResponse(
-  error: string,
-  corsHeaders: Record<string, string>,
-  status = 400
-): Response {
-  return jsonResponse({ success: false, error }, corsHeaders, status);
-}
-
-// =============================================================================
-// Route Parser
-// =============================================================================
-
-interface ParsedRoute {
-  resource: string;
-  segments: string[];
-  method: string;
-}
-
-function parseRoute(url: URL, method: string): ParsedRoute {
-  const path = url.pathname
-    .replace(/^\/api-v1-admin\/?/, "")
-    .replace(/^\/+/, "");
-
-  const segments = path.split("/").filter(Boolean);
-  const resource = segments[0] || "";
-
-  return { resource, segments, method };
-}
-
-// =============================================================================
-// Main Router
-// =============================================================================
-
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return handleCorsPrelight(req);
+  // Route to appropriate handler
+  let body: unknown = null;
+  if (["POST", "PUT", "PATCH"].includes(ctx.request.method)) {
+    body = ctx.body;
   }
 
-  const startTime = performance.now();
-  const requestId = crypto.randomUUID();
-  const corsHeaders = getCorsHeaders(req);
+  const query = Object.fromEntries(url.searchParams);
 
-  const url = new URL(req.url);
-  const route = parseRoute(url, req.method);
+  switch (route.resource) {
+    case "users":
+      return await handleUsersRoute(route.segments.slice(1), ctx.request.method, body, query, context);
 
-  try {
-    // Health check (no auth required)
-    if (route.resource === "health" || route.resource === "") {
-      return jsonResponse({
-        status: "healthy",
-        version: VERSION,
-        service: SERVICE,
-        timestamp: new Date().toISOString(),
-      }, corsHeaders);
-    }
+    case "listings":
+      return await handleListingsRoute(route.segments.slice(1), ctx.request.method, body, context);
 
-    // Authenticate admin
-    const supabase = getSupabaseClient();
-    const auth = await authenticateAdmin(req, supabase);
-
-    if (!auth.authenticated) {
-      logger.warn("Admin auth failed", {
-        requestId,
-        path: url.pathname,
-        error: auth.error,
+    default:
+      throw new AppError("Not found", "NOT_FOUND", 404, {
+        details: { availableResources: ["users", "listings", "health"] },
       });
-      return errorResponse(auth.error || "Unauthorized", corsHeaders, 401);
-    }
-
-    const context: AdminContext = {
-      supabase,
-      requestId,
-      adminId: auth.adminId!,
-      corsHeaders,
-    };
-
-    logger.info("Admin request", {
-      requestId,
-      path: url.pathname,
-      method: req.method,
-      adminId: auth.adminId,
-    });
-
-    // Route to appropriate handler
-    let body: unknown = null;
-    if (["POST", "PUT", "PATCH"].includes(req.method)) {
-      body = await req.json().catch(() => ({}));
-    }
-
-    const query = Object.fromEntries(url.searchParams);
-
-    switch (route.resource) {
-      case "users":
-        return await handleUsersRoute(route.segments.slice(1), req.method, body, query, context);
-
-      case "listings":
-        return await handleListingsRoute(route.segments.slice(1), req.method, body, context);
-
-      default:
-        return jsonResponse({
-          success: false,
-          error: "Not found",
-          availableResources: ["users", "listings", "health"],
-        }, corsHeaders, 404);
-    }
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    logger.error("Admin request failed", err, {
-      requestId,
-      path: url.pathname,
-    });
-
-    const status = err.name === "ForbiddenError" ? 403
-      : err.name === "NotFoundError" ? 404
-      : err.name === "ValidationError" ? 400
-      : 500;
-
-    return jsonResponse({
-      success: false,
-      error: err.message,
-      requestId,
-    }, corsHeaders, status);
-  } finally {
-    const duration = performance.now() - startTime;
-    if (duration > 3000) {
-      logger.warn("Slow admin request", {
-        requestId,
-        path: url.pathname,
-        durationMs: Math.round(duration),
-      });
-    }
   }
+}
+
+// =============================================================================
+// API Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: SERVICE,
+  version: VERSION,
+  requireAuth: false, // Admin auth handled per-route above
+  csrf: true,
+  rateLimit: {
+    limit: 30,
+    windowMs: 60_000,
+    keyBy: "user",
+  },
+  routes: {
+    GET: { handler: handleRequest },
+    POST: { handler: handleRequest },
+    PUT: { handler: handleRequest },
+    DELETE: { handler: handleRequest },
+  },
 });

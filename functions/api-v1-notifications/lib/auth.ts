@@ -11,7 +11,8 @@
  * @module api-v1-notifications/auth
  */
 
-import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getSupabaseClient } from "../../../_shared/supabase.ts";
 import type { AuthMode, AuthResult } from "./types.ts";
 import { logger } from "../../_shared/logger.ts";
 
@@ -29,19 +30,10 @@ const WEBHOOK_SECRETS: Record<string, string> = {
   apns: Deno.env.get("APNS_WEBHOOK_SECRET") || "",
 };
 
-let serviceRoleClient: SupabaseClient | null = null;
-
 /**
- * Get or create service role Supabase client (singleton)
+ * Get service role Supabase client (shared singleton)
  */
-export function getServiceClient(): SupabaseClient {
-  if (!serviceRoleClient) {
-    serviceRoleClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-  }
-  return serviceRoleClient;
-}
+export const getServiceClient = getSupabaseClient;
 
 /**
  * Authenticate request based on mode

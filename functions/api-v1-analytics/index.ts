@@ -17,7 +17,7 @@ import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { ServerError } from "../_shared/errors.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
+import { getSupabaseClient } from "../_shared/supabase.ts";
 
 // =============================================================================
 // Configuration
@@ -44,9 +44,7 @@ type SyncRequest = z.infer<typeof syncSchema>;
 // =============================================================================
 
 async function getMotherDuckToken(): Promise<string> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const supabase = createClient(supabaseUrl, supabaseKey);
+  const supabase = getSupabaseClient();
 
   const { data, error } = await supabase.rpc("get_vault_secret", {
     secret_name: "MOTHERDUCK_TOKEN",
@@ -89,10 +87,7 @@ function escapeValue(s: unknown): string {
 }
 
 function getServiceRoleClient() {
-  return createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
+  return getSupabaseClient();
 }
 
 // =============================================================================

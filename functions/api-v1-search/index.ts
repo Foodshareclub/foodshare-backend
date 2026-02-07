@@ -1273,7 +1273,7 @@ function handleStats(): Record<string, unknown> {
 // Router
 // =============================================================================
 
-Deno.serve(createAPIHandler({
+export default createAPIHandler({
   service: "api-v1-search",
   version: VERSION,
   requireAuth: false,
@@ -1286,4 +1286,4 @@ Deno.serve(createAPIHandler({
       handler: handlePost,
     },
   },
-}));
+});

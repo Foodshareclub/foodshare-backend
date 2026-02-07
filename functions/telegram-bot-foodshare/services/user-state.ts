@@ -3,6 +3,7 @@
  * Prevents stuck states by auto-expiring after timeout
  */
 
+import { logger } from "../../_shared/logger.ts";
 import type { UserState } from "../types/index.ts";
 import { getSupabaseClient } from "./supabase.ts";
 
@@ -46,7 +47,7 @@ export async function getUserState(userId: number): Promise<UserState | null> {
       const expiresAt = new Date(data.expires_at);
       if (expiresAt < new Date()) {
         // State expired - clean it up
-        console.log(`State expired for user ${userId}, cleaning up`);
+        logger.info("State expired for user, cleaning up", { userId });
         await deleteUserState(userId);
         return null;
       }
@@ -54,7 +55,7 @@ export async function getUserState(userId: number): Promise<UserState | null> {
 
     return data.state;
   } catch (error) {
-    console.error("Error getting user state:", error);
+    logger.error("Error getting user state", { error: String(error) });
     return null;
   }
 }
@@ -67,7 +68,7 @@ async function deleteUserState(userId: number): Promise<void> {
   try {
     await supabase.from("telegram_user_states").delete().eq("user_id", userId);
   } catch (error) {
-    console.error("Error deleting user state:", error);
+    logger.error("Error deleting user state", { error: String(error) });
   }
 }
 
@@ -92,7 +93,7 @@ export async function setUserState(userId: number, state: UserState | null): Pro
       });
     }
   } catch (error) {
-    console.error("Error setting user state:", error);
+    logger.error("Error setting user state", { error: String(error) });
     throw error; // Re-throw to let caller handle
   }
 }
@@ -111,17 +112,17 @@ export async function cleanupExpiredStates(): Promise<number> {
       .select("user_id");
 
     if (error) {
-      console.error("Error cleaning up expired states:", error);
+      logger.error("Error cleaning up expired states", { error: String(error) });
       return 0;
     }
 
     const count = data?.length || 0;
     if (count > 0) {
-      console.log(`Cleaned up ${count} expired user states`);
+      logger.info("Cleaned up expired user states", { count });
     }
     return count;
   } catch (error) {
-    console.error("Error in cleanupExpiredStates:", error);
+    logger.error("Error in cleanupExpiredStates", { error: String(error) });
     return 0;
   }
 }

@@ -14,7 +14,7 @@
  * }
  */
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 import { getCorsHeaders } from "../../_shared/cors.ts";
 
 interface GetTranslationsRequest {
@@ -141,10 +141,7 @@ export default async function getTranslationsHandler(req: Request): Promise<Resp
     const limitedIds = contentIds.slice(0, maxBatchSize);
 
     // Initialize Supabase client
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabase = getSupabaseClient();
 
     // Results tracking
     const translations: Record<string, TranslationResult> = {};

@@ -3,6 +3,7 @@
  * Uses phone number as identifier instead of user ID
  */
 
+import { logger } from "../../_shared/logger.ts";
 import type { UserState } from "../types/index.ts";
 import { getSupabaseClient } from "./supabase.ts";
 
@@ -43,7 +44,7 @@ export async function getUserState(phoneNumber: string): Promise<UserState | nul
     if (data.expires_at) {
       const expiresAt = new Date(data.expires_at);
       if (expiresAt < new Date()) {
-        console.log(`State expired for phone ${phoneNumber.substring(0, 4)}***, cleaning up`);
+        logger.info("State expired, cleaning up", { phone: phoneNumber.substring(0, 4) + "***" });
         await deleteUserState(phoneNumber);
         return null;
       }
@@ -51,7 +52,7 @@ export async function getUserState(phoneNumber: string): Promise<UserState | nul
 
     return data.state;
   } catch (error) {
-    console.error("Error getting user state:", error);
+    logger.error("Error getting user state", { error: String(error) });
     return null;
   }
 }
@@ -64,7 +65,7 @@ async function deleteUserState(phoneNumber: string): Promise<void> {
   try {
     await supabase.from("whatsapp_user_states").delete().eq("phone_number", phoneNumber);
   } catch (error) {
-    console.error("Error deleting user state:", error);
+    logger.error("Error deleting user state", { error: String(error) });
   }
 }
 
@@ -89,7 +90,7 @@ export async function setUserState(phoneNumber: string, state: UserState | null)
       });
     }
   } catch (error) {
-    console.error("Error setting user state:", error);
+    logger.error("Error setting user state", { error: String(error) });
     throw error;
   }
 }
@@ -108,17 +109,17 @@ export async function cleanupExpiredStates(): Promise<number> {
       .select("phone_number");
 
     if (error) {
-      console.error("Error cleaning up expired states:", error);
+      logger.error("Error cleaning up expired states", { error: String(error) });
       return 0;
     }
 
     const count = data?.length || 0;
     if (count > 0) {
-      console.log(`Cleaned up ${count} expired WhatsApp user states`);
+      logger.info("Cleaned up expired WhatsApp user states", { count });
     }
     return count;
   } catch (error) {
-    console.error("Error in cleanupExpiredStates:", error);
+    logger.error("Error in cleanupExpiredStates", { error: String(error) });
     return 0;
   }
 }

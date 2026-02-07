@@ -24,8 +24,9 @@
  * - Optional auto-apply to database
  */
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 import { getCorsHeaders } from "../../_shared/cors.ts";
+import { logger } from "../../_shared/logger.ts";
 import { llmTranslationService } from "../services/llm-translation.ts";
 
 const VERSION = "2.0.0";
@@ -35,14 +36,6 @@ const SUPPORTED_LOCALES = [
   "cs", "de", "es", "fr", "pt", "ru", "uk", "zh", "hi", "ar",
   "it", "pl", "nl", "ja", "ko", "tr", "sv", "vi", "id", "th"
 ];
-
-function createSupabaseClient() {
-  return createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    { auth: { persistSession: false, autoRefreshToken: false } }
-  );
-}
 
 /**
  * Translate using self-hosted LLM
@@ -69,10 +62,10 @@ async function translateWithLLM(
       } else {
         // Keep original if translation failed
         translations[key] = englishValue;
-        console.warn(`Translation failed for key "${key}", keeping original`);
+        logger.warn("Translation failed for key, keeping original", { key });
       }
     } catch (error) {
-      console.error(`Translation error for key "${key}":`, error);
+      logger.error("Translation error for key", { key, error });
       translations[key] = englishValue;
     }
   }
@@ -233,7 +226,7 @@ export default async function uiBatchTranslateHandler(req: Request): Promise<Res
     });
   }
 
-  const supabase = createSupabaseClient();
+  const supabase = getSupabaseClient();
 
   try {
     const body = await req.json();

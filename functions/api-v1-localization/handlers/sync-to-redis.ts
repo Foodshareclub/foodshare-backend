@@ -10,6 +10,7 @@
  */
 
 import { getCorsHeaders } from "../../_shared/cors.ts";
+import { logger } from "../../_shared/logger.ts";
 import { userLocaleCache } from "../services/translation-cache.ts";
 
 interface SyncToRedisRequest {
@@ -82,7 +83,7 @@ export default async function syncToRedisHandler(req: Request): Promise<Response
 
     const responseTimeMs = Date.now() - startTime;
 
-    console.log("Locale synced to Redis", {
+    logger.info("Locale synced to Redis", {
       userId,
       locale,
       responseTimeMs,
@@ -103,7 +104,7 @@ export default async function syncToRedisHandler(req: Request): Promise<Response
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Sync to Redis error:", error);
+    logger.error("Sync to Redis error", { error });
 
     return new Response(JSON.stringify({
       success: false,

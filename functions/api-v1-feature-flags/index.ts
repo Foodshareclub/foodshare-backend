@@ -20,7 +20,8 @@
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
-import { NotFoundError, ServerError, UnauthorizedError } from "../_shared/errors.ts";
+import { NotFoundError, ServerError, AuthenticationError } from "../_shared/errors.ts";
+import { cache, CACHE_KEYS, CACHE_TTLS } from "../_shared/cache.ts";
 
 // =============================================================================
 // Configuration
@@ -71,6 +72,29 @@ async function handleGetFeatureFlags(ctx: HandlerContext<unknown, FlagsQuery>): 
     requestId: requestCtx?.requestId,
   });
 
+  // Cache key: user-specific or global
+  const cacheKey = userId
+    ? CACHE_KEYS.userFeatureFlags(userId)
+    : CACHE_KEYS.featureFlags();
+
+  const cached = cache.get<{
+    flags: Record<string, { enabled: boolean; config: Record<string, unknown> }>;
+    context: { platform: string; appVersion: string; userHash: number };
+    meta: { timestamp: string; refreshAfter: number; cacheTTL: number };
+  }>(cacheKey);
+
+  if (cached) {
+    logger.debug("Feature flags cache hit", { cacheKey });
+    return ok(
+      { flags: cached.flags, context: cached.context },
+      ctx,
+      {
+        cacheTTL: cached.meta?.cacheTTL || 60,
+        uiHints: { refreshAfter: cached.meta?.refreshAfter || 300 },
+      },
+    );
+  }
+
   const { data, error } = await supabase.rpc("get_user_feature_flags", {
     p_user_id: userId || null,
     p_platform: platform,
@@ -91,6 +115,9 @@ async function handleGetFeatureFlags(ctx: HandlerContext<unknown, FlagsQuery>): 
     context: { platform: string; appVersion: string; userHash: number };
     meta: { timestamp: string; refreshAfter: number; cacheTTL: number };
   };
+
+  // Cache the response for 5 minutes
+  cache.set(cacheKey, dbResponse, CACHE_TTLS.featureFlags);
 
   return ok(
     {
@@ -118,7 +145,7 @@ async function handleExperimentVariant(
   const { supabase, userId, ctx: requestCtx } = ctx;
 
   if (!userId) {
-    throw new UnauthorizedError("Authentication required for experiments");
+    throw new AuthenticationError("Authentication required for experiments");
   }
 
   logger.info("Getting experiment variant", {

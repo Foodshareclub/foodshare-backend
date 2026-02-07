@@ -13,8 +13,9 @@
  * - Batch support
  */
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 import { getCorsHeaders } from "../../_shared/cors.ts";
+import { logger } from "../../_shared/logger.ts";
 import { llmTranslationService } from "../services/llm-translation.ts";
 
 // In-memory cache (L1)
@@ -126,10 +127,7 @@ export default async function translateContentHandler(req: Request): Promise<Res
     }
 
     // L2: Check database cache
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabase = getSupabaseClient();
 
     const { data: dbResult, error: dbError } = await supabase.rpc("get_or_translate", {
       p_source_text: text,
@@ -193,7 +191,7 @@ export default async function translateContentHandler(req: Request): Promise<Res
       // Store in memory cache
       updateMemoryCache(cacheKey, llmResult.text, llmResult.quality);
     } else {
-      console.warn(`Translation quality too low (${llmResult.quality.toFixed(2)}), service: ${llmResult.service}, not caching`);
+      logger.warn("Translation quality too low, not caching", { quality: llmResult.quality.toFixed(2), service: llmResult.service });
     }
 
     // Track analytics (fire and forget)
@@ -207,7 +205,7 @@ export default async function translateContentHandler(req: Request): Promise<Res
           tokens_used: llmResult.tokensUsed
         });
       } catch (err) {
-        console.warn("Failed to track analytics:", (err as Error).message);
+        logger.warn("Failed to track analytics", { error: (err as Error).message });
       }
     })();
 
@@ -228,7 +226,7 @@ export default async function translateContentHandler(req: Request): Promise<Res
     });
 
   } catch (error) {
-    console.error("Translation error:", (error as Error).message);
+    logger.error("Translation error", { error: (error as Error).message });
     return new Response(JSON.stringify({
       success: false,
       error: (error as Error).message

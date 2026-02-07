@@ -2,7 +2,7 @@
  * Supabase client service with connection pooling and timeout
  */
 
-import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@^2.47.10";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../config/index.ts";
 
 const SUPABASE_TIMEOUT_MS = 8000; // 8 seconds

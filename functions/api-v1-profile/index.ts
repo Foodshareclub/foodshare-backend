@@ -5,10 +5,11 @@
  * Supports Web, iOS, and Android clients with consistent interface.
  *
  * Endpoints:
- * - GET    /api-v1-profile              - Get current user's profile
- * - PUT    /api-v1-profile              - Update profile
- * - POST   /api-v1-profile?action=avatar - Upload avatar
- * - DELETE /api-v1-profile?action=avatar - Delete avatar
+ * - GET    /api-v1-profile                - Get current user's profile
+ * - PUT    /api-v1-profile                - Update profile
+ * - POST   /api-v1-profile?action=avatar  - Upload avatar
+ * - DELETE /api-v1-profile?action=avatar  - Delete avatar
+ * - DELETE /api-v1-profile?action=account - Delete account (Apple compliance)
  * - PUT    /api-v1-profile?action=address - Update address
  * - GET    /api-v1-profile?action=address - Get address
  *
@@ -29,7 +30,11 @@ import {
 } from "../_shared/api-handler.ts";
 import { NotFoundError, ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
+import { cache, CACHE_KEYS, invalidateProfileCache } from "../_shared/cache.ts";
 import { PROFILE, sanitizeHtml } from "../_shared/validation-rules.ts";
+import { aggregateCounts, aggregateStats, aggregateImpact } from "../_shared/aggregation.ts";
+
+const VERSION = "1.0.0";
 
 // =============================================================================
 // Schemas (using shared validation constants from Swift FoodshareCore)
@@ -64,7 +69,8 @@ const uploadAvatarSchema = z.object({
 });
 
 const querySchema = z.object({
-  action: z.enum(["avatar", "address"]).optional(),
+  action: z.enum(["avatar", "address", "dashboard", "account", "session"]).optional(),
+  includeListings: z.string().transform(v => v === "true").optional(),
 });
 
 type UpdateProfileBody = z.infer<typeof updateProfileSchema>;
@@ -84,6 +90,13 @@ async function getProfile(ctx: HandlerContext<unknown, QueryParams>): Promise<Re
 
   if (!userId) {
     throw new ValidationError("Authentication required");
+  }
+
+  // Check cache first (2-min TTL)
+  const cacheKey = CACHE_KEYS.profile(userId);
+  const cached = cache.get<Record<string, unknown>>(cacheKey);
+  if (cached) {
+    return ok(transformProfile(cached), ctx);
   }
 
   const { data, error } = await supabase
@@ -110,6 +123,7 @@ async function getProfile(ctx: HandlerContext<unknown, QueryParams>): Promise<Re
     throw new NotFoundError("Profile", userId);
   }
 
+  cache.set(cacheKey, data, 2 * 60 * 1000); // 2-min TTL
   return ok(transformProfile(data), ctx);
 }
 
@@ -194,6 +208,8 @@ async function updateProfile(ctx: HandlerContext<UpdateProfileBody>): Promise<Re
     throw error;
   }
 
+  // Invalidate profile cache on mutation
+  invalidateProfileCache(userId);
   logger.info("Profile updated", { userId });
 
   return ok(transformProfile(data), ctx);
@@ -358,6 +374,67 @@ async function deleteAvatar(ctx: HandlerContext<unknown, QueryParams>): Promise<
 }
 
 /**
+ * Delete account (Apple App Store compliance)
+ * Deletes user from auth.users, cascades to profiles, and cleans up storage.
+ */
+async function deleteAccount(ctx: HandlerContext): Promise<Response> {
+  const { userId } = ctx;
+
+  if (!userId) {
+    throw new ValidationError("Authentication required");
+  }
+
+  logger.info("Deleting user", { userId });
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.43.4");
+  const supabaseAdmin = createClient(supabaseUrl, serviceKey);
+
+  // Clean up avatars
+  try {
+    const { data: avatarFiles } = await supabaseAdmin.storage.from("avatars").list(userId);
+    if (avatarFiles?.length) {
+      await supabaseAdmin.storage.from("avatars").remove(
+        avatarFiles.map(f => `${userId}/${f.name}`)
+      );
+      logger.info("Deleted avatar files", { count: avatarFiles.length });
+    }
+  } catch (error) {
+    logger.warn("Storage cleanup error", { error: error instanceof Error ? error.message : String(error) });
+  }
+
+  // Clean up post images
+  try {
+    const { data: postImages } = await supabaseAdmin.storage.from("post-images").list(userId);
+    if (postImages?.length) {
+      await supabaseAdmin.storage.from("post-images").remove(
+        postImages.map(f => `${userId}/${f.name}`)
+      );
+      logger.info("Deleted post images", { count: postImages.length });
+    }
+  } catch (error) {
+    logger.warn("Post images cleanup error", { error: error instanceof Error ? error.message : String(error) });
+  }
+
+  // Delete user from auth (cascades to profiles)
+  const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
+
+  if (deleteError) {
+    logger.error("Failed to delete user", new Error(deleteError.message));
+    throw new ValidationError("Failed to delete account. Please try again.");
+  }
+
+  logger.info("User deleted successfully", { userId });
+
+  return ok({
+    success: true,
+    message: "Account deleted successfully",
+    deletedUserId: userId,
+  }, ctx);
+}
+
+/**
  * Update address (upsert pattern)
  */
 async function updateAddress(ctx: HandlerContext<UpdateAddressBody>): Promise<Response> {
@@ -480,32 +557,118 @@ function transformAddress(data: Record<string, unknown>) {
 // Route Handlers
 // =============================================================================
 
-async function handleGet(ctx: HandlerContext<unknown, QueryParams>): Promise<Response> {
+/**
+ * Get session info (lightweight endpoint for locale caching)
+ * Replaces /bff/session-info
+ */
+async function getSession(ctx: HandlerContext<unknown, QueryParams>): Promise<Response> {
+  const { supabase, userId } = ctx;
+
+  if (!userId) {
+    return ok({ userId: null, locale: "en", localeSource: "default" }, ctx);
+  }
+
+  // Get minimal session data
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, display_name, avatar_url, preferred_locale")
+    .eq("id", userId)
+    .single();
+
+  if (error || !data) {
+    return ok({ userId, locale: "en", localeSource: "default" }, ctx);
+  }
+
+  return ok({
+    userId: data.id,
+    displayName: data.display_name,
+    avatarUrl: data.avatar_url,
+    locale: data.preferred_locale || "en",
+    localeSource: data.preferred_locale ? "database" : "default",
+  }, ctx);
+}
+
+function handleGet(ctx: HandlerContext<unknown, QueryParams>): Promise<Response> {
+  // Health check
+  const url = new URL(ctx.request.url);
+  if (url.pathname.endsWith("/health")) {
+    return ok({ status: "healthy", service: "api-v1-profile", version: VERSION, timestamp: new Date().toISOString() }, ctx);
+  }
+
+  if (ctx.query.action === "session") {
+    return getSession(ctx);
+  }
+  if (ctx.query.action === "dashboard") {
+    return getDashboard(ctx);
+  }
   if (ctx.query.action === "address") {
     return getAddress(ctx);
   }
   return getProfile(ctx);
 }
 
-async function handlePut(ctx: HandlerContext<UpdateProfileBody | UpdateAddressBody, QueryParams>): Promise<Response> {
+/**
+ * Get dashboard (aggregated profile + stats + counts)
+ * Replaces /bff/dashboard
+ */
+async function getDashboard(ctx: HandlerContext<unknown, QueryParams>): Promise<Response> {
+  const { supabase, userId, query } = ctx;
+
+  if (!userId) {
+    throw new ValidationError("Authentication required");
+  }
+
+  // Parallel aggregation
+  const [profile, stats, impact, counts] = await Promise.all([
+    supabase.from("profiles").select("*").eq("id", userId).single(),
+    aggregateStats(supabase, userId),
+    aggregateImpact(supabase, userId),
+    aggregateCounts(supabase, userId),
+  ]);
+
+  // Optional: recent listings
+  let recentListings = [];
+  if (query.includeListings) {
+    const { data } = await supabase
+      .from("posts")
+      .select("id, title, images, status, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(5);
+    recentListings = data || [];
+  }
+
+  return ok({
+    user: profile.data,
+    stats,
+    impact,
+    counts,
+    recentListings,
+  });
+}
+
+function handlePut(ctx: HandlerContext<UpdateProfileBody | UpdateAddressBody, QueryParams>): Promise<Response> {
   if (ctx.query.action === "address") {
     return updateAddress(ctx as HandlerContext<UpdateAddressBody, QueryParams>);
   }
   return updateProfile(ctx as HandlerContext<UpdateProfileBody, QueryParams>);
 }
 
-async function handlePost(ctx: HandlerContext<UploadAvatarBody, QueryParams>): Promise<Response> {
+function handlePost(ctx: HandlerContext<UploadAvatarBody, QueryParams>): Promise<Response> {
   if (ctx.query.action === "avatar") {
     return uploadAvatar(ctx);
   }
   throw new ValidationError("Invalid action. Use ?action=avatar for uploads");
 }
 
-async function handleDelete(ctx: HandlerContext<unknown, QueryParams>): Promise<Response> {
+function handleDelete(ctx: HandlerContext<unknown, QueryParams>): Promise<Response> {
   if (ctx.query.action === "avatar") {
     return deleteAvatar(ctx);
   }
-  throw new ValidationError("Invalid action. Use ?action=avatar for deletion");
+  if (ctx.query.action === "account") {
+    return deleteAccount(ctx);
+  }
+  throw new ValidationError("Invalid action. Use ?action=avatar or ?action=account");
 }
 
 // =============================================================================

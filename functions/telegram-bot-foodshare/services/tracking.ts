@@ -2,6 +2,7 @@
  * Activity tracking service
  */
 
+import { logger } from "../../_shared/logger.ts";
 import { getSupabaseClient } from "./supabase.ts";
 import type { TelegramMessage } from "../types/index.ts";
 
@@ -61,10 +62,10 @@ export async function trackMessage(message: TelegramMessage): Promise<void> {
 
     if (error) {
       // Silently fail - activity tracking is optional
-      console.log("Activity tracking unavailable:", error.message);
+      logger.debug("Activity tracking unavailable", { error: error.message });
     }
   } catch (e) {
     // Silently fail - activity tracking is optional
-    console.log("Activity tracking error:", e);
+    logger.debug("Activity tracking error", { error: String(e) });
   }
 }

@@ -3,6 +3,7 @@
  * Persists across cold starts and works with multiple instances
  */
 
+import { logger } from "../../_shared/logger.ts";
 import { getSupabaseClient } from "./supabase.ts";
 
 const DEFAULT_MAX_REQUESTS = 30; // requests per window
@@ -100,7 +101,7 @@ export async function checkRateLimitDistributed(
     };
   } catch (error) {
     // On database error, allow the request (fail open for availability)
-    console.error("Rate limit check failed, allowing request:", error);
+    logger.error("Rate limit check failed, allowing request", { error: String(error) });
     return {
       allowed: true,
       remaining: maxRequests,
@@ -162,13 +163,13 @@ export async function cleanupOldRateLimits(): Promise<number> {
       .select("user_id");
 
     if (error) {
-      console.error("Error cleaning up rate limits:", error);
+      logger.error("Error cleaning up rate limits", { error: String(error) });
       return 0;
     }
 
     return data?.length || 0;
   } catch (error) {
-    console.error("Error in cleanupOldRateLimits:", error);
+    logger.error("Error in cleanupOldRateLimits", { error: String(error) });
     return 0;
   }
 }

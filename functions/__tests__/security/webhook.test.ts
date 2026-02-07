@@ -7,6 +7,7 @@
 import {
   assertEquals,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { timingSafeEqual } from "../../_shared/utils.ts";
 
 // ============================================================================
 // HMAC Signature Verification Tests
@@ -33,22 +34,6 @@ async function computeHmacSha256(payload: string, secret: string): Promise<strin
 
   const hashArray = Array.from(new Uint8Array(signatureBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-/**
- * Constant-time string comparison
- */
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-
-  return result === 0;
 }
 
 // ============================================================================

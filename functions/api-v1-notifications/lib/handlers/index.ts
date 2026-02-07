@@ -812,3 +812,68 @@ export async function handleDashboard(
     return { success: false, error: (error as Error).message };
   }
 }
+
+/**
+ * GET / or GET /?mode=aggregate - List user notifications
+ * Replaces /bff/notifications
+ */
+export async function handleListNotifications(
+  url: URL,
+  context: NotificationContext
+): Promise<{
+  success: boolean;
+  data?: unknown;
+  error?: string;
+}> {
+  if (!context.userId) {
+    return { success: false, error: "User ID required" };
+  }
+
+  try {
+    const mode = url.searchParams.get("mode");
+    const limit = parseInt(url.searchParams.get("limit") || "20");
+    const unreadOnly = url.searchParams.get("unreadOnly") === "true";
+
+    // Get notifications from in_app_notifications table
+    let query = context.supabase
+      .from("in_app_notifications")
+      .select("*")
+      .eq("user_id", context.userId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (unreadOnly) {
+      query = query.eq("is_read", false);
+    }
+
+    const { data: notifications, error } = await query;
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    // If aggregate mode, include unread counts
+    if (mode === "aggregate") {
+      const { count: unreadCount } = await context.supabase
+        .from("in_app_notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", context.userId)
+        .eq("is_read", false);
+
+      return {
+        success: true,
+        data: {
+          notifications: notifications || [],
+          unreadCount: unreadCount || 0,
+        },
+      };
+    }
+
+    return {
+      success: true,
+      data: { notifications: notifications || [] },
+    };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}

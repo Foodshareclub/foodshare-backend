@@ -13,7 +13,50 @@
 import { getContext, getElapsedMs } from "./context.ts";
 import { logger } from "./logger.ts";
 import type { AppError } from "./errors.ts";
-import type { APIResponse, ResponseMeta, Pagination, UIHints, APIError } from "./response.ts";
+
+// =============================================================================
+// Types (previously in response.ts)
+// =============================================================================
+
+export interface APIError {
+  code: string;
+  message: string;
+  details?: unknown;
+}
+
+export interface ResponseMeta {
+  requestId: string;
+  timestamp: string;
+  responseTime: number;
+  cacheTTL?: number;
+  version?: string;
+}
+
+export interface Pagination {
+  offset: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+  nextOffset?: number;
+}
+
+export interface UIHints {
+  refreshAfter?: number;
+  displayMode?: "list" | "grid" | "map";
+  badges?: Array<{ text: string; color: string; screen?: string }>;
+  pullToRefresh?: boolean;
+  showEmptyState?: boolean;
+  emptyStateMessage?: string;
+}
+
+export interface APIResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: APIError;
+  meta: ResponseMeta;
+  pagination?: Pagination;
+  uiHints?: UIHints;
+}
 
 // =============================================================================
 // Feature Flag

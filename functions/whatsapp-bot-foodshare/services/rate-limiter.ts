@@ -3,6 +3,7 @@
  * Uses phone number as identifier
  */
 
+import { logger } from "../../_shared/logger.ts";
 import { getSupabaseClient } from "./supabase.ts";
 
 const DEFAULT_MAX_REQUESTS = 30;
@@ -98,7 +99,7 @@ export async function checkRateLimitDistributed(
     };
   } catch (error) {
     // On database error, allow the request (fail open for availability)
-    console.error("Rate limit check failed, allowing request:", error);
+    logger.error("Rate limit check failed, allowing request", { error: String(error) });
     return {
       allowed: true,
       remaining: maxRequests,

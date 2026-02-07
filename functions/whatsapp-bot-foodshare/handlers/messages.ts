@@ -3,6 +3,7 @@
  * Handles text, photo, and location messages
  */
 
+import { logger } from "../../_shared/logger.ts";
 import type { WhatsAppMessage } from "../types/index.ts";
 import { getUserState, setUserState } from "../services/user-state.ts";
 import { getProfileByWhatsAppPhone, updateProfile } from "../services/profile.ts";
@@ -324,7 +325,7 @@ async function createFoodPost(
   const { data: post, error } = await supabase.from("posts").insert(postData).select("id").single();
 
   if (error) {
-    console.error("Failed to create post:", error);
+    logger.error("Failed to create post", { error: String(error) });
     await sendTextMessage(phoneNumber, `${emoji.ERROR} Failed to create post. Please try again.`);
     await setUserState(phoneNumber, null);
     return;

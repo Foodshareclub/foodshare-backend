@@ -4,12 +4,13 @@
  */
 
 import type { AIData } from "../types/index.ts";
+import { logger } from "../../_shared/logger.ts";
 
 export async function analyzeImage(imageUrl: string): Promise<AIData | null> {
   const HF_TOKEN = Deno.env.get("HUGGINGFACE_TOKEN");
   
   if (!HF_TOKEN) {
-    console.warn("HuggingFace token not configured, skipping AI analysis");
+    logger.warn("HuggingFace token not configured, skipping AI analysis");
     return null;
   }
   
@@ -27,7 +28,7 @@ export async function analyzeImage(imageUrl: string): Promise<AIData | null> {
     );
     
     if (!response.ok) {
-      console.warn("AI analysis failed:", response.statusText);
+      logger.warn("AI analysis failed", { status: response.status, statusText: response.statusText });
       return null;
     }
     
@@ -46,7 +47,7 @@ export async function analyzeImage(imageUrl: string): Promise<AIData | null> {
       category: topPredictions[0]?.label,
     };
   } catch (error) {
-    console.warn("AI analysis error:", error);
+    logger.warn("AI analysis error", { error });
     return null;
   }
 }

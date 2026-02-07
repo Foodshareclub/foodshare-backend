@@ -18,8 +18,9 @@
  * }
  */
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 import { getCorsHeaders } from "../../_shared/cors.ts";
+import { logger } from "../../_shared/logger.ts";
 import { llmTranslationService } from "../services/llm-translation.ts";
 import { translationCache } from "../services/translation-cache.ts";
 
@@ -94,10 +95,7 @@ export default async function processQueueHandler(req: Request): Promise<Respons
     const limit = Math.min(Math.max(body.limit || DEFAULT_LIMIT, 1), 100);
 
     // Initialize Supabase client
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabase = getSupabaseClient();
 
     // First, reset any stuck "processing" items older than timeout
     const timeoutCutoff = new Date(Date.now() - PROCESSING_TIMEOUT_MINUTES * 60 * 1000).toISOString();
@@ -116,7 +114,7 @@ export default async function processQueueHandler(req: Request): Promise<Respons
       .limit(limit);
 
     if (fetchError) {
-      console.error("Failed to fetch queue items:", fetchError.message);
+      logger.error("Failed to fetch queue items", { error: fetchError.message });
       return new Response(JSON.stringify({
         success: false,
         error: `Failed to fetch queue items: ${fetchError.message}`,
@@ -143,10 +141,10 @@ export default async function processQueueHandler(req: Request): Promise<Respons
     // Check service health before processing
     const healthCheck = await llmTranslationService.checkHealth();
     if (!healthCheck.healthy) {
-      console.warn(`Translation service unhealthy: ${healthCheck.reason}`);
+      logger.warn("Translation service unhealthy", { reason: healthCheck.reason });
       // Continue anyway - DeepL fallback will handle it
     } else {
-      console.log("Translation service health check passed");
+      logger.info("Translation service health check passed");
     }
 
     // Mark items as processing
@@ -156,7 +154,7 @@ export default async function processQueueHandler(req: Request): Promise<Respons
       .update({ status: "processing" })
       .in("id", itemIds);
 
-    console.log(`Processing ${pendingItems.length} translation tasks with concurrency ${CONCURRENCY_LIMIT}`);
+    logger.info("Processing translation tasks", { count: pendingItems.length, concurrency: CONCURRENCY_LIMIT });
 
     let succeeded = 0;
     let failed = 0;
@@ -208,7 +206,7 @@ export default async function processQueueHandler(req: Request): Promise<Respons
           });
 
           if (storeError) {
-            console.warn(`Failed to store translation for ${item.id}: ${storeError.message}`);
+            logger.warn("Failed to store translation", { itemId: item.id, error: storeError.message });
           }
 
           // Cache in Redis for fast retrieval
@@ -229,7 +227,7 @@ export default async function processQueueHandler(req: Request): Promise<Respons
             })
             .eq("id", item.id);
 
-          console.log(`Translated ${item.content_type}/${item.content_id}/${item.field_name} -> ${item.target_locale} (quality: ${result.quality.toFixed(2)})`);
+          logger.info("Translation succeeded", { contentType: item.content_type, contentId: item.content_id, fieldName: item.field_name, targetLocale: item.target_locale, quality: result.quality.toFixed(2) });
           return "succeeded";
         } else {
           // Determine error message based on failure type
@@ -258,10 +256,10 @@ export default async function processQueueHandler(req: Request): Promise<Respons
             .eq("id", item.id);
 
           if (newStatus === "failed") {
-            console.warn(`Translation failed permanently for ${item.id} after ${newAttempts} attempts: ${errorMsg}`);
+            logger.warn("Translation failed permanently", { itemId: item.id, attempts: newAttempts, error: errorMsg });
             return "failed";
           } else {
-            console.log(`Translation will be retried for ${item.id} (attempt ${newAttempts}/${MAX_ATTEMPTS}): ${errorMsg}`);
+            logger.info("Translation will be retried", { itemId: item.id, attempt: newAttempts, maxAttempts: MAX_ATTEMPTS, error: errorMsg });
             return "retry";
           }
         }
@@ -281,7 +279,7 @@ export default async function processQueueHandler(req: Request): Promise<Respons
           })
           .eq("id", item.id);
 
-        console.error(`Error processing ${item.id}: ${errorMsg}`);
+        logger.error("Error processing queue item", { itemId: item.id, error: errorMsg });
         return newStatus === "failed" ? "failed" : "retry";
       }
       return "succeeded"; // Default return
@@ -310,14 +308,14 @@ export default async function processQueueHandler(req: Request): Promise<Respons
       duration_ms: Date.now() - startTime,
     };
 
-    console.log("Queue processing complete", response);
+    logger.info("Queue processing complete", response);
 
     return new Response(JSON.stringify(response), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Process queue error:", (error as Error).message);
+    logger.error("Process queue error", { error: (error as Error).message });
     return new Response(JSON.stringify({
       success: false,
       error: (error as Error).message,

@@ -2,6 +2,7 @@
  * Telegram API service with circuit breaker protection
  */
 
+import { logger } from "../../_shared/logger.ts";
 import { TELEGRAM_API } from "../config/index.ts";
 import {
   withCircuitBreaker,
@@ -72,7 +73,7 @@ export async function sendMessage(
         const result = await response.json();
 
         if (!result.ok) {
-          console.error("Telegram API error:", result);
+          logger.error("Telegram API error", { result });
           // Throw for circuit breaker to count failure
           if (response.status >= 500) {
             throw new Error(`Telegram API error: ${result.description}`);
@@ -85,10 +86,10 @@ export async function sendMessage(
     );
   } catch (error) {
     if (error instanceof CircuitBreakerError) {
-      console.warn("Telegram API circuit breaker open, message not sent");
+      logger.warn("Telegram API circuit breaker open, message not sent");
       return false;
     }
-    console.error("Send message error:", error);
+    logger.error("Send message error", { error: String(error) });
     return false;
   }
 }
@@ -127,10 +128,10 @@ export async function sendPhoto(
     );
   } catch (error) {
     if (error instanceof CircuitBreakerError) {
-      console.warn("Telegram API circuit breaker open, photo not sent");
+      logger.warn("Telegram API circuit breaker open, photo not sent");
       return false;
     }
-    console.error("Send photo error:", error);
+    logger.error("Send photo error", { error: String(error) });
     return false;
   }
 }
@@ -166,10 +167,10 @@ export async function sendLocation(
     );
   } catch (error) {
     if (error instanceof CircuitBreakerError) {
-      console.warn("Telegram API circuit breaker open, location not sent");
+      logger.warn("Telegram API circuit breaker open, location not sent");
       return false;
     }
-    console.error("Send location error:", error);
+    logger.error("Send location error", { error: String(error) });
     return false;
   }
 }
@@ -198,19 +199,12 @@ export async function setWebhook(url: string): Promise<boolean> {
     const result = await response.json();
 
     if (result.ok) {
-      console.log(
-        JSON.stringify({
-          level: "info",
-          message: "Webhook configured successfully",
-          hasSecretToken: !!webhookSecret,
-          timestamp: new Date().toISOString(),
-        })
-      );
+      logger.info("Webhook configured successfully", { hasSecretToken: !!webhookSecret });
     }
 
     return result.ok;
   } catch (error) {
-    console.error("Set webhook error:", error);
+    logger.error("Set webhook error", { error: String(error) });
     return false;
   }
 }
@@ -244,10 +238,10 @@ export async function answerCallbackQuery(
     );
   } catch (error) {
     if (error instanceof CircuitBreakerError) {
-      console.warn("Telegram API circuit breaker open, callback not answered");
+      logger.warn("Telegram API circuit breaker open, callback not answered");
       return false;
     }
-    console.error("Answer callback query error:", error);
+    logger.error("Answer callback query error", { error: String(error) });
     return false;
   }
 }

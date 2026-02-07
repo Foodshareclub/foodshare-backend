@@ -22,8 +22,9 @@
  * - GET  /api-v1-localization/health        → Comprehensive health check
  */
 
-import { getCorsHeaders } from "../_shared/cors.ts";
+import { createAPIHandler, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
+import { AppError } from "../_shared/errors.ts";
 
 // Import handlers
 import uiStringsHandler from "./handlers/ui-strings.ts";
@@ -43,6 +44,8 @@ import healthHandler from "./handlers/health.ts";
 import generateInfoPlistStringsHandler from "./handlers/generate-infoplist-strings.ts";
 import syncToRedisHandler from "./handlers/sync-to-redis.ts";
 
+const SERVICE = "api-v1-localization";
+
 /**
  * Extract subpath from URL
  * /api-v1-localization → ""
@@ -57,136 +60,106 @@ function getSubPath(url: URL): string {
   return subPath.startsWith("/") ? subPath.slice(1) : subPath;
 }
 
-Deno.serve(async (req: Request) => {
-  const corsHeaders = getCorsHeaders(req);
+// Handler map for POST routes
+const postHandlers: Record<string, (req: Request) => Promise<Response> | Response> = {
+  "translate-content": translateContentHandler,
+  "prewarm": prewarmHandler,
+  "translate-batch": translateBatchHandler,
+  "ui-batch-translate": uiBatchTranslateHandler,
+  "update": updateHandler,
+  "get-translations": getTranslationsHandler,
+  "backfill-posts": backfillPostsHandler,
+  "backfill-challenges": backfillChallengesHandler,
+  "backfill-forum-posts": backfillForumPostsHandler,
+  "process-queue": processQueueHandler,
+  "generate-infoplist-strings": generateInfoPlistStringsHandler,
+  "sync-to-redis": syncToRedisHandler,
+};
 
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
+// Handler map for GET routes
+const getHandlers: Record<string, (req: Request) => Promise<Response> | Response> = {
+  "translations": translationsHandler,
+  "audit": auditHandler,
+  "health": healthHandler,
+};
+
+async function routeRequest(ctx: HandlerContext): Promise<Response> {
+  const url = new URL(ctx.request.url);
+  const subPath = getSubPath(url).replace(/\/$/, ""); // strip trailing slash
+  const method = ctx.request.method;
+
+  logger.debug("Localization routing", { subPath, method });
+
+  // GET / — Simple UI string bundles (fast, compressed)
+  if (method === "GET" && (subPath === "" || subPath === "/")) {
+    return uiStringsHandler(ctx.request);
   }
 
-  const url = new URL(req.url);
-  const subPath = getSubPath(url);
+  // GET routes
+  if (method === "GET") {
+    const handler = getHandlers[subPath];
+    if (handler) return handler(ctx.request);
+  }
 
-  logger.debug("Localization routing", { subPath, method: req.method });
+  // POST routes
+  if (method === "POST") {
+    const handler = postHandlers[subPath];
+    if (handler) return handler(ctx.request);
+  }
 
-  try {
-    switch (subPath) {
-      case "":
-      case "/":
-        // GET /api-v1-localization → Simple UI string bundles (fast, compressed)
-        if (req.method === "GET") {
-          return uiStringsHandler(req);
-        }
-        // Root info for other methods
-        return new Response(JSON.stringify({
-          success: true,
-          service: "api-v1-localization",
-          version: "3.0.0",
-          endpoints: [
-            { path: "/api-v1-localization", method: "GET", description: "UI string bundles (simple)" },
-            { path: "/api-v1-localization/translations", method: "GET", description: "UI strings with delta sync" },
-            { path: "/api-v1-localization/translate-content", method: "POST", description: "Dynamic content translation via LLM" },
-            { path: "/api-v1-localization/prewarm", method: "POST", description: "Prewarm translation cache" },
-            { path: "/api-v1-localization/translate-batch", method: "POST", description: "Batch translate content to all locales" },
-            { path: "/api-v1-localization/audit", method: "GET", description: "Audit untranslated UI strings" },
-            { path: "/api-v1-localization/ui-batch-translate", method: "POST", description: "Batch translate UI strings with LLM" },
-            { path: "/api-v1-localization/update", method: "POST", description: "Update UI string translations" },
-            { path: "/api-v1-localization/get-translations", method: "POST", description: "Get cached translations for content (BFF)" },
-            { path: "/api-v1-localization/backfill-posts", method: "POST", description: "Backfill translations for existing posts" },
-            { path: "/api-v1-localization/backfill-challenges", method: "POST", description: "Backfill translations for challenges" },
-            { path: "/api-v1-localization/backfill-forum-posts", method: "POST", description: "Backfill translations for forum posts" },
-            { path: "/api-v1-localization/process-queue", method: "POST", description: "Process pending translations from queue" },
-            { path: "/api-v1-localization/generate-infoplist-strings", method: "POST", description: "Generate localized InfoPlist.strings" },
-            { path: "/api-v1-localization/sync-to-redis", method: "POST", description: "Sync locale preference to Redis cache" },
-            { path: "/api-v1-localization/health", method: "GET", description: "Comprehensive health check" },
-          ],
-          supportedLocales: [
-            "en", "cs", "de", "es", "fr", "pt", "ru", "uk", "zh", "hi",
-            "ar", "it", "pl", "nl", "ja", "ko", "tr", "vi", "id", "th", "sv"
-          ],
-        }), {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-
-      case "translations":
-      case "translations/":
-        return translationsHandler(req);
-
-      case "translate-content":
-      case "translate-content/":
-        return translateContentHandler(req);
-
-      case "prewarm":
-      case "prewarm/":
-        return prewarmHandler(req);
-
-      case "translate-batch":
-      case "translate-batch/":
-        return translateBatchHandler(req);
-
-      case "audit":
-      case "audit/":
-        return auditHandler(req);
-
-      case "ui-batch-translate":
-      case "ui-batch-translate/":
-        return uiBatchTranslateHandler(req);
-
-      case "update":
-      case "update/":
-        return updateHandler(req);
-
-      case "get-translations":
-      case "get-translations/":
-        return getTranslationsHandler(req);
-
-      case "backfill-posts":
-      case "backfill-posts/":
-        return backfillPostsHandler(req);
-
-      case "backfill-challenges":
-      case "backfill-challenges/":
-        return backfillChallengesHandler(req);
-
-      case "backfill-forum-posts":
-      case "backfill-forum-posts/":
-        return backfillForumPostsHandler(req);
-
-      case "process-queue":
-      case "process-queue/":
-        return processQueueHandler(req);
-
-      case "generate-infoplist-strings":
-      case "generate-infoplist-strings/":
-        return generateInfoPlistStringsHandler(req);
-
-      case "sync-to-redis":
-      case "sync-to-redis/":
-        return syncToRedisHandler(req);
-
-      case "health":
-      case "health/":
-        return healthHandler(req);
-
-      default:
-        return new Response(JSON.stringify({
-          success: false,
-          error: { code: "NOT_FOUND", message: `Endpoint not found: ${subPath}` },
-        }), {
-          status: 404,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-    }
-  } catch (error) {
-    logger.error("Localization error", error as Error);
+  // Root info for non-GET methods on /
+  if (subPath === "" || subPath === "/") {
     return new Response(JSON.stringify({
-      success: false,
-      error: { code: "INTERNAL_ERROR", message: (error as Error).message },
+      success: true,
+      service: SERVICE,
+      version: "3.0.0",
+      endpoints: [
+        { path: "/api-v1-localization", method: "GET", description: "UI string bundles (simple)" },
+        { path: "/api-v1-localization/translations", method: "GET", description: "UI strings with delta sync" },
+        { path: "/api-v1-localization/translate-content", method: "POST", description: "Dynamic content translation via LLM" },
+        { path: "/api-v1-localization/prewarm", method: "POST", description: "Prewarm translation cache" },
+        { path: "/api-v1-localization/translate-batch", method: "POST", description: "Batch translate content to all locales" },
+        { path: "/api-v1-localization/audit", method: "GET", description: "Audit untranslated UI strings" },
+        { path: "/api-v1-localization/ui-batch-translate", method: "POST", description: "Batch translate UI strings with LLM" },
+        { path: "/api-v1-localization/update", method: "POST", description: "Update UI string translations" },
+        { path: "/api-v1-localization/get-translations", method: "POST", description: "Get cached translations for content (BFF)" },
+        { path: "/api-v1-localization/backfill-posts", method: "POST", description: "Backfill translations for existing posts" },
+        { path: "/api-v1-localization/backfill-challenges", method: "POST", description: "Backfill translations for challenges" },
+        { path: "/api-v1-localization/backfill-forum-posts", method: "POST", description: "Backfill translations for forum posts" },
+        { path: "/api-v1-localization/process-queue", method: "POST", description: "Process pending translations from queue" },
+        { path: "/api-v1-localization/generate-infoplist-strings", method: "POST", description: "Generate localized InfoPlist.strings" },
+        { path: "/api-v1-localization/sync-to-redis", method: "POST", description: "Sync locale preference to Redis cache" },
+        { path: "/api-v1-localization/health", method: "GET", description: "Comprehensive health check" },
+      ],
+      supportedLocales: [
+        "en", "cs", "de", "es", "fr", "pt", "ru", "uk", "zh", "hi",
+        "ar", "it", "pl", "nl", "ja", "ko", "tr", "vi", "id", "th", "sv"
+      ],
     }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 200,
+      headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
     });
   }
+
+  throw new AppError(`Endpoint not found: ${subPath}`, "NOT_FOUND", 404);
+}
+
+// =============================================================================
+// API Handler
+// =============================================================================
+
+export default createAPIHandler({
+  service: SERVICE,
+  version: "3",
+  requireAuth: false,
+  csrf: false,
+  rateLimit: {
+    limit: 100,
+    windowMs: 60_000,
+    keyBy: "ip",
+  },
+  routes: {
+    GET: { handler: routeRequest },
+    POST: { handler: routeRequest },
+  },
 });

@@ -42,7 +42,29 @@ verify_jwt = false
 [functions.api-v1-auth]
 verify_jwt = false
 
-[functions.get-translations]
+# =============================================================================
+# Core API Endpoints (auth handled internally by createAPIHandler)
+# =============================================================================
+
+[functions.api-v1-chat]
+verify_jwt = false
+
+[functions.api-v1-engagement]
+verify_jwt = false
+
+[functions.api-v1-metrics]
+verify_jwt = false
+
+[functions.api-v1-products]
+verify_jwt = false
+
+[functions.api-v1-profile]
+verify_jwt = false
+
+[functions.api-v1-reviews]
+verify_jwt = false
+
+[functions.api-v1-sync]
 verify_jwt = false
 
 # =============================================================================
@@ -59,13 +81,12 @@ verify_jwt = false
 # Subscription/Payment
 # =============================================================================
 
-[functions.subscription-webhook]
-verify_jwt = false
+# subscription-webhook merged into api-v1-subscription/webhook
 
 # =============================================================================
 # UNIFIED SUBSCRIPTION API v1
 # =============================================================================
-# Consolidates sync-subscription + subscription-cron:
+# Consolidates sync-subscription + subscription-cron + subscription-webhook:
 # - GET / - Check subscription status (JWT auth)
 # - POST /sync - Sync subscription after purchase (JWT auth)
 # - POST /cron - Run cron tasks: DLQ, metrics, cleanup (cron auth)
@@ -97,8 +118,8 @@ verify_jwt = false
 [functions.api-v1-notifications]
 verify_jwt = false
 
-# Email Queue Processor (cron-triggered)
-[functions.process-email-queue]
+# Unified Email API (queue processing + direct send + templates + provider health)
+[functions.api-v1-email]
 verify_jwt = false
 
 # =============================================================================

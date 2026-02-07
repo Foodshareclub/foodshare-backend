@@ -2,6 +2,7 @@
  * Email service for sending verification emails
  */
 
+import { logger } from "../../_shared/logger.ts";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../config/index.ts";
 
 export async function sendVerificationEmail(email: string, code: string): Promise<boolean> {
@@ -33,7 +34,7 @@ export async function sendVerificationEmail(email: string, code: string): Promis
 
     return response.ok;
   } catch (error) {
-    console.error("Failed to send verification email:", error);
+    logger.error("Failed to send verification email", { error: String(error) });
     return false;
   }
 }

@@ -17,14 +17,18 @@
  * - Email to ops team
  * - Database alert log
  *
- * Usage:
- * POST /api-v1-alerts { "force": true } // Bypass cooldowns
- * GET /api-v1-alerts
+ * Routes:
+ * GET  /               - Run alert checks (cron compat)
+ * POST /               - Run alert checks { "force": true } to bypass cooldowns
+ * POST /webhook/sentry - Sentry → Telegram forwarding
+ * GET  /health         - Health check
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
+import { ServerError, ValidationError } from "../_shared/errors.ts";
+import { withCircuitBreaker, CircuitBreakerError } from "../_shared/circuit-breaker.ts";
 
 // =============================================================================
 // Configuration
@@ -321,20 +325,31 @@ async function sendSlackAlert(
       },
     ];
 
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ attachments: [{ color, blocks }] }),
-    });
+    const response = await withCircuitBreaker(
+      "slack-alerts",
+      async () => {
+        const res = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ attachments: [{ color, blocks }] }),
+        });
+        if (!res.ok) {
+          throw new ServerError(`Slack webhook HTTP ${res.status}`);
+        }
+        return res;
+      },
+      { failureThreshold: 3, resetTimeoutMs: 120_000 },
+    );
 
-    if (!response.ok) {
-      logger.error("Failed to send Slack alert", { status: response.status });
-      return false;
-    }
-
-    return true;
+    return response.ok;
   } catch (error) {
-    logger.error("Error sending Slack alert", { error });
+    if (error instanceof CircuitBreakerError) {
+      logger.warn("Slack circuit breaker open, skipping alert", {
+        retryAfterMs: error.retryAfterMs,
+      });
+    } else {
+      logger.error("Error sending Slack alert", { error });
+    }
     return false;
   }
 }
@@ -408,6 +423,102 @@ async function getSecretSafe(
   } catch {
     return null;
   }
+}
+
+// =============================================================================
+// Sentry Webhook (consolidated from sentry-telegram-webhook/)
+// =============================================================================
+
+interface SentryEvent {
+  action: string;
+  data: {
+    issue?: {
+      id: string;
+      title: string;
+      culprit?: string;
+      shortId: string;
+      metadata?: { type?: string; value?: string };
+      count?: number;
+      userCount?: number;
+    };
+    event?: {
+      event_id: string;
+      message?: string;
+      level?: string;
+      environment?: string;
+      platform?: string;
+    };
+  };
+}
+
+function escapeTelegramHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function formatSentryMessage(event: SentryEvent): string {
+  const { action, data } = event;
+  const issue = data.issue;
+
+  let emoji = "🔴";
+  if (action === "resolved") emoji = "✅";
+  else if (action === "assigned") emoji = "👤";
+  else if (action === "ignored") emoji = "🔇";
+
+  const lines: string[] = [`${emoji} <b>Sentry: ${action.toUpperCase()}</b>`, ""];
+
+  if (issue) {
+    lines.push(`<b>${issue.shortId}</b>: ${escapeTelegramHtml(issue.title)}`);
+    if (issue.culprit) lines.push(`📍 ${escapeTelegramHtml(issue.culprit)}`);
+    if (issue.metadata?.value) lines.push(`💬 ${escapeTelegramHtml(issue.metadata.value.substring(0, 200))}`);
+    if (issue.count && issue.count > 1) lines.push(`📊 ${issue.count} events, ${issue.userCount || 0} users`);
+    lines.push("", `🔗 https://foodshare.sentry.io/issues/${issue.id}/`);
+  }
+
+  if (data.event?.environment) lines.push(`🌍 ${data.event.environment}`);
+  if (data.event?.platform) lines.push(`📱 ${data.event.platform}`);
+
+  return lines.join("\n");
+}
+
+async function sendSentryToTelegram(text: string): Promise<boolean> {
+  const botToken = Deno.env.get("BOT_TOKEN");
+  const chatId = Deno.env.get("ADMIN_CHAT_ID");
+
+  if (!botToken || !chatId) {
+    logger.warn("Sentry webhook: BOT_TOKEN or ADMIN_CHAT_ID not configured");
+    return false;
+  }
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }),
+    });
+    return response.ok;
+  } catch (error) {
+    logger.error("Failed to send Sentry alert to Telegram", error as Error);
+    return false;
+  }
+}
+
+async function handleSentryWebhook(ctx: HandlerContext): Promise<Response> {
+  const event = ctx.body as SentryEvent;
+
+  if (!event?.action) {
+    throw new ValidationError("Missing action field", { path: ["action"] });
+  }
+
+  logger.info("Sentry webhook received", { action: event.action });
+
+  const sent = await sendSentryToTelegram(formatSentryMessage(event));
+
+  return ok({ success: sent, action: event.action }, ctx);
 }
 
 // =============================================================================
@@ -516,17 +627,47 @@ async function handleCheckAlerts(
 // Export Handler
 // =============================================================================
 
+// =============================================================================
+// Route Dispatch
+// =============================================================================
+
+function handleGet(ctx: HandlerContext): Promise<Response> {
+  const url = new URL(ctx.request.url);
+  const path = url.pathname;
+
+  if (path.endsWith("/health")) {
+    return Promise.resolve(
+      ok({ status: "healthy", version: CONFIG.version, timestamp: new Date().toISOString() }, ctx),
+    );
+  }
+
+  // GET / — run alert checks (cron compat)
+  return handleCheckAlerts(ctx);
+}
+
+function handlePost(ctx: HandlerContext): Promise<Response> {
+  const url = new URL(ctx.request.url);
+  const path = url.pathname;
+
+  if (path.endsWith("/webhook/sentry")) {
+    return handleSentryWebhook(ctx);
+  }
+
+  // POST / — run alert checks
+  return handleCheckAlerts(ctx as HandlerContext<CheckAlertsRequest>);
+}
+
 export default createAPIHandler({
   service: "api-v1-alerts",
   version: CONFIG.version,
-  requireAuth: false, // Cron job - service-level
+  requireAuth: false, // Cron job + webhooks - service-level
+  csrf: false, // Sentry webhook posts from external
   routes: {
     POST: {
-      schema: checkAlertsSchema,
-      handler: handleCheckAlerts,
+      handler: handlePost,
     },
     GET: {
-      handler: handleCheckAlerts, // Support GET for cron
+      handler: handleGet,
     },
   },
 });

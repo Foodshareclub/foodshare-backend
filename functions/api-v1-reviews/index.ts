@@ -27,6 +27,8 @@ import { ValidationError, ConflictError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
 import { REVIEW, ERROR_MESSAGES } from "../_shared/validation-rules.ts";
 
+const VERSION = "1.0.0";
+
 // =============================================================================
 // Schemas (using shared validation constants from Swift FoodshareCore)
 // =============================================================================
@@ -216,6 +218,20 @@ function transformReview(data: Record<string, unknown>) {
 }
 
 // =============================================================================
+// Route Handlers
+// =============================================================================
+
+function handleGet(ctx: HandlerContext<unknown, QueryParams>): Promise<Response> {
+  // Health check
+  const url = new URL(ctx.request.url);
+  if (url.pathname.endsWith("/health")) {
+    return ok({ status: "healthy", service: "api-v1-reviews", version: VERSION, timestamp: new Date().toISOString() }, ctx);
+  }
+
+  return getReviews(ctx);
+}
+
+// =============================================================================
 // Export Handler
 // =============================================================================
 
@@ -232,7 +248,7 @@ export default createAPIHandler({
   routes: {
     GET: {
       querySchema,
-      handler: getReviews,
+      handler: handleGet,
       requireAuth: false,
     },
     POST: {

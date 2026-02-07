@@ -1,5 +1,0 @@
-# Sentry Telegram Webhook
-# Receives Sentry alerts and forwards to Telegram
-
-[function]
-verify_jwt = false

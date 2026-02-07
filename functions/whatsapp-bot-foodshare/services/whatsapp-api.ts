@@ -2,6 +2,7 @@
  * WhatsApp Cloud API client with circuit breaker
  */
 
+import { logger } from "../../_shared/logger.ts";
 import { WHATSAPP_API_URL, WHATSAPP_ACCESS_TOKEN } from "../config/index.ts";
 import { WHATSAPP_API_TIMEOUT_MS, MAX_RETRIES, RETRY_DELAY_MS } from "../config/constants.ts";
 import { withCircuitBreaker, getCircuitStatus } from "../../_shared/circuit-breaker.ts";
@@ -62,31 +63,14 @@ async function makeRequest<T>(
 
     if (!response.ok) {
       const errorMessage = data?.error?.message || `HTTP ${response.status}`;
-      console.error(
-        JSON.stringify({
-          level: "error",
-          message: "WhatsApp API error",
-          endpoint,
-          status: response.status,
-          error: errorMessage,
-          timestamp: new Date().toISOString(),
-        })
-      );
+      logger.error("WhatsApp API error", { endpoint, status: response.status, error: errorMessage });
       return { success: false, error: errorMessage };
     }
 
     return { success: true, data };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(
-      JSON.stringify({
-        level: "error",
-        message: "WhatsApp API request failed",
-        endpoint,
-        error: errorMessage,
-        timestamp: new Date().toISOString(),
-      })
-    );
+    logger.error("WhatsApp API request failed", { endpoint, error: errorMessage });
     return { success: false, error: errorMessage };
   }
 }
@@ -315,7 +299,7 @@ export async function getMediaUrl(mediaId: string): Promise<string | null> {
     const data = await response.json();
     return data.url || null;
   } catch (error) {
-    console.error("Failed to get media URL:", error);
+    logger.error("Failed to get media URL", { error: String(error), mediaId });
     return null;
   }
 }
@@ -342,7 +326,7 @@ export async function downloadMedia(mediaUrl: string): Promise<ArrayBuffer | nul
 
     return response.arrayBuffer();
   } catch (error) {
-    console.error("Failed to download media:", error);
+    logger.error("Failed to download media", { error: String(error) });
     return null;
   }
 }

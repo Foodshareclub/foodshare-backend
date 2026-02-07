@@ -1,12 +1,10 @@
 /**
  * Push Notification Channel Adapter
  *
- * Integrates with push notification providers:
+ * Direct integration with push notification providers:
  * - FCM (Firebase Cloud Messaging) for Android
  * - APNs (Apple Push Notification service) for iOS
  * - Web Push (VAPID) for browsers
- *
- * Uses the existing send-push-notification infrastructure.
  *
  * @module api-v1-notifications/channels/push
  */
@@ -15,11 +13,19 @@ import type {
   ChannelAdapter,
   ChannelDeliveryResult,
   NotificationContext,
-  PushPayload,
-  DeviceToken,
 } from "../types.ts";
 import { logger } from "../../../_shared/logger.ts";
-import { withCircuitBreaker } from "../../../_shared/circuit-breaker.ts";
+import { withRetry, RETRY_PRESETS } from "../../../_shared/retry.ts";
+import { getCircuitStatus } from "../../../_shared/circuit-breaker.ts";
+import {
+  sendApns,
+  sendFcm,
+  sendWebPush,
+  type PushPayload,
+  type DeviceToken,
+  type SendResult,
+  type Platform,
+} from "../providers/index.ts";
 
 export class PushChannelAdapter implements ChannelAdapter {
   name = "push";
@@ -47,7 +53,6 @@ export class PushChannelAdapter implements ChannelAdapter {
         title: payload.title,
       });
 
-      // Get user's device tokens
       const devices = await this.getUserDevices(context);
 
       if (devices.length === 0) {
@@ -64,20 +69,32 @@ export class PushChannelAdapter implements ChannelAdapter {
         };
       }
 
-      // Call the existing send-push-notification function
-      const result = await this.sendToDevices(payload, devices, context);
+      const results = await this.sendToDevices(payload, devices, context);
 
       const duration = performance.now() - startTime;
 
       logger.info("Push notification completed", {
         requestId: context.requestId,
         userId: context.userId,
-        delivered: result.deliveredTo?.length || 0,
-        failed: result.failedDevices?.length || 0,
+        delivered: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length,
         durationMs: Math.round(duration),
       });
 
-      return result;
+      await this.cleanupInvalidTokens(context, results);
+
+      const deliveredTo = results
+        .filter(r => r.success)
+        .map(r => r.platform);
+
+      return {
+        channel: "push",
+        success: deliveredTo.length > 0,
+        deliveredTo,
+        error: deliveredTo.length === 0 ? "All deliveries failed" : undefined,
+        attemptedAt: new Date().toISOString(),
+        deliveredAt: deliveredTo.length > 0 ? new Date().toISOString() : undefined,
+      };
     } catch (error) {
       logger.error("Push channel error", error as Error, {
         requestId: context.requestId,
@@ -125,7 +142,6 @@ export class PushChannelAdapter implements ChannelAdapter {
     try {
       const startTime = performance.now();
 
-      // Check if FCM and APNs credentials are available
       const fcmConfigured = !!(
         Deno.env.get("FCM_PROJECT_ID") &&
         Deno.env.get("FCM_CLIENT_EMAIL") &&
@@ -135,13 +151,19 @@ export class PushChannelAdapter implements ChannelAdapter {
       const apnsConfigured = !!(
         Deno.env.get("APNS_KEY_ID") &&
         Deno.env.get("APNS_PRIVATE_KEY") &&
-        Deno.env.get("APPLE_TEAM_ID")
+        Deno.env.get("APNS_TEAM_ID")
       );
+
+      const circuits = {
+        ios: getCircuitStatus("push-ios")?.state || "closed",
+        android: getCircuitStatus("push-android")?.state || "closed",
+        web: getCircuitStatus("push-web")?.state || "closed",
+      };
 
       const latencyMs = Math.round(performance.now() - startTime);
 
       return {
-        healthy: fcmConfigured || apnsConfigured,
+        healthy: (fcmConfigured || apnsConfigured) && Object.values(circuits).every(s => s !== "open"),
         latencyMs,
       };
     } catch (error) {
@@ -152,15 +174,10 @@ export class PushChannelAdapter implements ChannelAdapter {
     }
   }
 
-  /**
-   * Get user's device tokens
-   */
-  private async getUserDevices(
-    context: NotificationContext
-  ): Promise<DeviceToken[]> {
+  private async getUserDevices(context: NotificationContext): Promise<DeviceToken[]> {
     const { data, error } = await context.supabase
       .from("device_tokens")
-      .select("*")
+      .select("profile_id, token, platform, endpoint, p256dh, auth")
       .eq("profile_id", context.userId!)
       .eq("is_active", true);
 
@@ -171,88 +188,97 @@ export class PushChannelAdapter implements ChannelAdapter {
       return [];
     }
 
-    return data || [];
+    return (data || []) as DeviceToken[];
   }
 
-  /**
-   * Send push notification to devices using the existing function
-   */
   private async sendToDevices(
     payload: PushPayload,
     devices: DeviceToken[],
     context: NotificationContext
-  ): Promise<ChannelDeliveryResult> {
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  ): Promise<SendResult[]> {
+    const CONCURRENCY = 10;
+    const results: SendResult[] = [];
 
-    try {
-      // Call send-push-notification function
-      const response = await withCircuitBreaker(
-        "push-notification",
-        async () => {
-          return await fetch(`${SUPABASE_URL}/functions/v1/send-push-notification`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              userId: context.userId,
-              title: payload.title,
-              body: payload.body,
-              data: payload.data,
-              imageUrl: payload.imageUrl,
-              sound: payload.sound,
-              badge: payload.badge,
-              priority: payload.priority || "normal",
-              ttl: payload.ttl,
-              collapseKey: payload.collapseKey,
-              channelId: payload.channelId,
-              category: payload.category,
-              threadId: payload.threadId,
-            }),
-          });
-        },
-        {
-          failureThreshold: 5,
-          resetTimeoutMs: 60000,
-        }
+    for (let i = 0; i < devices.length; i += CONCURRENCY) {
+      const chunk = devices.slice(i, i + CONCURRENCY);
+
+      const chunkResults = await Promise.all(
+        chunk.map(async (device) => {
+          const sendFn = async (): Promise<SendResult> => {
+            switch (device.platform) {
+              case "ios":
+                return sendApns(device, payload);
+              case "android":
+                return sendFcm(device, payload);
+              case "web":
+                return sendWebPush(device, payload);
+              default:
+                return {
+                  success: false,
+                  platform: device.platform as Platform,
+                  error: "Unknown platform",
+                };
+            }
+          };
+
+          try {
+            return await withRetry(sendFn, {
+              ...RETRY_PRESETS.standard,
+              shouldRetry: (_error, result) => {
+                if (result && "retryable" in result) {
+                  return (result as SendResult).retryable === true;
+                }
+                return true;
+              },
+            });
+          } catch (e) {
+            return {
+              success: false,
+              platform: device.platform as Platform,
+              token: device.platform === "web" ? device.endpoint : device.token,
+              error: (e as Error).message,
+            } as SendResult;
+          }
+        })
       );
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Push notification failed: ${errorText}`);
-      }
-
-      const result = await response.json();
-
-      return {
-        channel: "push",
-        success: result.success || false,
-        deliveredTo: result.deliveredTo || [],
-        failedDevices: result.failedDevices || [],
-        error: result.error,
-        attemptedAt: new Date().toISOString(),
-        deliveredAt: result.success ? new Date().toISOString() : undefined,
-      };
-    } catch (error) {
-      logger.error("Failed to send push notification", error as Error, {
-        userId: context.userId,
-      });
-
-      return {
-        channel: "push",
-        success: false,
-        error: (error as Error).message,
-        attemptedAt: new Date().toISOString(),
-      };
+      results.push(...chunkResults);
     }
+
+    return results;
+  }
+
+  private async cleanupInvalidTokens(
+    context: NotificationContext,
+    results: SendResult[]
+  ): Promise<void> {
+    const invalidTokens = results.filter((r) => !r.success && !r.retryable && r.token);
+
+    if (!invalidTokens.length) return;
+
+    for (const result of invalidTokens) {
+      try {
+        if (result.platform === "web" && result.token?.startsWith("http")) {
+          await context.supabase.from("device_tokens").delete().eq("endpoint", result.token);
+        } else if (result.token) {
+          await context.supabase
+            .from("device_tokens")
+            .delete()
+            .eq("token", result.token)
+            .eq("platform", result.platform);
+        }
+      } catch (error) {
+        logger.error("Failed to cleanup token", error as Error, {
+          platform: result.platform,
+          token: result.token?.substring(0, 20),
+        });
+      }
+    }
+
+    logger.info("Cleaned up invalid tokens", { count: invalidTokens.length });
   }
 }
 
-/**
- * Clean up inactive device tokens
- */
 export async function cleanupInactiveTokens(
   context: NotificationContext,
   tokenIds: string[]

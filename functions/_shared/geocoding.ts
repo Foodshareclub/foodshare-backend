@@ -3,6 +3,9 @@
  * Used across multiple Edge Functions for consistent geocoding behavior
  */
 
+import { withCircuitBreaker, CircuitBreakerError } from "./circuit-breaker.ts";
+import { logger } from "./logger.ts";
+
 // Types
 export interface Coordinates {
   latitude: number;
@@ -127,21 +130,21 @@ async function fetchWithRetry(url: string, retries = MAX_RETRIES): Promise<Respo
           const delayMs = retryAfter
             ? parseInt(retryAfter) * 1000
             : RATE_LIMIT_DELAY_MS * Math.pow(2, attempt);
-          console.log(`Rate limited. Waiting ${delayMs}ms before retry ${attempt + 1}/${retries}`);
+          logger.warn("Nominatim rate limited", { delayMs, attempt: attempt + 1, retries });
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           continue;
         }
 
-        console.error(`HTTP error: ${response.status} ${response.statusText}`);
+        logger.error("Nominatim HTTP error", { status: response.status, statusText: response.statusText });
         return null;
       } finally {
         clearTimeout(timeout);
       }
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
-        console.error(`Request timeout on attempt ${attempt + 1}/${retries}`);
+        logger.error("Nominatim request timeout", { attempt: attempt + 1, retries });
       } else {
-        console.error(`Fetch error on attempt ${attempt + 1}/${retries}:`, error);
+        logger.error("Nominatim fetch error", { attempt: attempt + 1, retries, error: String(error) });
       }
 
       if (attempt === retries - 1) {
@@ -198,7 +201,7 @@ async function geocodeWithFallback(address: string): Promise<Coordinates | null>
 
     const contentType = response.headers.get("content-type");
     if (!contentType?.includes("application/json")) {
-      console.error("Non-JSON response received");
+      logger.error("Nominatim non-JSON response");
       continue;
     }
 
@@ -223,32 +226,47 @@ async function geocodeWithFallback(address: string): Promise<Coordinates | null>
  */
 export async function geocodeAddress(address: string): Promise<Coordinates | null> {
   if (!address || address.trim().length === 0) {
-    console.warn("Empty address provided");
+    logger.warn("Empty address provided");
     return null;
   }
 
   // Check cache first
   const cached = getFromCache(address);
   if (cached) {
-    console.log("Cache hit for:", address);
+    logger.debug("Geocode cache hit", { address });
     return cached;
   }
 
-  console.log("Geocoding address:", address);
+  logger.debug("Geocoding address", { address });
 
-  // Normalize and try geocoding
+  // Normalize and try geocoding with circuit breaker protection
   const normalizedAddress = normalizeAddress(address);
-  const coordinates = await geocodeWithFallback(normalizedAddress);
 
-  if (coordinates) {
-    // Cache successful result
-    saveToCache(address, coordinates);
-    console.log("Geocoded successfully:", coordinates);
-    return coordinates;
+  try {
+    const coordinates = await withCircuitBreaker(
+      "nominatim",
+      () => geocodeWithFallback(normalizedAddress),
+      { failureThreshold: 5, resetTimeoutMs: 60_000 },
+    );
+
+    if (coordinates) {
+      saveToCache(address, coordinates);
+      logger.debug("Geocoded successfully", { address, coordinates });
+      return coordinates;
+    }
+
+    logger.debug("Failed to geocode address", { address });
+    return null;
+  } catch (error) {
+    if (error instanceof CircuitBreakerError) {
+      logger.warn("Nominatim circuit breaker open, skipping geocoding", {
+        address,
+        retryAfterMs: error.retryAfterMs,
+      });
+      return null;
+    }
+    throw error;
   }
-
-  console.log("Failed to geocode address:", address);
-  return null;
 }
 
 /**
@@ -259,7 +277,7 @@ export async function geocodeWithCountryFallback(
   fallbackCountries: string[] = ["USA", "United States", "Czech Republic", "France", "Russia"]
 ): Promise<Coordinates | null> {
   if (!location || location.trim().length === 0) {
-    console.warn("Empty location provided");
+    logger.warn("Empty location provided");
     return null;
   }
 
@@ -276,11 +294,11 @@ export async function geocodeWithCountryFallback(
   );
 
   if (!hasCountry) {
-    console.log("Trying fallback countries...");
+    logger.debug("Trying fallback countries", { location });
 
     for (const country of fallbackCountries) {
       const addressWithCountry = `${location}, ${country}`;
-      console.log(`Trying with ${country}...`);
+      logger.debug("Trying with country fallback", { country, location });
 
       result = await geocodeAddress(addressWithCountry);
       if (result) {
@@ -289,7 +307,7 @@ export async function geocodeWithCountryFallback(
     }
   }
 
-  console.log("All geocoding attempts failed for:", location);
+  logger.info("All geocoding attempts failed", { location });
   return null;
 }
 
@@ -308,7 +326,7 @@ export function cleanupCache(): void {
   }
 
   if (cleaned > 0) {
-    console.log(`Cleaned ${cleaned} expired cache entries`);
+    logger.info("Cleaned expired geocode cache entries", { cleaned });
   }
 }
 

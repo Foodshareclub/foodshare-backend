@@ -2,6 +2,7 @@
  * Profile management service adapted for WhatsApp
  */
 
+import { logger } from "../../_shared/logger.ts";
 import type { Profile } from "../types/index.ts";
 import { getSupabaseClient } from "./supabase.ts";
 
@@ -53,17 +54,18 @@ function logDatabaseError(
   context: Record<string, unknown> = {}
 ): void {
   const errorType = classifyError(error);
-  console.error(
-    JSON.stringify({
-      level: errorType === DatabaseErrorType.TRANSIENT ? "warn" : "error",
-      message: `Database ${operation} failed`,
-      errorType,
-      errorCode: error.code,
-      errorMessage: error.message,
-      ...context,
-      timestamp: new Date().toISOString(),
-    })
-  );
+  const logContext = {
+    errorType,
+    errorCode: error.code,
+    errorMessage: error.message,
+    ...context,
+  };
+
+  if (errorType === DatabaseErrorType.TRANSIENT) {
+    logger.warn(`Database ${operation} failed`, logContext);
+  } else {
+    logger.error(`Database ${operation} failed`, logContext);
+  }
 }
 
 /**

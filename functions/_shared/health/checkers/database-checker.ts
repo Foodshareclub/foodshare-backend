@@ -4,7 +4,7 @@
  * Checks database connectivity and response time.
  */
 
-import { SupabaseClient } from "jsr:@supabase/supabase-js@^2.47.10";
+import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
 import { ServiceHealth, HealthStatus, DATABASE_DEGRADED_THRESHOLD_MS } from "../types.ts";
 
 /**

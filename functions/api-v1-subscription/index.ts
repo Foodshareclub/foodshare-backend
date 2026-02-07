@@ -6,19 +6,22 @@
  * Routes:
  * - GET  /             - Check current subscription status (JWT auth)
  * - POST /sync         - Sync subscription after purchase (JWT auth)
+ * - POST /webhook      - Platform webhook (Apple/Google/Stripe, signature-verified)
  * - POST /cron         - Run cron tasks: DLQ, metrics, cleanup, health report (cron auth)
  * - GET  /cron         - Run cron tasks (GET compat for cron triggers)
  * - GET  /health       - Health check (no auth)
+ * - GET  /webhook/metrics - Webhook metrics (service auth)
  *
  * @module api-v1-subscription
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, ok, created, type HandlerContext } from "../_shared/api-handler.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
+import { getSupabaseClient } from "../_shared/supabase.ts";
 import { ValidationError, AppError, ForbiddenError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
 import { sendDLQAlert, sendTelegramAlert } from "../_shared/telegram-alerts.ts";
+import { handleWebhook, getWebhookHealthData, getWebhookMetricsData } from "./webhook.ts";
 
 // =============================================================================
 // Configuration
@@ -54,13 +57,7 @@ type SyncSubscriptionBody = z.infer<typeof syncSubscriptionSchema>;
 // Service Role Client (for cron tasks)
 // =============================================================================
 
-function getServiceRoleClient() {
-  return createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    { auth: { persistSession: false } },
-  );
-}
+const getServiceRoleClient = getSupabaseClient;
 
 // =============================================================================
 // Cron Auth
@@ -400,7 +397,16 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
 
   // GET /health
   if (path.endsWith("/health")) {
-    return ok({ status: "ok", version: VERSION }, ctx);
+    const webhookHealth = getWebhookHealthData(ctx.request);
+    return ok({ status: "ok", version: VERSION, ...webhookHealth }, ctx);
+  }
+
+  // GET /webhook/metrics — webhook metrics (service auth)
+  if (path.includes("/webhook/metrics")) {
+    if (!verifyCronAuth(ctx.request)) {
+      throw new ForbiddenError("Service authentication required");
+    }
+    return ok({ service: "api-v1-subscription", version: VERSION, timestamp: new Date().toISOString(), ...getWebhookMetricsData() }, ctx);
   }
 
   // GET /cron — trigger cron tasks (for cron triggers)
@@ -415,6 +421,11 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
 async function handlePost(ctx: HandlerContext): Promise<Response> {
   const url = new URL(ctx.request.url);
   const path = url.pathname;
+
+  // POST /webhook — platform webhook handler (Apple/Google/Stripe)
+  if (path.includes("/webhook")) {
+    return handleWebhook(ctx.request);
+  }
 
   // POST /cron — run cron tasks (cron auth)
   if (path.endsWith("/cron")) {

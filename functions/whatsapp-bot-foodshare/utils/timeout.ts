@@ -2,6 +2,8 @@
  * Async timeout utilities
  */
 
+import { logger } from "../../_shared/logger.ts";
+
 /**
  * Execute a promise with a timeout
  */
@@ -69,7 +71,7 @@ export async function retryWithBackoff<T>(
         throw lastError;
       }
 
-      console.log(`Attempt ${attempt} failed, retrying in ${delay}ms...`);
+      logger.info("Retry attempt failed", { attempt, retryInMs: delay });
       await sleep(delay);
       delay = Math.min(delay * backoffMultiplier, maxDelayMs);
     }

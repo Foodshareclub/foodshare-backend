@@ -9,7 +9,8 @@
  * - Rate limiting
  */
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
 import { getCorsHeaders } from "../../_shared/cors.ts";
 
 // ============================================================================
@@ -120,7 +121,7 @@ function cleanExpiredCache(): void {
 }
 
 async function checkRateLimit(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   identifier: string
 ): Promise<boolean> {
   try {
@@ -176,14 +177,7 @@ export default async function uiStringsHandler(req: Request): Promise<Response> 
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error("Missing Supabase configuration");
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = getSupabaseClient();
 
     const url = new URL(req.url);
     const locale = normalizeLocale(url.searchParams.get("locale") || DEFAULT_LOCALE);

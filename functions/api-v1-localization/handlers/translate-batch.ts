@@ -22,7 +22,7 @@
  * }
  */
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 import { getCorsHeaders } from "../../_shared/cors.ts";
 
 // Top 5 priority locales for batch translation
@@ -102,10 +102,7 @@ export default async function translateBatchHandler(req: Request): Promise<Respo
     }
 
     // Initialize Supabase client
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabase = getSupabaseClient();
 
     // Build queue items for all field/locale combinations
     const queueItems: Array<{

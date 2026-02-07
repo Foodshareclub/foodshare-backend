@@ -5,6 +5,7 @@
 
 import ExifReader from "npm:exifreader@4.23.3";
 import type { EXIFData } from "../types/index.ts";
+import { logger } from "../../_shared/logger.ts";
 
 export async function extractEXIF(imageData: Uint8Array): Promise<EXIFData | null> {
   try {
@@ -44,7 +45,7 @@ export async function extractEXIF(imageData: Uint8Array): Promise<EXIFData | nul
     
     return Object.keys(exif).length > 0 ? exif : null;
   } catch (error) {
-    console.warn("EXIF extraction failed:", error);
+    logger.warn("EXIF extraction failed", { error });
     return null;
   }
 }

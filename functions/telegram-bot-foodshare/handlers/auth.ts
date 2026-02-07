@@ -2,6 +2,7 @@
  * Authentication handlers with brute-force protection
  */
 
+import { logger } from "../../_shared/logger.ts";
 import { sendMessage } from "../services/telegram-api.ts";
 import { getUserState, setUserState } from "../services/user-state.ts";
 import {
@@ -101,16 +102,11 @@ async function incrementFailedAttempts(
       verification_attempts: newAttempts,
       verification_locked_until: lockedUntil.toISOString(),
     });
-    console.log(
-      JSON.stringify({
-        level: "warn",
-        message: "Account locked due to too many failed verification attempts",
-        profileId,
-        attempts: newAttempts,
-        lockedUntil: lockedUntil.toISOString(),
-        timestamp: new Date().toISOString(),
-      })
-    );
+    logger.warn("Account locked due to too many failed verification attempts", {
+      profileId,
+      attempts: newAttempts,
+      lockedUntil: lockedUntil.toISOString(),
+    });
   } else {
     await updateProfile(profileId, {
       verification_attempts: newAttempts,
