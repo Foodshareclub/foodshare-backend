@@ -198,5 +198,3 @@ verify_jwt = false
 [functions.api-v1-alerts]
 verify_jwt = false
 
-[functions.api-v1-analytics.schedule]
-cron = "0 * * * *"
