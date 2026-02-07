@@ -1,5 +1,0 @@
-# Send Push Notification Edge Function
-# Supports iOS (APNs), Android (FCM - future), and Web Push (VAPID)
-
-# JWT verification enabled - requires Authorization header
-verify_jwt = true
