@@ -12,7 +12,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getSupabaseClient } from "../../../_shared/supabase.ts";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 import type { AuthMode, AuthResult } from "./types.ts";
 import { logger } from "../../_shared/logger.ts";
 
