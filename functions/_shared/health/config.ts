@@ -17,8 +17,8 @@ import { FunctionConfig } from "./types.ts";
  */
 export const CRITICAL_FUNCTIONS: FunctionConfig[] = [
   // Core Infrastructure
-  { name: "bff", critical: true, requiresAuth: false, expectedStatus: [200, 400, 401] },
-  { name: "feature-flags", critical: true, requiresAuth: false },
+  { name: "api-v1-products", critical: true, requiresAuth: false, expectedStatus: [200, 400, 401] },
+  { name: "api-v1-feature-flags", critical: true, requiresAuth: false },
   { name: "geolocate-user", critical: true, requiresAuth: false },
   { name: "check-login-rate", critical: true, requiresAuth: false, testPayload: { phone: "+1234567890", action: "check" } },
   // Unified Attestation API (consolidates verify-attestation, verify-android-attestation)
@@ -71,13 +71,10 @@ export const API_FUNCTIONS: FunctionConfig[] = [
 export const DATA_FUNCTIONS: FunctionConfig[] = [
   // User Operations
   { name: "delete-user", critical: false, requiresAuth: true, expectedStatus: [200, 401], skipInQuickCheck: true },
-  { name: "atomic-favorites", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
-  { name: "batch-operations", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
 
   // Sync & Analytics
   { name: "sync", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
-  { name: "sync-analytics", critical: false, requiresAuth: false },
-  { name: "track-event", critical: false, requiresAuth: false },
+  { name: "api-v1-analytics", critical: false, requiresAuth: false },
 
   // Location Services
   { name: "match-users", critical: false, requiresAuth: false },
@@ -92,7 +89,7 @@ export const DATA_FUNCTIONS: FunctionConfig[] = [
  */
 export const UTILITY_FUNCTIONS: FunctionConfig[] = [
   // Cache & Performance
-  { name: "cache-operation", critical: false, requiresAuth: false, testPayload: { operation: "exists", key: "health_ping" } },
+  { name: "api-v1-cache", critical: false, requiresAuth: false, testPayload: { operation: "exists", key: "health_ping" } },
   { name: "check-upstash-services", critical: false, requiresAuth: false },
 
   // Localization
@@ -102,7 +99,7 @@ export const UTILITY_FUNCTIONS: FunctionConfig[] = [
   // Security & Utilities
   { name: "get-certificate-pins", critical: false, requiresAuth: false },
   { name: "get-my-chat-id", critical: false, requiresAuth: false },
-  { name: "hf-inference", critical: false, requiresAuth: false, skipInQuickCheck: true },
+  { name: "api-v1-ai", critical: false, requiresAuth: false, skipInQuickCheck: true },
 
   // Image Processing
   { name: "api-v1-images", critical: true, requiresAuth: true, skipInQuickCheck: false },

@@ -1,5 +1,0 @@
-[functions.sync-analytics]
-verify_jwt = false
-
-[functions.sync-analytics.schedule]
-cron = "0 * * * *"

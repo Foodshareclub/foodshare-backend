@@ -1,23 +1,32 @@
 /**
- * Feature Flags Edge Function
+ * Feature Flags API v1
  *
  * Provides feature flags, A/B experiments, and version compatibility checking.
  * Integrates with database functions for deterministic rollout and targeting.
  *
- * Endpoints:
- * - GET /feature-flags - Get all flags for current user
- * - GET /feature-flags/experiments/:key - Get/assign experiment variant
- * - GET /feature-flags/compatibility - Check app version compatibility
+ * Routes:
+ * - GET /                      - Get all flags for current user
+ * - GET /experiments/:key      - Get/assign experiment variant
+ * - GET /compatibility         - Check app version compatibility
+ * - GET /health                - Health check
  *
  * Headers:
  * - X-Platform: ios | android | web
  * - X-App-Version: semver string (e.g., "1.2.3")
+ *
+ * @module api-v1-feature-flags
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { NotFoundError, ServerError, UnauthorizedError } from "../_shared/errors.ts";
+
+// =============================================================================
+// Configuration
+// =============================================================================
+
+const VERSION = "1.0.0";
 
 // =============================================================================
 // Query Schemas
@@ -38,9 +47,11 @@ type FlagsQuery = z.infer<typeof flagsQuerySchema>;
 
 function getSubPath(url: URL): string {
   const pathname = url.pathname;
-  const idx = pathname.indexOf("/feature-flags");
+  // Match against function name in path
+  const marker = "/api-v1-feature-flags";
+  const idx = pathname.indexOf(marker);
   if (idx === -1) return "";
-  const subPath = pathname.slice(idx + 14); // Remove "/feature-flags"
+  const subPath = pathname.slice(idx + marker.length);
   return subPath.startsWith("/") ? subPath.slice(1) : subPath;
 }
 
@@ -51,7 +62,6 @@ function getSubPath(url: URL): string {
 async function handleGetFeatureFlags(ctx: HandlerContext<unknown, FlagsQuery>): Promise<Response> {
   const { supabase, userId, query, request, ctx: requestCtx } = ctx;
 
-  // Extract platform/version from headers or query
   const platform = request.headers.get("X-Platform") || query.platform || "unknown";
   const appVersion = request.headers.get("X-App-Version") || query.version || null;
 
@@ -61,7 +71,6 @@ async function handleGetFeatureFlags(ctx: HandlerContext<unknown, FlagsQuery>): 
     requestId: requestCtx?.requestId,
   });
 
-  // Call the database function
   const { data, error } = await supabase.rpc("get_user_feature_flags", {
     p_user_id: userId || null,
     p_platform: platform,
@@ -83,15 +92,19 @@ async function handleGetFeatureFlags(ctx: HandlerContext<unknown, FlagsQuery>): 
     meta: { timestamp: string; refreshAfter: number; cacheTTL: number };
   };
 
-  return ok({
-    flags: dbResponse.flags,
-    context: dbResponse.context,
-  }, ctx, {
-    cacheTTL: dbResponse.meta?.cacheTTL || 60,
-    uiHints: {
-      refreshAfter: dbResponse.meta?.refreshAfter || 300,
+  return ok(
+    {
+      flags: dbResponse.flags,
+      context: dbResponse.context,
     },
-  });
+    ctx,
+    {
+      cacheTTL: dbResponse.meta?.cacheTTL || 60,
+      uiHints: {
+        refreshAfter: dbResponse.meta?.refreshAfter || 300,
+      },
+    },
+  );
 }
 
 // =============================================================================
@@ -100,7 +113,7 @@ async function handleGetFeatureFlags(ctx: HandlerContext<unknown, FlagsQuery>): 
 
 async function handleExperimentVariant(
   ctx: HandlerContext<unknown, FlagsQuery>,
-  experimentKey: string
+  experimentKey: string,
 ): Promise<Response> {
   const { supabase, userId, ctx: requestCtx } = ctx;
 
@@ -141,20 +154,25 @@ async function handleExperimentVariant(
     throw new NotFoundError("Experiment", experimentKey);
   }
 
-  return ok({
-    experimentKey: dbResponse.experimentKey,
-    variant: dbResponse.variant,
-    assignedAt: dbResponse.assignedAt,
-    isNewAssignment: dbResponse.isNewAssignment || false,
-    reason: dbResponse.reason,
-  }, ctx);
+  return ok(
+    {
+      experimentKey: dbResponse.experimentKey,
+      variant: dbResponse.variant,
+      assignedAt: dbResponse.assignedAt,
+      isNewAssignment: dbResponse.isNewAssignment || false,
+      reason: dbResponse.reason,
+    },
+    ctx,
+  );
 }
 
 // =============================================================================
 // Compatibility Check Handler
 // =============================================================================
 
-async function handleCompatibilityCheck(ctx: HandlerContext<unknown, FlagsQuery>): Promise<Response> {
+async function handleCompatibilityCheck(
+  ctx: HandlerContext<unknown, FlagsQuery>,
+): Promise<Response> {
   const { supabase, query, request, ctx: requestCtx } = ctx;
 
   const platform = request.headers.get("X-Platform") || query.platform || "unknown";
@@ -190,39 +208,47 @@ async function handleCompatibilityCheck(ctx: HandlerContext<unknown, FlagsQuery>
     message: string | null;
   };
 
-  return ok({
-    supported: dbResponse.supported,
-    needsUpdate: dbResponse.needsUpdate,
-    forceUpdate: dbResponse.forceUpdate,
-    versions: {
-      current: dbResponse.currentVersion,
-      minimum: dbResponse.minVersion,
-      recommended: dbResponse.recommendedVersion,
+  return ok(
+    {
+      supported: dbResponse.supported,
+      needsUpdate: dbResponse.needsUpdate,
+      forceUpdate: dbResponse.forceUpdate,
+      versions: {
+        current: dbResponse.currentVersion,
+        minimum: dbResponse.minVersion,
+        recommended: dbResponse.recommendedVersion,
+      },
+      message: dbResponse.message,
+      action: dbResponse.forceUpdate
+        ? "force_update"
+        : dbResponse.needsUpdate
+          ? "suggest_update"
+          : "none",
     },
-    message: dbResponse.message,
-    action: dbResponse.forceUpdate
-      ? "force_update"
-      : dbResponse.needsUpdate
-        ? "suggest_update"
-        : "none",
-  }, ctx);
+    ctx,
+  );
 }
 
 // =============================================================================
 // Main Router Handler
 // =============================================================================
 
-async function handleFeatureFlags(ctx: HandlerContext<unknown, FlagsQuery>): Promise<Response> {
+async function handleGet(ctx: HandlerContext<unknown, FlagsQuery>): Promise<Response> {
   const { request, query } = ctx;
   const url = new URL(request.url);
   const subPath = getSubPath(url);
 
-  // GET /feature-flags/compatibility
+  // GET /health
+  if (subPath === "health" || subPath === "health/") {
+    return ok({ status: "ok", version: VERSION }, ctx);
+  }
+
+  // GET /compatibility
   if (subPath === "compatibility" || subPath === "compatibility/" || query.action === "compatibility") {
     return handleCompatibilityCheck(ctx);
   }
 
-  // GET /feature-flags/experiments/:key or with experimentKey query param
+  // GET /experiments/:key or ?experimentKey=...
   if (subPath.startsWith("experiments") || query.experimentKey) {
     const experimentKey = query.experimentKey || subPath.split("/").pop() || "";
     if (experimentKey && experimentKey !== "experiments") {
@@ -230,7 +256,7 @@ async function handleFeatureFlags(ctx: HandlerContext<unknown, FlagsQuery>): Pro
     }
   }
 
-  // GET /feature-flags - Get all flags
+  // GET / — all flags
   return handleGetFeatureFlags(ctx);
 }
 
@@ -239,18 +265,18 @@ async function handleFeatureFlags(ctx: HandlerContext<unknown, FlagsQuery>): Pro
 // =============================================================================
 
 export default createAPIHandler({
-  service: "feature-flags",
-  version: "2.0.0",
-  requireAuth: false, // Auth is optional - flags work for anonymous users too
+  service: "api-v1-feature-flags",
+  version: VERSION,
+  requireAuth: false, // Auth is optional — flags work for anonymous users too
   rateLimit: {
     limit: 60,
-    windowMs: 60000, // 60 requests per minute
-    keyBy: "ip", // Rate limit by IP since auth is optional
+    windowMs: 60000,
+    keyBy: "ip",
   },
   routes: {
     GET: {
       querySchema: flagsQuerySchema,
-      handler: handleFeatureFlags,
+      handler: handleGet,
     },
   },
 });

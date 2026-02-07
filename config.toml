@@ -5,7 +5,15 @@
 # Core Functions
 # =============================================================================
 
+[functions.api-v1-cache]
+verify_jwt = false
+
 [functions.api-v1-images]
+verify_jwt = false
+
+# Unified Health API (consolidates health + health-advanced)
+# Public monitoring endpoint — no auth required
+[functions.api-v1-health]
 verify_jwt = false
 
 # Unified Search & Indexing API v2
@@ -14,6 +22,16 @@ verify_jwt = false
 # - POST ?route=index — webhook indexing (HMAC verified)
 # - POST ?route=batch — admin batch indexing (API key auth)
 [functions.api-v1-search]
+verify_jwt = false
+
+# Feature Flags, A/B experiments, version compatibility (replaces feature-flags)
+# Auth optional — flags work for anonymous users
+[functions.api-v1-feature-flags]
+verify_jwt = false
+
+# Unified AI API (replaces ai-api + hf-inference)
+# Chat (Groq), embeddings (z.ai), inference (HF) — auth per-route
+[functions.api-v1-ai]
 verify_jwt = false
 
 [functions.geolocate-user]
@@ -33,13 +51,21 @@ verify_jwt = false
 verify_jwt = false
 
 # =============================================================================
-# Subscription/Payment Webhooks
+# Subscription/Payment
 # =============================================================================
 
 [functions.subscription-webhook]
 verify_jwt = false
 
-[functions.subscription-cron]
+# =============================================================================
+# UNIFIED SUBSCRIPTION API v1
+# =============================================================================
+# Consolidates sync-subscription + subscription-cron:
+# - GET / - Check subscription status (JWT auth)
+# - POST /sync - Sync subscription after purchase (JWT auth)
+# - POST /cron - Run cron tasks: DLQ, metrics, cleanup (cron auth)
+# - GET /health - Health check
+[functions.api-v1-subscription]
 verify_jwt = false
 
 # =============================================================================
@@ -122,3 +148,17 @@ verify_jwt = false
 # - GET /health - Health check
 [functions.api-v1-attestation]
 verify_jwt = false
+
+# =============================================================================
+# UNIFIED ANALYTICS API v1
+# =============================================================================
+# Syncs Supabase data to MotherDuck for analytics (replaces sync-analytics):
+# - GET / - Sync status (last sync times, record counts)
+# - GET /health - Health check
+# - POST /sync - Trigger sync (mode=full|incremental)
+# Cron: hourly incremental sync
+[functions.api-v1-analytics]
+verify_jwt = false
+
+[functions.api-v1-analytics.schedule]
+cron = "0 * * * *"
