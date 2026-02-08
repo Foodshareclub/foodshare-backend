@@ -4,7 +4,10 @@
 
 -- =============================================================================
 -- Version 1: Legacy (uses direct posts table query)
+-- Must DROP first because return type is changing (adding new columns)
 -- =============================================================================
+DROP FUNCTION IF EXISTS public.get_nearby_posts(double precision, double precision, double precision, text, integer, integer);
+
 CREATE OR REPLACE FUNCTION public.get_nearby_posts(
     user_lat double precision,
     user_lng double precision,
@@ -89,7 +92,10 @@ $$;
 
 -- =============================================================================
 -- Version 2: Modern (uses posts_with_location view, blocked_users filtering)
+-- Must DROP first because return type is changing (adding new columns)
 -- =============================================================================
+DROP FUNCTION IF EXISTS public.get_nearby_posts(double precision, double precision, integer, uuid, text, integer, integer);
+
 CREATE OR REPLACE FUNCTION public.get_nearby_posts(
     p_latitude double precision,
     p_longitude double precision,
