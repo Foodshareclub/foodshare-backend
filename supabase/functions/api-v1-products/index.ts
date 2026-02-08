@@ -53,7 +53,7 @@ const createProductSchema = z.object({
   title: z.string().min(LISTING.title.minLength).max(LISTING.title.maxLength),
   description: z.string().max(LISTING.description.maxLength).optional(),
   images: z.array(z.string().url()).min(1).max(5),
-  postType: z.enum(["food", "non-food", "request"]),
+  postType: z.enum(["food", "non-food", "request", "fridge"]),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   pickupAddress: z.string().max(500).optional(),
@@ -78,7 +78,7 @@ const listQuerySchema = z.object({
   mode: z.enum(["feed"]).optional(),
   id: z.string().optional(),
   include: z.string().optional(), // e.g., "owner,related"
-  postType: z.enum(["food", "non-food", "request"]).optional(),
+  postType: z.enum(["food", "non-food", "request", "fridge"]).optional(),
   categoryId: z.string().optional(),
   lat: z.string().optional(),
   lng: z.string().optional(),
