@@ -3,8 +3,7 @@
  *
  * Production-grade embedding generation with graceful degradation:
  * - Primary: Zep.ai (1536 dimensions, optimized for RAG)
- * - Fallback: Groq (fast inference)
- * - Last Resort: HuggingFace Inference API
+ * - Fallback: HuggingFace Inference API
  *
  * Features:
  * - Circuit breakers per provider
@@ -65,7 +64,7 @@ export interface BatchEmbeddingResult {
   latencyMs: number;
 }
 
-export type EmbeddingProvider = "zep" | "huggingface" | "openai";
+export type EmbeddingProvider = "zep" | "huggingface";
 
 interface ProviderConfig {
   name: EmbeddingProvider;
@@ -77,8 +76,7 @@ interface ProviderConfig {
 }
 
 // Provider configurations - ordered by preference
-// Zep.ai (primary, if configured) → HuggingFace (free) → OpenAI (last resort)
-// Note: Groq removed - they no longer offer embedding models
+// Zep.ai (primary, if configured) → HuggingFace (free fallback)
 const PROVIDERS: ProviderConfig[] = [
   {
     name: "zep",
@@ -95,14 +93,6 @@ const PROVIDERS: ProviderConfig[] = [
     dimensions: 384, // Will be padded to 1536
     maxBatchSize: 32,
     endpoint: "https://router.huggingface.co/hf-inference/models",
-  },
-  {
-    name: "openai",
-    envKey: "OPENAI_API_KEY",
-    model: "text-embedding-3-small",
-    dimensions: 1536,
-    maxBatchSize: 100,
-    endpoint: "https://api.openai.com/v1/embeddings",
   },
 ];
 
@@ -174,61 +164,6 @@ async function generateZepEmbedding(
     throw new EmbeddingError(
       `Zep request failed: ${error instanceof Error ? error.message : String(error)}`,
       "zep",
-      "NETWORK_ERROR",
-      true
-    );
-  }
-}
-
-async function generateOpenAIEmbedding(
-  texts: string[],
-  apiKey: string,
-  timeoutMs: number
-): Promise<number[][]> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch("https://api.openai.com/v1/embeddings", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        input: texts,
-        model: "text-embedding-3-small",
-        dimensions: 1536, // OpenAI allows specifying output dimensions
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new EmbeddingError(
-        `OpenAI API error: ${response.status} - ${errorText}`,
-        "openai",
-        `HTTP_${response.status}`,
-        response.status >= 500 || response.status === 429
-      );
-    }
-
-    const data = await response.json();
-    return data.data.map((d: { embedding: number[] }) => d.embedding);
-  } catch (error) {
-    clearTimeout(timeout);
-
-    if (error instanceof EmbeddingError) throw error;
-
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new EmbeddingError("OpenAI request timeout", "openai", "TIMEOUT", true);
-    }
-
-    throw new EmbeddingError(
-      `OpenAI request failed: ${error instanceof Error ? error.message : String(error)}`,
-      "openai",
       "NETWORK_ERROR",
       true
     );
@@ -414,8 +349,6 @@ export async function generateEmbeddings(
                     apiKey,
                     effectiveConfig.timeoutMs
                   );
-                case "openai":
-                  return await generateOpenAIEmbedding(sanitizedTexts, apiKey, effectiveConfig.timeoutMs);
                 default:
                   throw new Error(`Unknown provider: ${provider.name}`);
               }
