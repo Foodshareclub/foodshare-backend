@@ -22,7 +22,6 @@
     "@opentelemetry/sdk-trace-base": "npm:@opentelemetry/sdk-trace-base@^1.28",
     "@opentelemetry/exporter-trace-otlp-http": "npm:@opentelemetry/exporter-trace-otlp-http@^0.56",
     "grammy": "https://deno.land/x/grammy@v1.32.0/mod.ts",
-    "zod": "jsr:@std/zod@^3.24",
     "redis": "https://deno.land/x/redis@v0.32.4/mod.ts",
     "hono": "jsr:@hono/hono@^4"
   },
