@@ -675,7 +675,7 @@ function handleDelete(ctx: HandlerContext<unknown, QueryParams>): Promise<Respon
 // Export Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: "api-v1-profile",
   version: "1.0.0",
   requireAuth: true,
@@ -705,4 +705,4 @@ export default createAPIHandler({
       handler: handleDelete,
     },
   },
-});
+}));

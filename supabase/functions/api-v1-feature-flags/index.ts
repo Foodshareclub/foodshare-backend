@@ -291,7 +291,7 @@ async function handleGet(ctx: HandlerContext<unknown, FlagsQuery>): Promise<Resp
 // Export Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: "api-v1-feature-flags",
   version: VERSION,
   requireAuth: false, // Auth is optional — flags work for anonymous users too
@@ -306,4 +306,4 @@ export default createAPIHandler({
       handler: handleGet,
     },
   },
-});
+}));

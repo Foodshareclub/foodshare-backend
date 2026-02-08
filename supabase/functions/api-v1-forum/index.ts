@@ -1267,7 +1267,7 @@ async function handleDelete(ctx: HandlerContext<unknown, ForumQuery>): Promise<R
 // Export Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: "api-v1-forum",
   version: VERSION,
   requireAuth: false, // GET is public, mutations require auth
@@ -1298,4 +1298,4 @@ export default createAPIHandler({
       requireAuth: true,
     },
   },
-});
+}));

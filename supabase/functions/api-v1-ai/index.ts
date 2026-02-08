@@ -424,7 +424,7 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
 // Export Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: "api-v1-ai",
   version: VERSION,
   requireAuth: false, // Auth handled per-route: chat/embeddings require JWT, inference/health/models public
@@ -443,4 +443,4 @@ export default createAPIHandler({
       handler: handlePost,
     },
   },
-});
+}));

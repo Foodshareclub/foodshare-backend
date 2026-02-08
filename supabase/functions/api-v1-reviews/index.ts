@@ -235,7 +235,7 @@ function handleGet(ctx: HandlerContext<unknown, QueryParams>): Promise<Response>
 // Export Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: "api-v1-reviews",
   version: "1.0.0",
   requireAuth: false, // GET is public, POST requires auth
@@ -258,4 +258,4 @@ export default createAPIHandler({
       idempotent: true,
     },
   },
-});
+}));

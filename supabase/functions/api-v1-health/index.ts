@@ -232,7 +232,7 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
 // API Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: SERVICE,
   version: "1",
   requireAuth: false,
@@ -246,4 +246,4 @@ export default createAPIHandler({
     GET: { handler: handleGet },
     POST: { handler: handlePost },
   },
-});
+}));

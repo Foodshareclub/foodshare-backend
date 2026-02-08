@@ -599,7 +599,7 @@ async function handleBatchOperations(ctx: HandlerContext<BatchOperationsBody, Qu
 // Export Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: "api-v1-engagement",
   version: "1.0.0",
   requireAuth: false, // GET is public, POST requires auth for most actions
@@ -620,4 +620,4 @@ export default createAPIHandler({
       requireAuth: true,
     },
   },
-});
+}));

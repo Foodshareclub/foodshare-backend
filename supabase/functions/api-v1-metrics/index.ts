@@ -477,7 +477,7 @@ async function handlePost(ctx: HandlerContext<EventRequest | BatchEventsRequest>
 // Export Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: "api-v1-metrics",
   version: "2.0.0",
   requireAuth: false, // Allow unauthenticated scraping, but check role if authenticated
@@ -496,4 +496,4 @@ export default createAPIHandler({
       requireAuth: true,
     },
   },
-});
+}));

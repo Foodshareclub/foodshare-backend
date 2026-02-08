@@ -360,7 +360,7 @@ async function handleGetSync(ctx: HandlerContext): Promise<Response> {
 // Export Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: "api-v1-sync",
   version: "2.0.0",
   requireAuth: true,
@@ -377,4 +377,4 @@ export default createAPIHandler({
       handler: handlePostSync,
     },
   },
-});
+}));

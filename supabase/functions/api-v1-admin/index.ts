@@ -163,7 +163,7 @@ async function handleRequest(ctx: HandlerContext): Promise<Response> {
 // API Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: SERVICE,
   version: VERSION,
   requireAuth: false, // Admin auth handled per-route above
@@ -179,4 +179,4 @@ export default createAPIHandler({
     PUT: { handler: handleRequest },
     DELETE: { handler: handleRequest },
   },
-});
+}));

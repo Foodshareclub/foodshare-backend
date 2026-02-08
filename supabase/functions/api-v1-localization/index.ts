@@ -148,7 +148,7 @@ async function routeRequest(ctx: HandlerContext): Promise<Response> {
 // API Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: SERVICE,
   version: "3",
   requireAuth: false,
@@ -162,4 +162,4 @@ export default createAPIHandler({
     GET: { handler: routeRequest },
     POST: { handler: routeRequest },
   },
-});
+}));

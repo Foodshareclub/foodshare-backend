@@ -627,7 +627,7 @@ async function handleGet(ctx: HandlerContext<unknown, ListQuery>): Promise<Respo
 // Export Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: "api-v1-products",
   version: "2.0.0",
   requireAuth: false, // Allow public listing, auth checked per-route
@@ -660,4 +660,4 @@ export default createAPIHandler({
       requireAuth: true,
     },
   },
-});
+}));

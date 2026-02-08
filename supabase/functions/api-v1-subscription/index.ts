@@ -472,7 +472,7 @@ async function runCronTasks(ctx: HandlerContext): Promise<Response> {
 // Export Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: "api-v1-subscription",
   version: VERSION,
   requireAuth: false, // Auth handled per-route (JWT for sync/status, cron auth for cron)
@@ -490,4 +490,4 @@ export default createAPIHandler({
       handler: handlePost,
     },
   },
-});
+}));

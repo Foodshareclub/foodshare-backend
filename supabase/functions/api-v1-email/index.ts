@@ -1016,7 +1016,7 @@ function handlePost(ctx: HandlerContext): Promise<Response> {
 // Export Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: "api-v1-email",
   version: VERSION,
   requireAuth: false, // Auth handled per-route (service/cron for queue ops, JWT for send)
@@ -1034,4 +1034,4 @@ export default createAPIHandler({
       handler: handlePost,
     },
   },
-});
+}));

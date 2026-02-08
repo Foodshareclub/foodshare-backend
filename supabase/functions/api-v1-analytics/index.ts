@@ -379,7 +379,7 @@ async function handleSync(ctx: HandlerContext<SyncRequest>): Promise<Response> {
 // Export Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: "api-v1-analytics",
   version: CONFIG.version,
   requireAuth: false, // Cron + internal; auth handled at config.toml level
@@ -398,4 +398,4 @@ export default createAPIHandler({
       handler: handleSync,
     },
   },
-});
+}));

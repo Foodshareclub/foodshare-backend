@@ -1443,7 +1443,7 @@ async function handleCacheOperation(
 // Export Handler
 // =============================================================================
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: "api-v1-cache",
   version: CONFIG.version,
   requireAuth: false,
@@ -1456,4 +1456,4 @@ export default createAPIHandler({
       handler: handleCacheOperation,
     },
   },
-});
+}));

@@ -657,7 +657,7 @@ function handlePost(ctx: HandlerContext): Promise<Response> {
   return handleCheckAlerts(ctx as HandlerContext<CheckAlertsRequest>);
 }
 
-export default createAPIHandler({
+Deno.serve(createAPIHandler({
   service: "api-v1-alerts",
   version: CONFIG.version,
   requireAuth: false, // Cron job + webhooks - service-level
@@ -670,4 +670,4 @@ export default createAPIHandler({
       handler: handleGet,
     },
   },
-});
+}));
