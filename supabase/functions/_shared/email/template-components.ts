@@ -56,14 +56,14 @@ export const BRAND = {
 
   // Assets
   logoUrl:
-    "https://***REMOVED***/storage/v1/object/public/assets/logo-512.png",
+    "https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png",
 
   // App Store links
   appStore: {
     ios: "https://apps.apple.com/us/app/foodshare-club/id1573242804",
     android: null, // Coming soon
-    iosBadge: "https://***REMOVED***/storage/v1/object/public/assets/apple-store.png",
-    androidBadge: "https://***REMOVED***/storage/v1/object/public/assets/google-store.png",
+    iosBadge: "https://api.foodshare.club/storage/v1/object/public/assets/apple-store.png",
+    androidBadge: "https://api.foodshare.club/storage/v1/object/public/assets/google-store.png",
   },
 
   // Company Info

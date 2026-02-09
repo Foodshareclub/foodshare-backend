@@ -5,7 +5,7 @@
 -- ============================================================================
 -- Constants used in templates
 -- ============================================================================
--- LOGO_URL: https://***REMOVED***/storage/v1/object/public/assets/logo-512.png
+-- LOGO_URL: https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png
 -- Primary Color: #ff2d55
 -- Company: FoodShare LLC, USA 20231394981
 -- Address: 4632 Winding Way, Sacramento, CA 95841
@@ -34,7 +34,7 @@ VALUES (
         <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 45, 85, 0.2); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff5177 50%, #ff6b8a 100%); padding: 50px 30px; text-align: center;">
-              <img src="https://***REMOVED***/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
+              <img src="https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);">Welcome to FoodShare! 🎉</h1>
               <p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500;">Your journey to reducing food waste starts now</p>
             </td>
@@ -130,7 +130,7 @@ VALUES (
         <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 45, 85, 0.2); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff5177 50%, #ff6b8a 100%); padding: 50px 30px; text-align: center;">
-              <img src="https://***REMOVED***/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
+              <img src="https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800;">Welcome to FoodShare! 🎉</h1>
               <p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500;">Let''s confirm your email to get started</p>
             </td>
@@ -213,7 +213,7 @@ VALUES (
         <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 45, 85, 0.2); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff5177 50%, #ff6b8a 100%); padding: 50px 30px; text-align: center;">
-              <img src="https://***REMOVED***/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
+              <img src="https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800;">Reset Your Password 🔐</h1>
               <p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500;">Let''s get you back into your account</p>
             </td>
@@ -298,7 +298,7 @@ VALUES (
         <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 45, 85, 0.2); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff5177 50%, #ff6b8a 100%); padding: 50px 30px; text-align: center;">
-              <img src="https://***REMOVED***/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
+              <img src="https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800;">Welcome, Volunteer! 🌟</h1>
               <p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500;">You''re now part of something amazing</p>
             </td>
@@ -389,7 +389,7 @@ VALUES (
         <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 45, 85, 0.2); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff5177 50%, #ff6b8a 100%); padding: 50px 30px; text-align: center;">
-              <img src="https://***REMOVED***/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
+              <img src="https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800;">Almost There! 📝</h1>
               <p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500;">Complete your profile to unlock all features</p>
             </td>
@@ -478,7 +478,7 @@ VALUES (
         <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 45, 85, 0.2); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff5177 50%, #ff6b8a 100%); padding: 50px 30px; text-align: center;">
-              <img src="https://***REMOVED***/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
+              <img src="https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800;">Ready to Share? 🍎</h1>
               <p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500;">Tips for a successful first share</p>
             </td>
@@ -570,7 +570,7 @@ VALUES (
         <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 45, 85, 0.2); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff5177 50%, #ff6b8a 100%); padding: 50px 30px; text-align: center;">
-              <img src="https://***REMOVED***/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
+              <img src="https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800;">Weekly Highlights 🌟</h1>
               <p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500;">See what''s happening in your community</p>
             </td>
@@ -678,7 +678,7 @@ VALUES (
         <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 45, 85, 0.2); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff5177 50%, #ff6b8a 100%); padding: 50px 30px; text-align: center;">
-              <img src="https://***REMOVED***/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
+              <img src="https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800;">Your Impact in {{month}} 📊</h1>
               <p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500;">Look at the difference you''ve made!</p>
             </td>
@@ -790,7 +790,7 @@ VALUES (
         <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 45, 85, 0.2); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff5177 50%, #ff6b8a 100%); padding: 50px 30px; text-align: center;">
-              <img src="https://***REMOVED***/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
+              <img src="https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800;">🎉 Achievement Unlocked!</h1>
               <p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500;">You''ve reached an amazing milestone</p>
             </td>
@@ -882,7 +882,7 @@ VALUES (
         <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 45, 85, 0.2); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff5177 50%, #ff6b8a 100%); padding: 50px 30px; text-align: center;">
-              <img src="https://***REMOVED***/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
+              <img src="https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800;">Welcome to {{neighborhood}}! 🏘️</h1>
               <p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500;">Meet your local FoodShare community</p>
             </td>
@@ -988,7 +988,7 @@ VALUES (
         <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 45, 85, 0.2); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff5177 50%, #ff6b8a 100%); padding: 50px 30px; text-align: center;">
-              <img src="https://***REMOVED***/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
+              <img src="https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800;">We Miss You! 💚</h1>
               <p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500;">A lot has happened since you''ve been away</p>
             </td>
@@ -1085,7 +1085,7 @@ VALUES (
         <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 45, 85, 0.2); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff5177 50%, #ff6b8a 100%); padding: 50px 30px; text-align: center;">
-              <img src="https://***REMOVED***/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
+              <img src="https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800;">New Listing Near You! 📍</h1>
               <p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500;">{{listingTitle}} is now available</p>
             </td>
@@ -1178,7 +1178,7 @@ VALUES (
         <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 45, 85, 0.2); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff5177 50%, #ff6b8a 100%); padding: 50px 30px; text-align: center;">
-              <img src="https://***REMOVED***/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
+              <img src="https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800;">You''ve Got a Message! 💬</h1>
               <p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500;">{{senderName}} sent you a message</p>
             </td>
@@ -1262,7 +1262,7 @@ VALUES (
         <table width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 45, 85, 0.2); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #ff2d55 0%, #ff5177 50%, #ff6b8a 100%); padding: 50px 30px; text-align: center;">
-              <img src="https://***REMOVED***/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
+              <img src="https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800;">New Feedback Received</h1>
               <p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500;">{{feedbackType}} feedback from {{submitterName}}</p>
             </td>
