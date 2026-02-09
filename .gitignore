@@ -5,10 +5,21 @@ node_modules/
 .temp/
 supabase/.temp/
 
-# Environment
+# Environment (secrets)
 .env
 .env.local
 .env.*.local
+.env.functions
+
+# Docker volumes (runtime data)
+volumes/db/data/
+volumes/storage/*
+!volumes/storage/.gitkeep
+volumes/snippets/*
+!volumes/snippets/.gitkeep
+
+# Deno lock (edge-runtime resolves deps fresh)
+supabase/functions/deno.lock
 
 # OS
 .DS_Store
@@ -28,9 +39,11 @@ npm-debug.log*
 dist/
 build/
 
-# Lock files (Deno uses deno.lock)
+# Lock files
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
+
+# Misc
 migrations_backup/
 .vercel

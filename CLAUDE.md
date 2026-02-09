@@ -1,80 +1,98 @@
 # Foodshare Backend
 
-Shared Supabase backend (Deno Edge Functions + PostgreSQL) serving Web, iOS, and Android.
+Self-hosted Supabase backend (Docker Compose + Deno Edge Functions + PostgreSQL) serving Web, iOS, and Android.
+
+**Self-hosted Supabase:**
+- Studio (dashboard): https://studio.foodshare.club
+- API: https://api.foodshare.club
+- VPS: 152.53.136.84 (ARM64, 8GB RAM)
 
 ## Commands
 
 | Command | Purpose |
 |---------|---------|
-| `supabase start` | Start local Supabase stack |
-| `supabase functions serve` | Serve Edge Functions locally |
-| `supabase functions deploy` | Deploy all functions |
-| `supabase functions deploy <name> --no-verify-jwt` | Deploy webhook (no JWT) |
-| `supabase db push` | Apply migrations |
-| `supabase migration new <name>` | Create migration |
+| `docker compose up -d` | Start all 14 services |
+| `docker compose down` | Stop all services |
+| `docker compose ps` | Check service health |
+| `docker compose logs -f <service>` | Tail service logs |
+| `docker compose restart <service>` | Restart a specific service |
+| `docker exec supabase-db psql -U postgres` | PostgreSQL shell |
 | `cd supabase/functions && deno test --allow-all` | Run all tests |
+
+## Infrastructure
+
+```
+foodshare-backend/
+  .env                             # Supabase secrets (gitignored)
+  .env.functions                   # Edge function secrets (gitignored)
+  docker-compose.yml               # 14 services (bleeding-edge images)
+  supabase/                        # Shared across Web, iOS, Android
+    config.toml                    # Function config (JWT exceptions)
+    seed.sql                       # Email template seed data
+    migrations/                    # PostgreSQL migrations
+    functions/                     # Deno Edge Functions (27)
+      main/index.ts                # Edge-runtime router (spawns workers)
+      _shared/                     # Shared utilities (singletons)
+      api-v1-*/                    # REST API endpoints (25)
+      telegram-bot-foodshare/      # Telegram bot
+      whatsapp-bot-foodshare/      # WhatsApp bot
+  volumes/
+    api/kong.yml                   # Kong API gateway config
+    db/*.sql                       # DB init scripts (roles, jwt, webhooks, etc.)
+    db/data/                       # PostgreSQL data (gitignored, docker-managed)
+    functions -> ../supabase/functions  # Symlink for edge-runtime mount
+    logs/vector.yml                # Log pipeline config
+    pooler/pooler.exs              # Supavisor tenant config
+    storage/                       # Supabase Storage data (gitignored)
+    snippets/                      # Dashboard snippets (gitignored)
+```
+
+## Docker Services (14)
+
+| Service | Image | Port |
+|---------|-------|------|
+| kong | kong:2.8.1 | 54321 (API gateway) |
+| db | supabase/postgres:15.14.1.081 | internal (via Supavisor) |
+| auth | supabase/gotrue:v2.186.0 | internal |
+| rest | postgrest/postgrest:v14.4 | internal |
+| realtime | supabase/realtime:v2.76.0 | internal |
+| storage | supabase/storage-api:v1.37.7 | internal |
+| imgproxy | darthsim/imgproxy:v3.30.1 | internal |
+| meta | supabase/postgres-meta:v0.95.2 | internal |
+| functions | supabase/edge-runtime:v1.70.1 | internal |
+| studio | supabase/studio:2026.02.04 | internal |
+| analytics | supabase/logflare:1.30.3 | internal |
+| vector | timberio/vector:0.28.1-alpine | internal |
+| supavisor | supabase/supavisor:2.7.4 | 5432, 6543 (pooler) |
+
+Kong is the single entrypoint. Cloudflare tunnel routes to port 54321. Dashboard has basic-auth.
 
 ## Critical Rules
 
 1. **Never use JSR imports** -- `import "jsr:@supabase/functions-js/edge-runtime.d.ts"` has a broken OpenAI dependency that hangs on cold start. Deno runtime provides all types for `Deno.serve()` and `Deno.env` automatically.
 2. **Always use structured logger** -- Never `console.log`. Use `logger.info/error/warn` from `_shared/logger.ts` with structured context objects.
-3. **Webhook functions MUST be in config.toml** -- Per-function config.toml files are NOT used. Without config, Supabase enables JWT verification by default, causing 401 on all webhook requests.
-   ```toml
-   # supabase/config.toml
-   [functions.telegram-bot-foodshare]
-   verify_jwt = false
-   ```
+3. **All functions use `Deno.serve()` pattern** -- Self-hosted edge runtime requires `Deno.serve(createAPIHandler({...}))`, NOT `export default`. The `main/index.ts` router spawns isolated workers per function using `EdgeRuntime.userWorkers.create()`.
 4. **Use the unified API handler** -- All functions use `createAPIHandler` from `_shared/api-handler.ts`. Supports both Zod and Valibot schemas, includes error tracking, performance monitoring, and request logging.
 5. **Singleton Supabase client** -- Use `getSupabaseClient()` from `_shared/supabase.ts`. Never create multiple clients per request. Connection pooling is automatic.
 6. **Create indexes CONCURRENTLY** -- Always `CREATE INDEX CONCURRENTLY` to avoid blocking production queries.
 7. **RLS on all tables** -- No exceptions. Use service role client only for admin operations.
 8. **Changes affect ALL platforms** -- `foodshare-web/supabase` and `foodshare-ios/supabase` symlink to `supabase/`. Every change instantly affects Web, iOS, and Android.
 9. **Always return 200 from webhooks** -- Even on errors, to prevent retry storms from Telegram/WhatsApp/Meta.
+10. **Edge function secrets in `.env.functions`** -- NOT vault. Vault encryption keys are per-DB-instance. All secrets go in `.env.functions` and are injected via docker-compose `env_file`.
+11. **No deno.lock** -- Removed. Edge-runtime v1.70.1 resolves deps fresh. Old lock files cause boot errors.
 
-## Architecture
-
-```
-supabase/                          # Standard Supabase project directory
-  config.toml                      # Function config (JWT exceptions)
-  seed.sql                         # Email template seed data
-  migrations/                      # PostgreSQL migrations (55 tracked)
-  functions/                       # Deno Edge Functions (26)
-    _shared/                       # Shared utilities (singletons)
-      api-handler.ts               # Unified API handler (Zod + Valibot)
-      cors.ts                      # CORS with origin validation
-      supabase.ts                  # Connection-pooled Supabase client
-      cache.ts                     # In-memory TTL cache (70-90% DB reduction)
-      logger.ts                    # Structured JSON logging (auto-redaction)
-      errors.ts                    # Standardized error types
-      context.ts                   # Request context (requestId, userId, platform)
-      circuit-breaker.ts           # Circuit breaker for external services
-      response-adapter.ts          # Unified response format
-      performance.ts               # measureAsync, PerformanceTimer
-      error-tracking.ts            # Fingerprinted, severity-classified, auto-alerted
-      retry.ts                     # Exponential backoff with jitter
-      location-privacy.ts          # Deterministic 100-200m offset (seeded PRNG)
-      email/                       # 4-provider email (Resend, Brevo, MailerSend, SES)
-      aws-signer.ts                # AWSV4 signer (shared by SES + R2)
-      r2-storage.ts                # Cloudflare R2 client
-      webhook-security.ts          # Telegram/WhatsApp verification
-      geocoding.ts                 # Nominatim with caching/retry
-      utils.ts                     # isDevelopment, timingSafeEqual, helpers
-    api-v1-*/                      # REST API endpoints (24)
-    telegram-bot-foodshare/        # Telegram bot
-    whatsapp-bot-foodshare/        # WhatsApp bot
-```
-
-## Functions (26 total)
+## Functions (27 total)
 
 | Category | Functions |
 |----------|-----------|
 | Core API | `api-v1-admin`, `api-v1-auth`, `api-v1-cache`, `api-v1-health`, `api-v1-feature-flags` |
-| Content | `api-v1-products`, `api-v1-chat`, `api-v1-images`, `api-v1-reviews`, `api-v1-search` |
+| Content | `api-v1-products`, `api-v1-chat`, `api-v1-images`, `api-v1-reviews`, `api-v1-search`, `api-v1-forum` |
 | Users | `api-v1-profile`, `api-v1-engagement`, `api-v1-metrics`, `api-v1-sync` |
 | Comms | `api-v1-notifications`, `api-v1-email` |
 | Platform | `api-v1-attestation`, `api-v1-geocoding`, `api-v1-localization`, `api-v1-validation` |
 | Infra | `api-v1-ai`, `api-v1-alerts`, `api-v1-analytics`, `api-v1-subscription` |
 | Bots | `telegram-bot-foodshare`, `whatsapp-bot-foodshare` |
+| Runtime | `main` (edge-runtime router) |
 
 All functions use `verify_jwt = false` in config.toml -- auth is handled internally by `createAPIHandler`.
 
@@ -110,26 +128,35 @@ Tests in `supabase/functions/__tests__/`. Use `createTestContext()` and `mockSup
 
 ## Environment Variables
 
-Required secrets (set in Supabase dashboard):
+Two env files (both gitignored, see `.env.example` and `.env.functions.example` for templates):
 
-| Group | Variables |
-|-------|-----------|
-| Core | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` |
-| iOS (APNs) | `APPLE_TEAM_ID`, `APP_BUNDLE_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY` |
-| Android (FCM) | `FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL`, `FCM_PRIVATE_KEY` |
-| Web Push | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` |
-| Email | `RESEND_API_KEY`, `BREVO_API_KEY`, `AWS_*` (SES), `MAILERSEND_API_KEY` |
-| WhatsApp | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` |
-| Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` |
-| R2 Storage | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `R2_BUCKET` |
+- **`.env`** -- Supabase infrastructure secrets (Postgres, JWT, Kong, GoTrue SMTP, Studio, Analytics)
+- **`.env.functions`** -- Edge function secrets (AWS, R2, email providers, AI keys, bot tokens, Redis, RevenueCat, etc.)
 
-Note: Vault secrets and Edge Function secrets are separate -- must set both independently.
+## Deployment
+
+```bash
+# SSH into VPS
+ssh -i ~/.ssh/id_rsa_gitlab organic@152.53.136.84
+
+# Update code
+cd /home/organic/dev/foodshare-backend
+git pull
+
+# Restart (only if docker-compose.yml or configs changed)
+docker compose up -d
+
+# Restart just edge functions (after function code changes)
+docker compose restart functions
+```
 
 ## Common Pitfalls
 
-- **Function not deploying** -- Check `deno.json` permissions, verify env vars are set, check logs: `supabase functions logs <name>`
+- **Edge function not loading** -- Check `docker compose logs functions`. Ensure function dir has `index.ts` with `Deno.serve()`. No deno.lock.
 - **CORS errors** -- Use `getCorsHeadersWithMobile()` for all responses. Handle OPTIONS preflight. Add custom origins to `additionalOrigins` in API handler config.
 - **Webhook returning 401** -- Function missing from `supabase/config.toml` with `verify_jwt = false`. Per-function configs are ignored.
 - **Bot not responding** -- Check health: `curl <bot-url>/health`. Verify JWT disabled in config. Re-register webhook via `/setup-webhook` endpoint. Check circuit breaker status.
 - **Database connection issues** -- Use singleton client from `_shared/supabase.ts`. Never create multiple clients per request.
 - **Cold start hanging** -- Remove any JSR imports. They cause indefinite hangs.
+- **New secrets** -- Add to `.env.functions` on VPS, then `docker compose restart functions`.
+- **Supavisor usernames** -- Tenant-qualified format: `postgres.foodshare` (not just `postgres`).
