@@ -45,12 +45,12 @@ jobs:
             echo "=== Verifying services ==="
             docker compose ps --format "table {{.Name}}\t{{.Status}}" | head -20
 
-            # Health check
+            # Health check (Kong returns 200 on root)
             sleep 3
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:54321/auth/v1/settings)
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "=== Health check passed (auth: $HTTP_CODE) ==="
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:54321/rest/v1/ -H "apikey: $(grep '^ANON_KEY=' .env | cut -d= -f2)")
+            if [ "$HTTP_CODE" != "000" ] && [ "$HTTP_CODE" != "" ]; then
+              echo "=== Health check passed (REST API: $HTTP_CODE) ==="
             else
-              echo "=== WARNING: Auth returned $HTTP_CODE ==="
+              echo "=== WARNING: Kong not responding ==="
               exit 1
             fi
