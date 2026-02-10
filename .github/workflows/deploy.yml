@@ -1,0 +1,57 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 152.53.136.84
+          username: organic
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            cd /home/organic/dev/foodshare-backend
+
+            echo "=== Pulling latest code ==="
+            git pull --ff-only
+
+            # Check what changed in the last commit
+            CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "all")
+
+            if echo "$CHANGED" | grep -qE "^(docker-compose\.yml|\.env\.example|volumes/)"; then
+              echo "=== Infrastructure changed — recreating services ==="
+              docker compose up -d
+            elif echo "$CHANGED" | grep -qE "^supabase/functions/"; then
+              echo "=== Edge functions changed — restarting functions ==="
+              docker compose restart functions
+            else
+              echo "=== Config/docs only — no restart needed ==="
+            fi
+
+            echo "=== Verifying services ==="
+            docker compose ps --format "table {{.Name}}\t{{.Status}}" | head -20
+
+            # Health check
+            sleep 3
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:54321/auth/v1/settings)
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "=== Health check passed (auth: $HTTP_CODE) ==="
+            else
+              echo "=== WARNING: Auth returned $HTTP_CODE ==="
+              exit 1
+            fi
