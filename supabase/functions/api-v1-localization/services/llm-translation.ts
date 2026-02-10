@@ -366,9 +366,10 @@ class LLMTranslationService {
   private serviceLastError: Map<string, string> = new Map();
 
   constructor(config: LLMConfig) {
-    // Validate required config - no hardcoded fallbacks for security
+    // Warn if API key is missing — translate calls will fail but the function can still serve
+    // cached translations and other non-LLM routes without crashing on startup
     if (!config.apiKey) {
-      throw new Error('LLM_TRANSLATION_API_KEY is required - check environment variables');
+      sharedLogger.warn('LLM_TRANSLATION_API_KEY not set - LLM translation will be unavailable');
     }
 
     this.config = {

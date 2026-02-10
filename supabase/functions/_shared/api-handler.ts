@@ -283,22 +283,8 @@ function parseQueryParams(url: URL): Record<string, string> {
 // =============================================================================
 
 function validateWithSchema<T>(schema: Schema<T>, data: unknown, location: string): T {
-  // Try Valibot first (smaller, faster)
-  if (typeof schema._parse === "function") {
-    const result = schema._parse(data);
-    
-    if ("issues" in result) {
-      const errors = result.issues.map((issue) => ({
-        field: issue.path?.map((p) => p.key).join(".") || "root",
-        message: issue.message,
-      }));
-      throw new ValidationError(`Invalid ${location}`, errors);
-    }
-    
-    return result.output;
-  }
-
-  // Fall back to Zod
+  // Try Zod first (check safeParse before _parse, since Zod also has _parse
+  // but with a different signature that expects ParseInput, not raw data)
   if (typeof schema.safeParse === "function") {
     const result = schema.safeParse(data);
 
@@ -312,6 +298,21 @@ function validateWithSchema<T>(schema: Schema<T>, data: unknown, location: strin
     }
 
     return result.data;
+  }
+
+  // Fall back to Valibot
+  if (typeof schema._parse === "function") {
+    const result = schema._parse(data);
+
+    if ("issues" in result) {
+      const errors = result.issues.map((issue) => ({
+        field: issue.path?.map((p) => p.key).join(".") || "root",
+        message: issue.message,
+      }));
+      throw new ValidationError(`Invalid ${location}`, errors);
+    }
+
+    return result.output;
   }
 
   throw new ValidationError(`Invalid schema for ${location}`);
