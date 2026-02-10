@@ -19,7 +19,7 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
-          host: 152.53.136.84
+          host: vps.foodshare.club
           username: organic
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
