@@ -345,8 +345,8 @@ async function sendPagerDutyAlert(alert: ErrorAlert): Promise<void> {
         },
         links: [
           {
-            href: `https://supabase.com/dashboard/project/${Deno.env.get("SUPABASE_PROJECT_REF") || "project"}/logs`,
-            text: "View Logs in Supabase",
+            href: `${Deno.env.get("SUPABASE_URL") || "https://api.foodshare.club"}/`,
+            text: "View Supabase Dashboard",
           },
         ],
       }),

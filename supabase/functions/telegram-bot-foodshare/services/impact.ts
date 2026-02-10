@@ -3,7 +3,7 @@
  */
 
 import type { ImpactStats } from "../types/index.ts";
-import { getSupabaseClient } from "./supabase.ts";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 
 export async function getUserImpactStats(userId: number): Promise<ImpactStats> {
   const supabase = getSupabaseClient();

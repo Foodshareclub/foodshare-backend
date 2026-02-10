@@ -17,7 +17,6 @@
  */
 
 import { getSupabaseClient } from "../../_shared/supabase.ts";
-import { getCorsHeaders } from "../../_shared/cors.ts";
 
 const VERSION = "2.0.0";
 const SUPPORTED_LOCALES = [
@@ -81,13 +80,7 @@ function findUntranslatedKeys(
   return untranslated;
 }
 
-export default async function auditHandler(req: Request): Promise<Response> {
-  const corsHeaders = getCorsHeaders(req);
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
-
+export default async function auditHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
   if (req.method !== "GET") {
     return new Response(JSON.stringify({
       success: false,

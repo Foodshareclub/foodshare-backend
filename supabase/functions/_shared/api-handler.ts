@@ -36,7 +36,7 @@
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
 import { createContext, clearContext, setUserId, type RequestContext } from "./context.ts";
-import { getCorsHeadersWithMobile, handleMobileCorsPrelight } from "./cors.ts";
+import { getCorsHeaders, handleCorsPreflight } from "./cors.ts";
 import {
   AppError,
   AuthenticationError,
@@ -476,7 +476,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
   return async (request: Request): Promise<Response> => {
     // Initialize context
     const ctx = createContext(request, service);
-    const corsHeaders = getCorsHeadersWithMobile(request, additionalOrigins);
+    const corsHeaders = getCorsHeaders(request, additionalOrigins);
     const useTransitional = shouldUseTransitionalFormat(request);
     const perfTracker = trackRequest(service);
 
@@ -486,7 +486,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
     try {
       // Handle preflight
       if (request.method === "OPTIONS") {
-        return handleMobileCorsPrelight(request, additionalOrigins);
+        return handleCorsPreflight(request, additionalOrigins);
       }
 
       // Check method is supported

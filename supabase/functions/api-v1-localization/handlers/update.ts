@@ -25,7 +25,6 @@
  */
 
 import { getSupabaseClient } from "../../_shared/supabase.ts";
-import { getCorsHeaders } from "../../_shared/cors.ts";
 
 const VERSION = "2.0.0";
 
@@ -65,13 +64,7 @@ function countKeys(obj: Record<string, unknown>): number {
   return count;
 }
 
-export default async function updateHandler(req: Request): Promise<Response> {
-  const corsHeaders = getCorsHeaders(req);
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
-
+export default async function updateHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({
       success: false,

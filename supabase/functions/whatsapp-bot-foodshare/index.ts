@@ -2,13 +2,15 @@
  * WhatsApp Bot FoodShare - Main Entry Point
  *
  * Enterprise-ready with:
+ * - Unified createAPIHandler framework
  * - Webhook verification (GET with hub.challenge)
  * - Distributed rate limiting
- * - Request correlation IDs
+ * - Request correlation IDs (from framework)
  * - Structured JSON logging
  * - Health checks
  */
 
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { isDevelopment } from "../_shared/utils.ts";
 import { WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET } from "./config/index.ts";
@@ -24,7 +26,8 @@ import {
 import { handleButtonReply, handleListReply } from "./handlers/interactive.ts";
 import type { WhatsAppWebhookPayload, WhatsAppMessage } from "./types/index.ts";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
+const SERVICE = "whatsapp-bot-foodshare";
 
 // ============================================================================
 // Initialization Check
@@ -64,237 +67,172 @@ try {
 }
 
 // ============================================================================
-// Helper Functions
+// Security: Webhook Signature Verification
 // ============================================================================
 
-function generateRequestId(): string {
-  return crypto.randomUUID();
-}
-
-function log(level: string, message: string, context: Record<string, unknown> = {}): void {
-  switch (level) {
-    case "error":
-      logger.error(message, context);
-      break;
-    case "warn":
-      logger.warn(message, context);
-      break;
-    case "debug":
-      logger.debug(message, context);
-      break;
-    default:
-      logger.info(message, context);
-      break;
-  }
-}
-
-/**
- * Verify WhatsApp webhook signature using shared webhook-security module
- * SECURITY: Rejects requests in production if secret is not configured
- */
 async function verifyWebhookSignature(payload: string, headers: Headers): Promise<boolean> {
-  // If no app secret configured, behavior depends on environment
   if (!WHATSAPP_APP_SECRET) {
     if (isDevelopment()) {
-      log("warn", "WHATSAPP_APP_SECRET not configured - skipping signature verification (dev mode)");
+      logger.warn("WHATSAPP_APP_SECRET not configured - skipping signature verification (dev mode)");
       return true;
     }
-    // SECURITY: In production, reject requests if secret is not configured
-    log("error", "WHATSAPP_APP_SECRET not configured - rejecting request in production");
+    logger.error("WHATSAPP_APP_SECRET not configured - rejecting request in production");
     return false;
   }
 
   const result = await verifyMetaWebhook(payload, headers, WHATSAPP_APP_SECRET);
   if (!result.valid) {
-    log("warn", "Webhook signature verification failed", { error: result.error });
+    logger.warn("Webhook signature verification failed", { error: result.error });
   }
   return result.valid;
 }
 
 // ============================================================================
-// Main Request Handler
+// JSON Response helper (always return 200 to WhatsApp)
 // ============================================================================
 
-Deno.serve(async (req) => {
-  const requestId = generateRequestId();
-  const startTime = Date.now();
-  const url = new URL(req.url);
+function jsonOk(body: unknown, ctx: HandlerContext, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
+  });
+}
 
-  // Check initialization status
+// ============================================================================
+// Route Handlers
+// ============================================================================
+
+async function handleGet(ctx: HandlerContext): Promise<Response> {
   if (!isInitialized) {
-    log("error", "Function not initialized", { requestId, error: initError?.message });
-    return new Response(
-      JSON.stringify({
-        error: "Service temporarily unavailable",
-        details: initError?.message,
-        requestId,
-      }),
-      {
-        status: 503,
-        headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-      }
-    );
+    return jsonOk({ error: "Service temporarily unavailable", details: initError?.message }, ctx, 503);
   }
 
-  // ============================================================================
-  // Webhook Verification (GET request from Meta)
-  // ============================================================================
-  if (req.method === "GET") {
-    const mode = url.searchParams.get("hub.mode");
-    const token = url.searchParams.get("hub.verify_token");
-    const challenge = url.searchParams.get("hub.challenge");
+  const url = new URL(ctx.request.url);
 
-    // Webhook verification request
-    if (mode === "subscribe" && token && challenge) {
-      if (token === WHATSAPP_VERIFY_TOKEN) {
-        log("info", "Webhook verified successfully", { requestId });
-        return new Response(challenge, {
-          status: 200,
-          headers: { "Content-Type": "text/plain", "X-Request-ID": requestId },
-        });
-      } else {
-        log("warn", "Webhook verification failed - invalid token", { requestId });
-        return new Response("Forbidden", {
-          status: 403,
-          headers: { "X-Request-ID": requestId },
-        });
-      }
+  // Webhook verification request from Meta
+  const mode = url.searchParams.get("hub.mode");
+  const token = url.searchParams.get("hub.verify_token");
+  const challenge = url.searchParams.get("hub.challenge");
+
+  if (mode === "subscribe" && token && challenge) {
+    if (token === WHATSAPP_VERIFY_TOKEN) {
+      logger.info("Webhook verified successfully");
+      return new Response(challenge, {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      });
+    } else {
+      logger.warn("Webhook verification failed - invalid token");
+      return new Response("Forbidden", { status: 403 });
     }
-
-    // Health check endpoint
-    let cleanedStates = 0;
-    try {
-      cleanedStates = await cleanupExpiredStates();
-    } catch {
-      // Ignore cleanup errors in health check
-    }
-
-    const whatsappStatus = getWhatsAppApiStatus();
-    const overallStatus = whatsappStatus.status === "OPEN" ? "degraded" : "healthy";
-
-    return new Response(
-      JSON.stringify({
-        status: overallStatus,
-        service: "whatsapp-bot-foodshare",
-        version: VERSION,
-        timestamp: new Date().toISOString(),
-        requestId,
-        dependencies: {
-          whatsapp: {
-            status: whatsappStatus.status,
-            failures: whatsappStatus.failures,
-          },
-        },
-        maintenance: {
-          expiredStatesCleaned: cleanedStates,
-        },
-      }),
-      {
-        headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-        status: overallStatus === "healthy" ? 200 : 503,
-      }
-    );
   }
 
-  // ============================================================================
-  // Webhook Message Handler (POST request)
-  // ============================================================================
-  if (req.method === "POST") {
-    let payload: WhatsAppWebhookPayload | undefined;
+  // Health check (default GET)
+  let cleanedStates = 0;
+  try {
+    cleanedStates = await cleanupExpiredStates();
+  } catch {
+    // Ignore cleanup errors in health check
+  }
 
-    try {
-      // Read raw body for signature verification
-      const rawBody = await req.text();
+  const whatsappStatus = getWhatsAppApiStatus();
+  const overallStatus = whatsappStatus.status === "OPEN" ? "degraded" : "healthy";
 
-      // Verify webhook signature using shared webhook-security module
-      const isValidSignature = await verifyWebhookSignature(rawBody, req.headers);
+  return jsonOk({
+    status: overallStatus,
+    service: SERVICE,
+    version: VERSION,
+    timestamp: new Date().toISOString(),
+    dependencies: {
+      whatsapp: {
+        status: whatsappStatus.status,
+        failures: whatsappStatus.failures,
+      },
+    },
+    maintenance: {
+      expiredStatesCleaned: cleanedStates,
+    },
+  }, ctx, overallStatus === "healthy" ? 200 : 503);
+}
 
-      if (!isValidSignature) {
-        log("warn", "Invalid webhook signature", { requestId });
-        return new Response(JSON.stringify({ error: "Invalid signature", requestId }), {
-          status: 401,
-          headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-        });
-      }
+async function handlePost(ctx: HandlerContext): Promise<Response> {
+  const startTime = Date.now();
+  const requestId = ctx.ctx.requestId;
 
-      payload = JSON.parse(rawBody);
+  if (!isInitialized) {
+    return jsonOk({ error: "Service temporarily unavailable", details: initError?.message }, ctx, 503);
+  }
 
-      // Validate payload structure
-      if (payload?.object !== "whatsapp_business_account") {
-        return new Response(JSON.stringify({ ok: true, requestId }), {
-          headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-        });
-      }
+  let payload: WhatsAppWebhookPayload | undefined;
 
-      // Process each entry
-      for (const entry of payload.entry || []) {
-        for (const change of entry.changes || []) {
-          const value = change.value;
+  try {
+    // Read raw body for signature verification
+    const rawBody = await ctx.request.text();
 
-          // Skip if no messages
-          if (!value.messages || value.messages.length === 0) {
+    // Verify webhook signature
+    const isValidSignature = await verifyWebhookSignature(rawBody, ctx.request.headers);
+
+    if (!isValidSignature) {
+      logger.warn("Invalid webhook signature", { requestId });
+      return jsonOk({ error: "Invalid signature", requestId }, ctx, 401);
+    }
+
+    payload = JSON.parse(rawBody);
+
+    // Validate payload structure
+    if (payload?.object !== "whatsapp_business_account") {
+      return jsonOk({ ok: true, requestId }, ctx);
+    }
+
+    // Process each entry
+    for (const entry of payload.entry || []) {
+      for (const change of entry.changes || []) {
+        const value = change.value;
+
+        if (!value.messages || value.messages.length === 0) {
+          continue;
+        }
+
+        for (const message of value.messages) {
+          const phoneNumber = message.from;
+
+          // Rate limiting
+          const rateLimit = await checkRateLimitDistributed(phoneNumber);
+
+          if (!rateLimit.allowed) {
+            logger.warn("Rate limit exceeded", {
+              requestId,
+              phoneNumber: phoneNumber.substring(0, 4) + "***",
+              retryAfter: rateLimit.retryAfterSeconds,
+            });
             continue;
           }
 
-          for (const message of value.messages) {
-            const phoneNumber = message.from;
+          // Mark message as read
+          await markAsRead(message.id);
 
-            // Rate limiting
-            const rateLimit = await checkRateLimitDistributed(phoneNumber);
-
-            if (!rateLimit.allowed) {
-              log("warn", "Rate limit exceeded", {
-                requestId,
-                phoneNumber: phoneNumber.substring(0, 4) + "***",
-                retryAfter: rateLimit.retryAfterSeconds,
-              });
-              continue; // Skip this message but don't fail the webhook
-            }
-
-            // Mark message as read
-            await markAsRead(message.id);
-
-            // Route message to appropriate handler
-            await routeMessage(message, requestId, startTime);
-          }
+          // Route message to appropriate handler
+          await routeMessage(message, requestId, startTime);
         }
       }
-
-      return new Response(JSON.stringify({ ok: true, requestId }), {
-        headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-      });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const errorStack = error instanceof Error ? error.stack : undefined;
-
-      log("error", "Error processing webhook", {
-        requestId,
-        error: errorMessage,
-        stack: errorStack,
-        durationMs: Date.now() - startTime,
-      });
-
-      // Always return 200 to WhatsApp to prevent retries
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: errorMessage,
-          requestId,
-        }),
-        {
-          status: 200, // WhatsApp expects 200 even on errors
-          headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-        }
-      );
     }
-  }
 
-  // Method not allowed
-  return new Response(JSON.stringify({ error: "Method not allowed", requestId }), {
-    status: 405,
-    headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-  });
-});
+    return jsonOk({ ok: true, requestId }, ctx);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    logger.error("Error processing webhook", {
+      requestId,
+      error: errorMessage,
+      stack: errorStack,
+      durationMs: Date.now() - startTime,
+    });
+
+    // Always return 200 to WhatsApp to prevent retries
+    return jsonOk({ ok: false, error: errorMessage, requestId }, ctx);
+  }
+}
 
 // ============================================================================
 // Message Router
@@ -311,7 +249,7 @@ async function routeMessage(
     switch (message.type) {
       case "text":
         await handleTextMessage(message);
-        log("info", "Text message handled", {
+        logger.info("Text message handled", {
           requestId,
           phoneNumber: phoneNumber.substring(0, 4) + "***",
           durationMs: Date.now() - startTime,
@@ -320,7 +258,7 @@ async function routeMessage(
 
       case "image":
         await handlePhotoMessage(message);
-        log("info", "Image message handled", {
+        logger.info("Image message handled", {
           requestId,
           phoneNumber: phoneNumber.substring(0, 4) + "***",
           durationMs: Date.now() - startTime,
@@ -329,7 +267,7 @@ async function routeMessage(
 
       case "location":
         await handleLocationMessage(message);
-        log("info", "Location message handled", {
+        logger.info("Location message handled", {
           requestId,
           phoneNumber: phoneNumber.substring(0, 4) + "***",
           durationMs: Date.now() - startTime,
@@ -339,7 +277,7 @@ async function routeMessage(
       case "interactive":
         if (message.interactive?.type === "button_reply" && message.interactive.button_reply) {
           await handleButtonReply(phoneNumber, message.interactive.button_reply.id);
-          log("info", "Button reply handled", {
+          logger.info("Button reply handled", {
             requestId,
             phoneNumber: phoneNumber.substring(0, 4) + "***",
             buttonId: message.interactive.button_reply.id,
@@ -347,7 +285,7 @@ async function routeMessage(
           });
         } else if (message.interactive?.type === "list_reply" && message.interactive.list_reply) {
           await handleListReply(phoneNumber, message.interactive.list_reply.id);
-          log("info", "List reply handled", {
+          logger.info("List reply handled", {
             requestId,
             phoneNumber: phoneNumber.substring(0, 4) + "***",
             listId: message.interactive.list_reply.id,
@@ -357,10 +295,9 @@ async function routeMessage(
         break;
 
       case "button":
-        // Quick reply button (different from interactive)
         if (message.button?.payload) {
           await handleButtonReply(phoneNumber, message.button.payload);
-          log("info", "Quick reply handled", {
+          logger.info("Quick reply handled", {
             requestId,
             phoneNumber: phoneNumber.substring(0, 4) + "***",
             payload: message.button.payload,
@@ -370,7 +307,7 @@ async function routeMessage(
         break;
 
       default:
-        log("info", "Unhandled message type", {
+        logger.info("Unhandled message type", {
           requestId,
           phoneNumber: phoneNumber.substring(0, 4) + "***",
           type: message.type,
@@ -378,7 +315,7 @@ async function routeMessage(
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    log("error", "Error handling message", {
+    logger.error("Error handling message", {
       requestId,
       phoneNumber: phoneNumber.substring(0, 4) + "***",
       type: message.type,
@@ -387,3 +324,18 @@ async function routeMessage(
     });
   }
 }
+
+// ============================================================================
+// API Handler
+// ============================================================================
+
+Deno.serve(createAPIHandler({
+  service: SERVICE,
+  version: VERSION,
+  requireAuth: false,
+  csrf: false,
+  routes: {
+    GET: { handler: handleGet },
+    POST: { handler: handlePost },
+  },
+}));

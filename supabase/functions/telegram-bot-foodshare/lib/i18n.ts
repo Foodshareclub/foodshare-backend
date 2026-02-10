@@ -6,7 +6,7 @@ import { logger } from "../../_shared/logger.ts";
 import { en } from "../locales/en.ts";
 import { ru } from "../locales/ru.ts";
 import { de } from "../locales/de.ts";
-import { getSupabaseClient } from "../services/supabase.ts";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 
 type Translations = typeof en;
 type Language = "en" | "ru" | "de";

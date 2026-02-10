@@ -28,6 +28,7 @@ import {
 } from "../_shared/api-handler.ts";
 import { ValidationError, ServerError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
+import { toggleRow } from "../_shared/toggle.ts";
 
 const VERSION = "1.0.0";
 
@@ -219,38 +220,14 @@ async function toggleLike(ctx: HandlerContext<ToggleBody>): Promise<Response> {
     throw new ValidationError("Authentication required");
   }
 
-  // Check if already liked
-  const { data: existing } = await supabase
-    .from("post_likes")
-    .select("id")
-    .eq("post_id", body.postId)
-    .eq("profile_id", userId)
-    .single();
+  const result = await toggleRow(supabase, {
+    table: "post_likes",
+    entityColumn: "post_id",
+    userColumn: "profile_id",
+  }, body.postId, userId);
 
-  let isLiked: boolean;
-
-  if (existing) {
-    // Unlike
-    await supabase
-      .from("post_likes")
-      .delete()
-      .eq("post_id", body.postId)
-      .eq("profile_id", userId);
-    isLiked = false;
-
-    // Log activity
-    await logActivity(supabase, body.postId, userId, "unliked");
-  } else {
-    // Like
-    await supabase.from("post_likes").insert({
-      post_id: body.postId,
-      profile_id: userId,
-    });
-    isLiked = true;
-
-    // Log activity
-    await logActivity(supabase, body.postId, userId, "liked");
-  }
+  const isLiked = result.active;
+  await logActivity(supabase, body.postId, userId, isLiked ? "liked" : "unliked");
 
   // Get updated count
   const { count } = await supabase
@@ -277,38 +254,14 @@ async function toggleBookmark(ctx: HandlerContext<ToggleBody>): Promise<Response
     throw new ValidationError("Authentication required");
   }
 
-  // Check if already bookmarked
-  const { data: existing } = await supabase
-    .from("post_bookmarks")
-    .select("id")
-    .eq("post_id", body.postId)
-    .eq("profile_id", userId)
-    .single();
+  const result = await toggleRow(supabase, {
+    table: "post_bookmarks",
+    entityColumn: "post_id",
+    userColumn: "profile_id",
+  }, body.postId, userId);
 
-  let isBookmarked: boolean;
-
-  if (existing) {
-    // Remove bookmark
-    await supabase
-      .from("post_bookmarks")
-      .delete()
-      .eq("post_id", body.postId)
-      .eq("profile_id", userId);
-    isBookmarked = false;
-
-    // Log activity
-    await logActivity(supabase, body.postId, userId, "unbookmarked");
-  } else {
-    // Add bookmark
-    await supabase.from("post_bookmarks").insert({
-      post_id: body.postId,
-      profile_id: userId,
-    });
-    isBookmarked = true;
-
-    // Log activity
-    await logActivity(supabase, body.postId, userId, "bookmarked");
-  }
+  const isBookmarked = result.active;
+  await logActivity(supabase, body.postId, userId, isBookmarked ? "bookmarked" : "unbookmarked");
 
   logger.info("Bookmark toggled", { postId: body.postId, userId, isBookmarked });
 
@@ -519,37 +472,21 @@ async function handleBatchOperations(ctx: HandlerContext<BatchOperationsBody, Qu
             break;
           }
           case "toggle_like": {
-            const { data: existing } = await supabase
-              .from("post_likes")
-              .select("id")
-              .eq("post_id", entityId)
-              .eq("profile_id", userId)
-              .single();
-
-            if (existing) {
-              await supabase.from("post_likes").delete().eq("post_id", entityId).eq("profile_id", userId);
-              data = { isLiked: false };
-            } else {
-              await supabase.from("post_likes").insert({ post_id: entityId, profile_id: userId });
-              data = { isLiked: true };
-            }
+            const likeResult = await toggleRow(supabase, {
+              table: "post_likes",
+              entityColumn: "post_id",
+              userColumn: "profile_id",
+            }, entityId, userId);
+            data = { isLiked: likeResult.active };
             break;
           }
           case "toggle_bookmark": {
-            const { data: existing } = await supabase
-              .from("post_bookmarks")
-              .select("id")
-              .eq("post_id", entityId)
-              .eq("profile_id", userId)
-              .single();
-
-            if (existing) {
-              await supabase.from("post_bookmarks").delete().eq("post_id", entityId).eq("profile_id", userId);
-              data = { isBookmarked: false };
-            } else {
-              await supabase.from("post_bookmarks").insert({ post_id: entityId, profile_id: userId });
-              data = { isBookmarked: true };
-            }
+            const bookmarkResult = await toggleRow(supabase, {
+              table: "post_bookmarks",
+              entityColumn: "post_id",
+              userColumn: "profile_id",
+            }, entityId, userId);
+            data = { isBookmarked: bookmarkResult.active };
             break;
           }
           case "mark_read": {

@@ -42,6 +42,7 @@ import {
   type CompositeCursor,
 } from "../_shared/pagination.ts";
 import { aggregateCounts } from "../_shared/aggregation.ts";
+import { transformProfileSummary, transformCategory } from "../_shared/transformers.ts";
 
 const VERSION = "2.0.0";
 
@@ -578,23 +579,13 @@ function transformProductDetail(data: Record<string, unknown>) {
   const profile = data.profile as Record<string, unknown> | null;
   const category = data.category as Record<string, unknown> | null;
 
+  const profileSummary = transformProfileSummary(profile);
   return {
     ...base,
-    user: profile
-      ? {
-          id: profile.id,
-          displayName: profile.display_name,
-          avatarUrl: profile.avatar_url,
-          memberSince: profile.created_at,
-        }
+    user: profileSummary
+      ? { ...profileSummary, memberSince: profile?.created_at ?? null }
       : null,
-    category: category
-      ? {
-          id: category.id,
-          name: category.name,
-          icon: category.icon,
-        }
-      : null,
+    category: transformCategory(category),
   };
 }
 

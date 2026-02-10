@@ -23,7 +23,6 @@
  */
 
 import { getSupabaseClient } from "../../_shared/supabase.ts";
-import { getCorsHeaders } from "../../_shared/cors.ts";
 
 // Top 5 priority locales for batch translation
 const TARGET_LOCALES = ["ru", "es", "de", "fr", "pt"];
@@ -49,13 +48,7 @@ interface BatchTranslateResponse {
   total_translations: number;
 }
 
-export default async function translateBatchHandler(req: Request): Promise<Response> {
-  const corsHeaders = getCorsHeaders(req);
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
-
+export default async function translateBatchHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({
       success: false,

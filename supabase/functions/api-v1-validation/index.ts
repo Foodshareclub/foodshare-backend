@@ -198,7 +198,7 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
         success: true,
         rules: VALIDATION,
         version: VERSION,
-      }, ctx);
+      }, ctx, { cacheTTL: 3600 });
 
     default:
       throw new ValidationError(`Not found: ${route.resource}`);

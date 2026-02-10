@@ -5,7 +5,7 @@
 
 import { logger } from "../../_shared/logger.ts";
 import type { UserState } from "../types/index.ts";
-import { getSupabaseClient } from "./supabase.ts";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 
 // TTL configuration (in minutes)
 const STATE_TTL = {

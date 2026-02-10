@@ -13,7 +13,6 @@
  * POST /localization/generate-infoplist-strings
  */
 
-import { getCorsHeaders } from "../../_shared/cors.ts";
 import { logger } from "../../_shared/logger.ts";
 import { llmTranslationService } from "../services/llm-translation.ts";
 import { getSupabaseClient } from "../../_shared/supabase.ts";
@@ -278,14 +277,9 @@ async function processLocalesParallel(
   return results;
 }
 
-export default async function generateInfoPlistStringsHandler(req: Request): Promise<Response> {
-  const corsHeaders = getCorsHeaders(req);
+export default async function generateInfoPlistStringsHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
   const startTime = performance.now();
   const requestId = crypto.randomUUID().slice(0, 8);
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
 
   if (req.method !== "POST") {
     return new Response(JSON.stringify({

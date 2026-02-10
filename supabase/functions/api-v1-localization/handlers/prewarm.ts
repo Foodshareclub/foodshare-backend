@@ -13,8 +13,6 @@
  * }
  */
 
-import { getCorsHeaders } from "../../_shared/cors.ts";
-
 const TRANSLATE_API = Deno.env.get("LLM_TRANSLATION_ENDPOINT") || "https://translate.foodshare.club";
 const TRANSLATE_API_KEY = Deno.env.get("LLM_TRANSLATION_API_KEY") || "";
 const CF_ACCESS_CLIENT_ID = Deno.env.get("CF_ACCESS_CLIENT_ID") || "";
@@ -33,13 +31,7 @@ interface PrewarmResponse {
   estimatedTimeSeconds?: number;
 }
 
-export default async function prewarmHandler(req: Request): Promise<Response> {
-  const corsHeaders = getCorsHeaders(req);
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
-
+export default async function prewarmHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({
       success: false,

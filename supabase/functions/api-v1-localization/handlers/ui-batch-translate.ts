@@ -25,7 +25,6 @@
  */
 
 import { getSupabaseClient } from "../../_shared/supabase.ts";
-import { getCorsHeaders } from "../../_shared/cors.ts";
 import { logger } from "../../_shared/logger.ts";
 import { llmTranslationService } from "../services/llm-translation.ts";
 
@@ -209,13 +208,7 @@ async function fetchUntranslatedKeys(
   return untranslated;
 }
 
-export default async function uiBatchTranslateHandler(req: Request): Promise<Response> {
-  const corsHeaders = getCorsHeaders(req);
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
-
+export default async function uiBatchTranslateHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({
       success: false,

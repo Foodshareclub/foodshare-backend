@@ -3,12 +3,9 @@
  * Returns comprehensive health status for the translation service
  */
 
-import { getCorsHeaders } from "../../_shared/cors.ts";
 import { llmTranslationService } from "../services/llm-translation.ts";
 
-export default async function healthHandler(req: Request): Promise<Response> {
-  const corsHeaders = getCorsHeaders(req);
-
+export default async function healthHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
   if (req.method !== "GET") {
     return new Response(
       JSON.stringify({ error: "Method not allowed" }),

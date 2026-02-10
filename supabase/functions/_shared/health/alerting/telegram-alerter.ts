@@ -152,7 +152,7 @@ All ${summary.functions.total} edge functions are healthy.
     }
 
     message += `\n<b>Time:</b> ${timestamp}`;
-    message += `\n<b>Dashboard:</b> <a href="https://supabase.com/dashboard">Supabase</a>`;
+    message += `\n<b>Dashboard:</b> <a href="https://studio.foodshare.club">Supabase Studio</a>`;
 
     return message.trim();
   }

@@ -19,7 +19,6 @@
  */
 
 import { getSupabaseClient } from "../../_shared/supabase.ts";
-import { getCorsHeaders } from "../../_shared/cors.ts";
 import { logger } from "../../_shared/logger.ts";
 import { llmTranslationService } from "../services/llm-translation.ts";
 import { translationCache } from "../services/translation-cache.ts";
@@ -72,13 +71,8 @@ interface ProcessQueueResponse {
   duration_ms: number;
 }
 
-export default async function processQueueHandler(req: Request): Promise<Response> {
-  const corsHeaders = getCorsHeaders(req);
+export default async function processQueueHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
   const startTime = Date.now();
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
 
   if (req.method !== "POST") {
     return new Response(JSON.stringify({

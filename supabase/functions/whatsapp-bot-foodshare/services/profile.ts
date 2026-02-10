@@ -4,7 +4,7 @@
 
 import { logger } from "../../_shared/logger.ts";
 import type { Profile } from "../types/index.ts";
-import { getSupabaseClient } from "./supabase.ts";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 
 /**
  * Database error types for proper error handling

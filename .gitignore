@@ -11,7 +11,8 @@ supabase/.temp/
 .env.*.local
 .env.functions
 
-# Docker volumes (runtime data)
+# Docker (VPS-specific overrides + runtime data)
+docker-compose.override.yml
 volumes/db/data/
 volumes/storage/*
 !volumes/storage/.gitkeep

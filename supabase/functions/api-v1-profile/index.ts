@@ -33,6 +33,7 @@ import { logger } from "../_shared/logger.ts";
 import { cache, CACHE_KEYS, invalidateProfileCache } from "../_shared/cache.ts";
 import { PROFILE, sanitizeHtml } from "../_shared/validation-rules.ts";
 import { aggregateCounts, aggregateStats, aggregateImpact } from "../_shared/aggregation.ts";
+import { formatDisplayName, transformAddress } from "../_shared/transformers.ts";
 
 const VERSION = "1.0.0";
 
@@ -521,7 +522,7 @@ async function updateAddress(ctx: HandlerContext<UpdateAddressBody>): Promise<Re
 function transformProfile(data: Record<string, unknown>) {
   return {
     id: data.id,
-    name: data.display_name || `${data.first_name || ""} ${data.second_name || ""}`.trim(),
+    name: formatDisplayName(data),
     firstName: data.first_name,
     lastName: data.second_name,
     bio: data.bio,
@@ -536,22 +537,7 @@ function transformProfile(data: Record<string, unknown>) {
   };
 }
 
-function transformAddress(data: Record<string, unknown>) {
-  return {
-    profileId: data.profile_id,
-    addressLine1: data.address_line_1,
-    addressLine2: data.address_line_2,
-    addressLine3: data.address_line_3,
-    city: data.city,
-    stateProvince: data.state_province,
-    postalCode: data.postal_code,
-    country: data.country,
-    lat: data.lat,
-    lng: data.long,
-    fullAddress: data.generated_full_address,
-    radiusMeters: data.radius_meters,
-  };
-}
+// transformAddress imported from _shared/transformers.ts
 
 // =============================================================================
 // Route Handlers

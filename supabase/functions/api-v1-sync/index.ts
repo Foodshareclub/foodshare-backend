@@ -315,9 +315,7 @@ async function handlePostSync(ctx: HandlerContext): Promise<Response> {
 
   // POST /sync/pending
   if (subPath === "pending" || subPath === "pending/") {
-    // Parse and validate pending operations
-    const rawBody = await request.json();
-    const parsed = pendingOperationsSchema.safeParse(rawBody);
+    const parsed = pendingOperationsSchema.safeParse(ctx.body);
 
     if (!parsed.success) {
       throw new ValidationError(parsed.error.errors.map(e => e.message).join(", "));
@@ -327,8 +325,7 @@ async function handlePostSync(ctx: HandlerContext): Promise<Response> {
   }
 
   // POST /sync - Delta sync
-  const rawBody = await request.json();
-  const parsed = syncRequestSchema.safeParse(rawBody);
+  const parsed = syncRequestSchema.safeParse(ctx.body);
 
   if (!parsed.success) {
     throw new ValidationError(parsed.error.errors.map(e => e.message).join(", "));

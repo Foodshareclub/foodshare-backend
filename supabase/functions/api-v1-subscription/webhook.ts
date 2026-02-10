@@ -16,7 +16,7 @@
  */
 
 import { getSupabaseClient } from "../_shared/supabase.ts";
-import { getCorsHeadersWithMobile } from "../_shared/cors.ts";
+import { getCorsHeaders } from "../_shared/cors.ts";
 import { logger } from "../_shared/logger.ts";
 import { AppError } from "../_shared/errors.ts";
 import { buildSuccessResponse, buildErrorResponse } from "../_shared/response-adapter.ts";
@@ -547,7 +547,7 @@ async function processWebhookAtomically(
 // =============================================================================
 
 export async function handleWebhook(req: Request): Promise<Response> {
-  const corsHeaders = getCorsHeadersWithMobile(req);
+  const corsHeaders = getCorsHeaders(req);
   const timer = new PerformanceTimer("webhook_request");
   const requestId = crypto.randomUUID();
   const clientIp = getClientIp(req);

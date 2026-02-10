@@ -15,7 +15,6 @@
  */
 
 import { getSupabaseClient } from "../../_shared/supabase.ts";
-import { getCorsHeaders } from "../../_shared/cors.ts";
 
 interface GetTranslationsRequest {
   contentType: "post" | "challenge" | "forum_post";
@@ -59,13 +58,7 @@ async function hashText(text: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-export default async function getTranslationsHandler(req: Request): Promise<Response> {
-  const corsHeaders = getCorsHeaders(req);
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
-
+export default async function getTranslationsHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({
       success: false,

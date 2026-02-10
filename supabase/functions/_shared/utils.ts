@@ -112,39 +112,3 @@ export function generateRequestId(): string {
   return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
-/**
- * Format error response
- */
-export function errorResponse(error: unknown, status: number = 500, requestId?: string): Response {
-  const message = error instanceof Error ? error.message : "Unknown error";
-
-  return new Response(
-    JSON.stringify({
-      error: message,
-      requestId,
-      timestamp: new Date().toISOString(),
-    }),
-    {
-      status,
-      headers: { "Content-Type": "application/json" },
-    }
-  );
-}
-
-/**
- * Success response
- */
-export function successResponse(data: any, requestId?: string): Response {
-  return new Response(
-    JSON.stringify({
-      success: true,
-      data,
-      requestId,
-      timestamp: new Date().toISOString(),
-    }),
-    {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }
-  );
-}

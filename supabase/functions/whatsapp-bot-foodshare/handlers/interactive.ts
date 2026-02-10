@@ -5,7 +5,7 @@
 
 import { setUserState } from "../services/user-state.ts";
 import { getProfileByWhatsAppPhone } from "../services/profile.ts";
-import { getSupabaseClient } from "../services/supabase.ts";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 import { getUserImpactStats, getBadges } from "../services/impact.ts";
 import { sendTextMessage, sendButtonMessage, sendListMessage } from "../services/whatsapp-api.ts";
 import { t, getUserLanguage, saveUserLanguage } from "../lib/i18n.ts";

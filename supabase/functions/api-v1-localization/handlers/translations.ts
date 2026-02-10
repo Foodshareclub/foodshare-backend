@@ -22,7 +22,6 @@
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
 import { logger } from "../../_shared/logger.ts";
-import { getCorsHeadersWithMobile } from "../../_shared/cors.ts";
 
 // =============================================================================
 // Types
@@ -284,14 +283,8 @@ async function trackAnalytics(
 // Handler Implementation
 // =============================================================================
 
-export default async function translationsHandler(request: Request): Promise<Response> {
+export default async function translationsHandler(request: Request, corsHeaders: Record<string, string>): Promise<Response> {
   const startTime = Date.now();
-  const corsHeaders = getCorsHeadersWithMobile(request);
-
-  // Handle CORS preflight
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
 
   if (request.method !== "GET") {
     return new Response(

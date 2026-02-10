@@ -204,7 +204,7 @@ async function handleDelete(listingId: number, ctx: AdminContext): Promise<Respo
 
   await logAdminAction(ctx, "delete_listing", String(listingId));
 
-  return new Response(null, { status: 204, headers: ctx.corsHeaders });
+  return new Response(null, { status: 204, headers: { ...ctx.corsHeaders, "Content-Type": "application/json" } });
 }
 
 async function handleUpdateNotes(

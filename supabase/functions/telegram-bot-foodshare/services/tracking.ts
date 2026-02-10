@@ -3,7 +3,7 @@
  */
 
 import { logger } from "../../_shared/logger.ts";
-import { getSupabaseClient } from "./supabase.ts";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 import type { TelegramMessage } from "../types/index.ts";
 
 export async function trackMessage(message: TelegramMessage): Promise<void> {

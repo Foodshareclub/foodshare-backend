@@ -4,7 +4,7 @@
  */
 
 import { logger } from "../../_shared/logger.ts";
-import { getSupabaseClient } from "./supabase.ts";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 
 const DEFAULT_MAX_REQUESTS = 30;
 const DEFAULT_WINDOW_MS = 60000; // 1 minute

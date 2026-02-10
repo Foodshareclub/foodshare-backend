@@ -27,7 +27,6 @@
  */
 
 import { getSupabaseClient } from "../../_shared/supabase.ts";
-import { getCorsHeaders } from "../../_shared/cors.ts";
 import { logger } from "../../_shared/logger.ts";
 
 interface BackfillRequest {
@@ -55,13 +54,7 @@ const SECONDS_PER_TRANSLATION = 10; // Estimated LLM time
 const JOB_TYPE = "forum_posts";
 const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
-export default async function backfillForumPostsHandler(req: Request): Promise<Response> {
-  const corsHeaders = getCorsHeaders(req);
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
-
+export default async function backfillForumPostsHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({
       success: false,

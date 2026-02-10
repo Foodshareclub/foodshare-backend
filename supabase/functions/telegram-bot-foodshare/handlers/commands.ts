@@ -7,7 +7,7 @@ import { setUserState } from "../services/user-state.ts";
 import { getProfileByTelegramId, requiresEmailVerification } from "../services/profile.ts";
 import { getUserImpactStats, getBadges } from "../services/impact.ts";
 import { extractCoordinates } from "../services/geocoding.ts";
-import { getSupabaseClient } from "../services/supabase.ts";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 import { getCached, setCache } from "../services/cache.ts";
 import { getUserLanguage, t } from "../lib/i18n.ts";
 import { getMainMenuKeyboard } from "../lib/keyboards.ts";

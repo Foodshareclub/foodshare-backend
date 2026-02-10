@@ -271,6 +271,8 @@ export function validateImageUrl(
     "supabase.com",
     "googleapis.com",
     "cdn.foodshare.app",
+    "cdn.foodshare.club",
+    "foodshare.club",
     "images.foodshare.app",
   ];
   const isKnownHost = knownImageHosts.some((host) =>

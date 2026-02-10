@@ -60,8 +60,11 @@ function getSubPath(url: URL): string {
   return subPath.startsWith("/") ? subPath.slice(1) : subPath;
 }
 
+// Handler signature: all handlers receive request + pre-computed CORS headers
+type HandlerFn = (req: Request, corsHeaders: Record<string, string>) => Promise<Response> | Response;
+
 // Handler map for POST routes
-const postHandlers: Record<string, (req: Request) => Promise<Response> | Response> = {
+const postHandlers: Record<string, HandlerFn> = {
   "translate-content": translateContentHandler,
   "prewarm": prewarmHandler,
   "translate-batch": translateBatchHandler,
@@ -77,7 +80,7 @@ const postHandlers: Record<string, (req: Request) => Promise<Response> | Respons
 };
 
 // Handler map for GET routes
-const getHandlers: Record<string, (req: Request) => Promise<Response> | Response> = {
+const getHandlers: Record<string, HandlerFn> = {
   "translations": translationsHandler,
   "audit": auditHandler,
   "health": healthHandler,
@@ -92,19 +95,19 @@ async function routeRequest(ctx: HandlerContext): Promise<Response> {
 
   // GET / — Simple UI string bundles (fast, compressed)
   if (method === "GET" && (subPath === "" || subPath === "/")) {
-    return uiStringsHandler(ctx.request);
+    return uiStringsHandler(ctx.request, ctx.corsHeaders);
   }
 
   // GET routes
   if (method === "GET") {
     const handler = getHandlers[subPath];
-    if (handler) return handler(ctx.request);
+    if (handler) return handler(ctx.request, ctx.corsHeaders);
   }
 
   // POST routes
   if (method === "POST") {
     const handler = postHandlers[subPath];
-    if (handler) return handler(ctx.request);
+    if (handler) return handler(ctx.request, ctx.corsHeaders);
   }
 
   // Root info for non-GET methods on /

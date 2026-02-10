@@ -9,7 +9,6 @@
  * This enables O(1) locale lookup on app launch instead of database query.
  */
 
-import { getCorsHeaders } from "../../_shared/cors.ts";
 import { logger } from "../../_shared/logger.ts";
 import { userLocaleCache } from "../services/translation-cache.ts";
 
@@ -18,9 +17,7 @@ interface SyncToRedisRequest {
   locale: string;
 }
 
-export default async function syncToRedisHandler(req: Request): Promise<Response> {
-  const corsHeaders = getCorsHeaders(req);
-
+export default async function syncToRedisHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
   // Only accept POST requests
   if (req.method !== "POST") {
     return new Response(JSON.stringify({

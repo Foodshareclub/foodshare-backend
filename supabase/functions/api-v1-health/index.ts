@@ -169,7 +169,7 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
   const httpStatus = result.status === "ok" ? 200 : 503;
   return new Response(JSON.stringify(result), {
     status: httpStatus,
-    headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
+    headers: { ...ctx.corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=10" },
   });
 }
 

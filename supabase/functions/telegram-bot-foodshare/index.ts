@@ -8,12 +8,15 @@
  * - Structured JSON logging with metrics
  * - Enhanced health checks
  * - Automatic state cleanup
+ * - Unified createAPIHandler framework
  *
  * See README.md for architecture documentation.
  */
 
+import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { isDevelopment } from "../_shared/utils.ts";
+import { AppError } from "../_shared/errors.ts";
 import { setWebhook, getTelegramApiStatus } from "./services/telegram-api.ts";
 import { verifyTelegramWebhook as verifyTelegramSignature } from "../_shared/webhook-security.ts";
 import { handleCallbackQuery } from "./handlers/callbacks.ts";
@@ -40,7 +43,8 @@ import { cleanupExpiredStates } from "./services/user-state.ts";
 import { cleanupExpiredCache, getCacheStats } from "./services/cache.ts";
 import type { TelegramUpdate } from "./types/index.ts";
 
-const VERSION = "3.4.0";
+const VERSION = "3.5.0";
+const SERVICE = "telegram-bot-foodshare";
 
 // Webhook secret for verifying requests from Telegram
 const WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET");
@@ -74,7 +78,7 @@ const metrics: Metrics = {
 function recordMetric(
   type: "success" | "error" | "ratelimit",
   latencyMs: number,
-  command?: string
+  command?: string,
 ): void {
   metrics.requestsTotal++;
   metrics.latencySum += latencyMs;
@@ -106,26 +110,19 @@ function getMetrics(): Record<string, unknown> {
 // Security: Webhook Signature Verification
 // ============================================================================
 
-/**
- * Verify Telegram webhook signature using shared webhook-security module
- * SECURITY: Rejects requests in production if secret is not configured
- */
 function verifyWebhookSignature(req: Request): boolean {
-  // If no secret configured, behavior depends on environment
   if (!WEBHOOK_SECRET) {
     if (isDevelopment()) {
-      log("warn", "TELEGRAM_WEBHOOK_SECRET not configured - skipping verification (dev mode)");
+      logger.warn("TELEGRAM_WEBHOOK_SECRET not configured - skipping verification (dev mode)");
       return true;
     }
-    // SECURITY: In production, reject requests if secret is not configured
-    log("error", "TELEGRAM_WEBHOOK_SECRET not configured - rejecting request in production");
+    logger.error("TELEGRAM_WEBHOOK_SECRET not configured - rejecting request in production");
     return false;
   }
 
-  // Use shared webhook-security module for verification
   const result = verifyTelegramSignature(req.headers, WEBHOOK_SECRET);
   if (!result.valid) {
-    log("warn", "Webhook signature verification failed", { error: result.error });
+    logger.warn("Webhook signature verification failed", { error: result.error });
   }
   return result.valid;
 }
@@ -142,15 +139,9 @@ try {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-  if (!botToken) {
-    throw new Error("Missing BOT_TOKEN or TELEGRAM_BOT_TOKEN environment variable");
-  }
-  if (!supabaseUrl) {
-    throw new Error("Missing SUPABASE_URL environment variable");
-  }
-  if (!supabaseKey) {
-    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY environment variable");
-  }
+  if (!botToken) throw new Error("Missing BOT_TOKEN or TELEGRAM_BOT_TOKEN environment variable");
+  if (!supabaseUrl) throw new Error("Missing SUPABASE_URL environment variable");
+  if (!supabaseKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY environment variable");
 
   isInitialized = true;
   logger.info("Telegram bot initialized successfully", { version: VERSION });
@@ -160,119 +151,67 @@ try {
 }
 
 // ============================================================================
-// Helper Functions
+// JSON Response helper (always return 200 to Telegram)
 // ============================================================================
 
-function generateRequestId(): string {
-  return crypto.randomUUID();
-}
-
-function log(level: string, message: string, context: Record<string, unknown> = {}): void {
-  switch (level) {
-    case "error":
-      logger.error(message, context);
-      break;
-    case "warn":
-      logger.warn(message, context);
-      break;
-    case "debug":
-      logger.debug(message, context);
-      break;
-    default:
-      logger.info(message, context);
-      break;
-  }
+function jsonOk(body: unknown, ctx: HandlerContext, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
+  });
 }
 
 // ============================================================================
-// Main Request Handler
+// Route Handlers
 // ============================================================================
 
-Deno.serve(async (req) => {
-  const requestId = generateRequestId();
-  const startTime = Date.now();
-
-  // Check initialization status
+async function handleGet(ctx: HandlerContext): Promise<Response> {
   if (!isInitialized) {
-    log("error", "Function not initialized", { requestId, error: initError?.message });
-    return new Response(
-      JSON.stringify({
-        error: "Service temporarily unavailable",
-        details: initError?.message,
-        requestId,
-      }),
-      {
-        status: 503,
-        headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-      }
-    );
+    return jsonOk({ error: "Service temporarily unavailable", details: initError?.message }, ctx, 503);
   }
 
-  const url = new URL(req.url);
+  const url = new URL(ctx.request.url);
   const pathname = url.pathname;
 
   // Webhook setup endpoint
   if (pathname.endsWith("/setup-webhook")) {
     const webhookUrl = url.searchParams.get("url");
     if (!webhookUrl) {
-      return new Response(JSON.stringify({ error: "Missing webhook URL parameter", requestId }), {
-        status: 400,
-        headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-      });
+      return jsonOk({ error: "Missing webhook URL parameter" }, ctx, 400);
     }
 
     const success = await setWebhook(webhookUrl);
-    log(success ? "info" : "error", "Webhook setup", { requestId, success, webhookUrl });
-
-    return new Response(
-      JSON.stringify({
-        success,
-        message: success ? "Webhook set successfully" : "Failed to set webhook",
-        requestId,
-      }),
-      {
-        status: success ? 200 : 500,
-        headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-      }
-    );
+    logger.info("Webhook setup", { success, webhookUrl });
+    return jsonOk({
+      success,
+      message: success ? "Webhook set successfully" : "Failed to set webhook",
+    }, ctx, success ? 200 : 500);
   }
 
   // Metrics endpoint
-  if (pathname === "/metrics" || pathname.endsWith("/metrics")) {
-    return new Response(
-      JSON.stringify({
-        ...getMetrics(),
-        cache: getCacheStats(),
-        timestamp: new Date().toISOString(),
-        requestId,
-      }),
-      {
-        headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-      }
-    );
+  if (pathname.endsWith("/metrics")) {
+    return jsonOk({
+      ...getMetrics(),
+      cache: getCacheStats(),
+      timestamp: new Date().toISOString(),
+    }, ctx);
   }
 
-  // Chat ID lookup endpoint (folded from get-my-chat-id)
-  if (pathname.endsWith("/chat-id") && req.method === "GET") {
+  // Chat ID lookup endpoint
+  if (pathname.endsWith("/chat-id")) {
     const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN") || Deno.env.get("BOT_TOKEN");
     if (!botToken) {
-      return new Response(JSON.stringify({ error: "Bot token not configured", requestId }), {
-        status: 500,
-        headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-      });
+      return jsonOk({ error: "Bot token not configured" }, ctx, 500);
     }
 
     try {
       const tgResponse = await fetch(
-        `https://api.telegram.org/bot${botToken}/getUpdates?limit=10`
+        `https://api.telegram.org/bot${botToken}/getUpdates?limit=10`,
       );
       const tgResult = await tgResponse.json();
 
       if (!tgResult.ok) {
-        return new Response(
-          JSON.stringify({ error: `Telegram API error: ${tgResult.description}`, requestId }),
-          { status: 502, headers: { "Content-Type": "application/json", "X-Request-ID": requestId } }
-        );
+        return jsonOk({ error: `Telegram API error: ${tgResult.description}` }, ctx, 502);
       }
 
       const chatIds = new Set<number>();
@@ -293,299 +232,197 @@ Deno.serve(async (req) => {
         }
       }
 
-      log("info", "Chat ID lookup", { requestId, chatIdsFound: chatIds.size });
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          instructions: "Send any message to your bot, then call this endpoint again to see your chat_id",
-          unique_chat_ids: Array.from(chatIds),
-          recent_messages: messages,
-          requestId,
-        }),
-        { headers: { "Content-Type": "application/json", "X-Request-ID": requestId } }
-      );
+      return jsonOk({
+        success: true,
+        instructions: "Send any message to your bot, then call this endpoint again to see your chat_id",
+        unique_chat_ids: Array.from(chatIds),
+        recent_messages: messages,
+      }, ctx);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      log("error", "Chat ID lookup failed", { requestId, error: errorMessage });
-      return new Response(
-        JSON.stringify({ error: errorMessage, requestId }),
-        { status: 500, headers: { "Content-Type": "application/json", "X-Request-ID": requestId } }
-      );
+      return jsonOk({ error: error instanceof Error ? error.message : String(error) }, ctx, 500);
     }
   }
 
-  // Enhanced health check endpoint
-  if (pathname === "/health" || pathname.endsWith("/health") || req.method === "GET") {
-    // Cleanup expired states and cache on health check
-    let cleanedStates = 0;
-    let cleanedCache = 0;
-    try {
-      cleanedStates = await cleanupExpiredStates();
-      cleanedCache = cleanupExpiredCache();
-    } catch {
-      // Ignore cleanup errors in health check
-    }
+  // Health check (default GET)
+  let cleanedStates = 0;
+  let cleanedCache = 0;
+  try {
+    cleanedStates = await cleanupExpiredStates();
+    cleanedCache = cleanupExpiredCache();
+  } catch {
+    // Ignore cleanup errors in health check
+  }
 
-    const telegramStatus = getTelegramApiStatus();
-    const overallStatus = telegramStatus.status === "OPEN" ? "degraded" : "healthy";
+  const telegramStatus = getTelegramApiStatus();
+  const overallStatus = telegramStatus.status === "OPEN" ? "degraded" : "healthy";
 
-    return new Response(
-      JSON.stringify({
-        status: overallStatus,
-        service: "telegram-bot-foodshare",
-        version: VERSION,
-        timestamp: new Date().toISOString(),
-        requestId,
-        dependencies: {
-          telegram: {
-            status: telegramStatus.status,
-            failures: telegramStatus.failures,
-          },
-        },
-        maintenance: {
-          expiredStatesCleaned: cleanedStates,
-          expiredCacheCleaned: cleanedCache,
-        },
-        metrics: getMetrics(),
-      }),
-      {
-        headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-        status: overallStatus === "healthy" ? 200 : 503,
+  return jsonOk({
+    status: overallStatus,
+    service: SERVICE,
+    version: VERSION,
+    timestamp: new Date().toISOString(),
+    dependencies: {
+      telegram: {
+        status: telegramStatus.status,
+        failures: telegramStatus.failures,
+      },
+    },
+    maintenance: {
+      expiredStatesCleaned: cleanedStates,
+      expiredCacheCleaned: cleanedCache,
+    },
+    metrics: getMetrics(),
+  }, ctx, overallStatus === "healthy" ? 200 : 503);
+}
+
+async function handlePost(ctx: HandlerContext): Promise<Response> {
+  const startTime = Date.now();
+
+  if (!isInitialized) {
+    return jsonOk({ error: "Service temporarily unavailable", details: initError?.message }, ctx, 503);
+  }
+
+  // Verify webhook signature for security
+  if (!verifyWebhookSignature(ctx.request)) {
+    logger.warn("Invalid webhook signature");
+    // CRITICAL: Return 200 to Telegram to prevent retry storms
+    return jsonOk({ ok: false, error: "Unauthorized" }, ctx);
+  }
+
+  let update: TelegramUpdate | undefined;
+
+  try {
+    update = ctx.body as TelegramUpdate;
+    const userId = update!.message?.from?.id || update!.callback_query?.from?.id;
+
+    // Distributed rate limiting
+    if (userId) {
+      const rateLimit = await checkRateLimitDistributed(userId);
+
+      if (!rateLimit.allowed) {
+        const latency = Date.now() - startTime;
+        recordMetric("ratelimit", latency);
+        logger.warn("Rate limit exceeded", { userId, retryAfter: rateLimit.retryAfterSeconds });
+        // Return 200 to Telegram but include rate limit info
+        return jsonOk({ ok: false, error: "Rate limit exceeded", retryAfter: rateLimit.retryAfterSeconds }, ctx);
       }
-    );
-  }
+    }
 
-  // Handle Telegram webhook updates
-  if (req.method === "POST") {
-    // Verify webhook signature for security
-    if (!verifyWebhookSignature(req)) {
-      log("warn", "Invalid webhook signature", { requestId });
-      return new Response(JSON.stringify({ ok: false, error: "Unauthorized", requestId }), {
-        status: 401,
-        headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
+    // Handle callback queries (inline button clicks)
+    if (update!.callback_query) {
+      await handleCallbackQuery(update!.callback_query);
+      logger.info("Callback query handled", {
+        userId,
+        action: update!.callback_query.data,
+        durationMs: Date.now() - startTime,
       });
-    }
-
-    let update: TelegramUpdate | undefined;
-
-    try {
-      update = await req.json();
-      const userId = update.message?.from?.id || update.callback_query?.from?.id;
-
-      // Distributed rate limiting with proper 429 response
-      if (userId) {
-        const rateLimit = await checkRateLimitDistributed(userId);
-
-        if (!rateLimit.allowed) {
-          const latency = Date.now() - startTime;
-          recordMetric("ratelimit", latency);
-          log("warn", "Rate limit exceeded", {
-            requestId,
-            userId,
-            retryAfter: rateLimit.retryAfterSeconds,
-          });
-
-          return new Response(
-            JSON.stringify({
-              ok: false,
-              error: "Rate limit exceeded",
-              retryAfter: rateLimit.retryAfterSeconds,
-              requestId,
-            }),
-            {
-              status: 429,
-              headers: {
-                "Content-Type": "application/json",
-                "X-Request-ID": requestId,
-                "Retry-After": String(rateLimit.retryAfterSeconds || 60),
-                "X-RateLimit-Remaining": String(rateLimit.remaining),
-                "X-RateLimit-Reset": rateLimit.resetAt.toISOString(),
-              },
-            }
-          );
-        }
-      }
-
-      // Handle callback queries (inline button clicks)
-      if (update.callback_query) {
-        await handleCallbackQuery(update.callback_query);
-        log("info", "Callback query handled", {
-          requestId,
-          userId,
-          action: update.callback_query.data,
-          durationMs: Date.now() - startTime,
-        });
-        return new Response(JSON.stringify({ ok: true, requestId }), {
-          headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-        });
-      }
-
-      // Handle messages
-      if (update.message) {
-        const message = update.message;
-        const chatId = message.chat.id;
-        const msgUserId = message.from?.id;
-        const text = message.text?.trim();
-
-        // Handle commands
-        if (text?.startsWith("/")) {
-          const [command, ...args] = text.split(" ");
-          const commandArg = args.join(" ");
-
-          switch (command) {
-            case "/start":
-              if (msgUserId && message.from) {
-                await handleStartCommand(
-                  chatId,
-                  msgUserId,
-                  message.from,
-                  message.from.language_code
-                );
-              }
-              break;
-
-            case "/help":
-              await handleHelpCommand(chatId, message.from?.language_code);
-              break;
-
-            case "/share":
-              if (msgUserId && message.from) {
-                await handleShareCommand(
-                  chatId,
-                  msgUserId,
-                  message.from,
-                  message.from.language_code
-                );
-              }
-              break;
-
-            case "/find":
-              await handleFindCommand(chatId, commandArg, message.from?.language_code);
-              break;
-
-            case "/nearby":
-              if (msgUserId) {
-                await handleNearbyCommand(chatId, msgUserId);
-              }
-              break;
-
-            case "/profile":
-              if (msgUserId) {
-                await handleProfileCommand(chatId, msgUserId);
-              }
-              break;
-
-            case "/impact":
-              if (msgUserId) {
-                await handleImpactCommand(chatId, msgUserId);
-              }
-              break;
-
-            case "/stats":
-              if (msgUserId) {
-                await handleStatsCommand(chatId, msgUserId, message.from?.language_code);
-              }
-              break;
-
-            case "/leaderboard":
-              await handleLeaderboardCommand(chatId, message.from?.language_code);
-              break;
-
-            case "/language":
-            case "/lang":
-              if (msgUserId) {
-                await handleLanguageCommand(chatId, msgUserId);
-              }
-              break;
-
-            case "/resend":
-              if (message.from) {
-                await handleResendCode(message.from, chatId);
-              }
-              break;
-
-            case "/cancel":
-              await handleTextMessage(message);
-              break;
-
-            default:
-              // Unknown command - ignore
-              break;
-          }
-
-          log("info", "Command handled", {
-            requestId,
-            userId: msgUserId,
-            command,
-            durationMs: Date.now() - startTime,
-          });
-        }
-        // Handle location messages
-        else if (message.location) {
-          await handleLocationMessage(message);
-          log("info", "Location message handled", {
-            requestId,
-            userId: msgUserId,
-            durationMs: Date.now() - startTime,
-          });
-        }
-        // Handle photo messages
-        else if (message.photo) {
-          await handlePhotoMessage(message);
-          log("info", "Photo message handled", {
-            requestId,
-            userId: msgUserId,
-            durationMs: Date.now() - startTime,
-          });
-        }
-        // Handle text messages
-        else if (text) {
-          await handleTextMessage(message);
-          log("info", "Text message handled", {
-            requestId,
-            userId: msgUserId,
-            durationMs: Date.now() - startTime,
-          });
-        }
-      }
-
       const latency = Date.now() - startTime;
       recordMetric("success", latency);
-      return new Response(JSON.stringify({ ok: true, requestId }), {
-        headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-      });
-    } catch (error) {
-      const latency = Date.now() - startTime;
-      recordMetric("error", latency);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const errorStack = error instanceof Error ? error.stack : undefined;
-
-      log("error", "Error processing update", {
-        requestId,
-        error: errorMessage,
-        stack: errorStack,
-        updatePreview: update ? JSON.stringify(update).substring(0, 300) : "parse_failed",
-        durationMs: latency,
-      });
-
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: errorMessage,
-          requestId,
-        }),
-        {
-          status: 500,
-          headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-        }
-      );
+      return jsonOk({ ok: true }, ctx);
     }
-  }
 
-  // Method not allowed
-  return new Response(JSON.stringify({ error: "Method not allowed", requestId }), {
-    status: 405,
-    headers: { "Content-Type": "application/json", "X-Request-ID": requestId },
-  });
-});
+    // Handle messages
+    if (update!.message) {
+      const message = update!.message;
+      const chatId = message.chat.id;
+      const msgUserId = message.from?.id;
+      const text = message.text?.trim();
+
+      // Handle commands
+      if (text?.startsWith("/")) {
+        const [command, ...args] = text.split(" ");
+        const commandArg = args.join(" ");
+
+        switch (command) {
+          case "/start":
+            if (msgUserId && message.from) {
+              await handleStartCommand(chatId, msgUserId, message.from, message.from.language_code);
+            }
+            break;
+          case "/help":
+            await handleHelpCommand(chatId, message.from?.language_code);
+            break;
+          case "/share":
+            if (msgUserId && message.from) {
+              await handleShareCommand(chatId, msgUserId, message.from, message.from.language_code);
+            }
+            break;
+          case "/find":
+            await handleFindCommand(chatId, commandArg, message.from?.language_code);
+            break;
+          case "/nearby":
+            if (msgUserId) await handleNearbyCommand(chatId, msgUserId);
+            break;
+          case "/profile":
+            if (msgUserId) await handleProfileCommand(chatId, msgUserId);
+            break;
+          case "/impact":
+            if (msgUserId) await handleImpactCommand(chatId, msgUserId);
+            break;
+          case "/stats":
+            if (msgUserId) await handleStatsCommand(chatId, msgUserId, message.from?.language_code);
+            break;
+          case "/leaderboard":
+            await handleLeaderboardCommand(chatId, message.from?.language_code);
+            break;
+          case "/language":
+          case "/lang":
+            if (msgUserId) await handleLanguageCommand(chatId, msgUserId);
+            break;
+          case "/resend":
+            if (message.from) await handleResendCode(message.from, chatId);
+            break;
+          case "/cancel":
+            await handleTextMessage(message);
+            break;
+          default:
+            break;
+        }
+
+        logger.info("Command handled", {
+          userId: msgUserId,
+          command,
+          durationMs: Date.now() - startTime,
+        });
+      } else if (message.location) {
+        await handleLocationMessage(message);
+      } else if (message.photo) {
+        await handlePhotoMessage(message);
+      } else if (text) {
+        await handleTextMessage(message);
+      }
+    }
+
+    const latency = Date.now() - startTime;
+    recordMetric("success", latency);
+    return jsonOk({ ok: true }, ctx);
+  } catch (error) {
+    const latency = Date.now() - startTime;
+    recordMetric("error", latency);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    logger.error("Error processing update", {
+      error: errorMessage,
+      updatePreview: update ? JSON.stringify(update).substring(0, 300) : "parse_failed",
+      durationMs: latency,
+    });
+
+    // CRITICAL: Always return 200 to Telegram to prevent retry storms
+    return jsonOk({ ok: false, error: errorMessage }, ctx);
+  }
+}
+
+// ============================================================================
+// API Handler
+// ============================================================================
+
+Deno.serve(createAPIHandler({
+  service: SERVICE,
+  version: VERSION,
+  requireAuth: false,
+  csrf: false,
+  routes: {
+    GET: { handler: handleGet, requireAuth: false },
+    POST: { handler: handlePost, requireAuth: false },
+  },
+}));

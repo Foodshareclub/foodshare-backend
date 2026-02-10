@@ -662,6 +662,11 @@ Deno.serve(createAPIHandler({
   version: CONFIG.version,
   requireAuth: false, // Cron job + webhooks - service-level
   csrf: false, // Sentry webhook posts from external
+  rateLimit: {
+    limit: 30,
+    windowMs: 60_000,
+    keyBy: "ip",
+  },
   routes: {
     POST: {
       handler: handlePost,

@@ -75,10 +75,17 @@ export function validateImageUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     // Check if it's a Supabase Storage URL
+    const supabaseHost = (() => {
+      try {
+        return new URL(Deno.env.get("SUPABASE_URL") || "").hostname;
+      } catch {
+        return "api.foodshare.club";
+      }
+    })();
     return (
       parsed.protocol === "https:" &&
-      parsed.hostname.includes("supabase.co") &&
-      parsed.pathname.includes("/storage/v1/object/public/")
+      (parsed.hostname.includes(supabaseHost) || parsed.hostname === "cdn.foodshare.club") &&
+      (parsed.pathname.includes("/storage/v1/object/public/") || parsed.pathname.startsWith("/"))
     );
   } catch {
     return false;

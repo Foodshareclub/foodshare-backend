@@ -11,7 +11,6 @@
 
 import { getSupabaseClient } from "../../_shared/supabase.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
-import { getCorsHeaders } from "../../_shared/cors.ts";
 
 // ============================================================================
 // Types
@@ -168,13 +167,8 @@ async function checkRateLimit(
 // Handler
 // ============================================================================
 
-export default async function uiStringsHandler(req: Request): Promise<Response> {
+export default async function uiStringsHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
   const startTime = Date.now();
-  const corsHeaders = getCorsHeaders(req);
-
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders, status: 204 });
-  }
 
   try {
     const supabase = getSupabaseClient();

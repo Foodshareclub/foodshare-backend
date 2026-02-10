@@ -223,7 +223,7 @@ export async function handleTextMessage(message: TelegramMessage): Promise<void>
     logger.debug("User state for location", { userState });
 
     const { extractCoordinates } = await import("../services/geocoding.ts");
-    const { getSupabaseClient } = await import("../services/supabase.ts");
+    const { getSupabaseClient } = await import("../../_shared/supabase.ts");
     const { APP_URL } = await import("../config/index.ts");
     const { withTimeout } = await import("../utils/timeout.ts");
 
@@ -417,7 +417,7 @@ export async function handleLocationMessage(message: TelegramMessage): Promise<v
 
   // Handle food sharing location (GPS)
   if (userState?.action === "sharing_food" && userState.step === "location") {
-    const { getSupabaseClient } = await import("../services/supabase.ts");
+    const { getSupabaseClient } = await import("../../_shared/supabase.ts");
     const { APP_URL } = await import("../config/index.ts");
     const { withTimeout } = await import("../utils/timeout.ts");
 

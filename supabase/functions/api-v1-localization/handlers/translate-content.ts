@@ -14,7 +14,6 @@
  */
 
 import { getSupabaseClient } from "../../_shared/supabase.ts";
-import { getCorsHeaders } from "../../_shared/cors.ts";
 import { logger } from "../../_shared/logger.ts";
 import { llmTranslationService } from "../services/llm-translation.ts";
 
@@ -50,13 +49,8 @@ interface TranslateResponse {
   responseTimeMs: number;
 }
 
-export default async function translateContentHandler(req: Request): Promise<Response> {
+export default async function translateContentHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
   const startTime = performance.now();
-  const corsHeaders = getCorsHeaders(req);
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
 
   if (req.method !== "POST") {
     return new Response(JSON.stringify({

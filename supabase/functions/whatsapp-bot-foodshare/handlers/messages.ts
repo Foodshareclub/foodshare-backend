@@ -7,7 +7,7 @@ import { logger } from "../../_shared/logger.ts";
 import type { WhatsAppMessage } from "../types/index.ts";
 import { getUserState, setUserState } from "../services/user-state.ts";
 import { getProfileByWhatsAppPhone, updateProfile } from "../services/profile.ts";
-import { getSupabaseClient } from "../services/supabase.ts";
+import { getSupabaseClient } from "../../_shared/supabase.ts";
 import { geocodeAddress, extractCoordinates } from "../services/geocoding.ts";
 import {
   sendTextMessage,
