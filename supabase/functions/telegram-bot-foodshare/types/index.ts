@@ -51,6 +51,15 @@ export interface TelegramMessage {
   location?: { latitude: number; longitude: number };
   caption?: string;
   reply_to_message?: TelegramMessage;
+  new_chat_members?: TelegramUser[];
+  entities?: TelegramMessageEntity[];
+}
+
+export interface TelegramMessageEntity {
+  type: string; // "mention", "bot_command", "text_mention", etc.
+  offset: number;
+  length: number;
+  user?: TelegramUser;
 }
 
 export interface TelegramUser {

@@ -11,7 +11,8 @@ import { getUserLanguage, t } from "../lib/i18n.ts";
 import { getMenuActionAllLangs, getMainMenuKeyboard } from "../lib/keyboards.ts";
 import * as emoji from "../lib/emojis.ts";
 import * as msg from "../lib/messages.ts";
-import type { TelegramMessage } from "../types/index.ts";
+import type { TelegramMessage, TelegramUser } from "../types/index.ts";
+import { APP_URL } from "../config/index.ts";
 import { safeExecute } from "../utils/errors.ts";
 import {
   handleShareViaChat,
@@ -77,6 +78,28 @@ export async function requireAuth(
   }
 
   return { authorized: true, profile };
+}
+
+/**
+ * Greet new members who join a group chat
+ */
+export async function handleNewChatMembers(chatId: number, newMembers: TelegramUser[]): Promise<void> {
+  // Skip bots joining
+  const humans = newMembers.filter((m) => !m.is_bot);
+  if (humans.length === 0) return;
+
+  const names = humans.map((m) => m.first_name).join(", ");
+
+  const greeting =
+    `${emoji.WAVE} <b>Welcome, ${names}!</b>\n\n` +
+    `${emoji.SPARKLES} Glad to have you in the FoodShare community!\n\n` +
+    `${emoji.FOOD} <b>Share Food</b> - Share surplus food\n` +
+    `${emoji.SEARCH} <b>Find Food</b> - Discover free food nearby\n` +
+    `${emoji.LEAF} <b>Reduce Waste</b> - Help the planet\n\n` +
+    `${emoji.INFO} Message me directly to get started or use /start`;
+
+  await sendMessage(chatId, greeting);
+  logger.info("Greeted new members in group", { chatId, members: humans.map((m) => m.id) });
 }
 
 export async function handleTextMessage(message: TelegramMessage): Promise<void> {

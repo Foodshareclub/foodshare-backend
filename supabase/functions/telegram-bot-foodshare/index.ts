@@ -24,8 +24,10 @@ import {
   handleTextMessage,
   handlePhotoMessage,
   handleLocationMessage,
+  handleNewChatMembers,
 } from "./handlers/messages.ts";
 import { handleResendCode } from "./handlers/auth.ts";
+import { BOT_USERNAME } from "./config/index.ts";
 import {
   handleStartCommand,
   handleHelpCommand,
@@ -327,6 +329,35 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
       const chatId = message.chat.id;
       const msgUserId = message.from?.id;
       const text = message.text?.trim();
+      const chatType = message.chat.type; // "private", "group", "supergroup", "channel"
+      const isPrivateChat = chatType === "private";
+
+      // In group chats, only respond to:
+      // 1. New members joining (greeting)
+      // 2. Bot being @mentioned
+      // 3. Bot commands
+      if (!isPrivateChat) {
+        // Handle new members joining the group
+        if (message.new_chat_members && message.new_chat_members.length > 0) {
+          await handleNewChatMembers(chatId, message.new_chat_members);
+          const latency = Date.now() - startTime;
+          recordMetric("success", latency, "new_members");
+          return jsonOk({ ok: true }, ctx);
+        }
+
+        // Check if bot is @mentioned in the message
+        const isBotMentioned = text?.toLowerCase().includes(`@${BOT_USERNAME}`) ||
+          message.entities?.some(
+            (e) => e.type === "mention" && text?.substring(e.offset, e.offset + e.length).toLowerCase() === `@${BOT_USERNAME}`
+          );
+
+        // Skip if not a command and not a bot mention
+        if (!text?.startsWith("/") && !isBotMentioned) {
+          const latency = Date.now() - startTime;
+          recordMetric("success", latency);
+          return jsonOk({ ok: true }, ctx);
+        }
+      }
 
       // Handle commands
       if (text?.startsWith("/")) {
