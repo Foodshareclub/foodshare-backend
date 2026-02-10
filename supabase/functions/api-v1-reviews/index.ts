@@ -69,11 +69,9 @@ async function getReviews(ctx: HandlerContext<unknown, QueryParams>): Promise<Re
       id,
       profile_id,
       post_id,
-      reviewer_id,
       reviewed_rating,
       feedback,
-      created_at,
-      reviewer:reviewer_id (id, first_name, second_name, avatar_url)
+      created_at
     `, { count: "exact" })
     .order("created_at", { ascending: false })
     .limit(limit + 1);
@@ -93,8 +91,8 @@ async function getReviews(ctx: HandlerContext<unknown, QueryParams>): Promise<Re
   const { data, error, count } = await dbQuery;
 
   if (error) {
-    logger.error("Failed to get reviews", new Error(error.message));
-    throw error;
+    logger.error("Failed to get reviews", { error: error.message });
+    throw new Error(error.message);
   }
 
   const items = data || [];
@@ -127,12 +125,11 @@ async function submitReview(ctx: HandlerContext<SubmitReviewBody>): Promise<Resp
     throw new ValidationError(ERROR_MESSAGES.cannotReviewSelf);
   }
 
-  // Check for existing review (unique constraint: reviewer + reviewee + post)
+  // Check for existing review (unique constraint: reviewer + post)
   const { data: existing } = await supabase
     .from("reviews")
     .select("id")
-    .eq("reviewer_id", userId)
-    .eq("profile_id", body.revieweeId)
+    .eq("profile_id", userId)
     .eq("post_id", body.postId)
     .single();
 
@@ -140,13 +137,12 @@ async function submitReview(ctx: HandlerContext<SubmitReviewBody>): Promise<Resp
     throw new ConflictError(ERROR_MESSAGES.alreadyReviewed);
   }
 
-  // Insert review
+  // Insert review (profile_id = reviewer, RLS enforces profile_id = auth.uid())
   const { data, error } = await supabase
     .from("reviews")
     .insert({
-      profile_id: body.revieweeId,
+      profile_id: userId,
       post_id: body.postId,
-      reviewer_id: userId,
       reviewed_rating: body.rating,
       feedback: body.feedback || "",
     })
@@ -157,8 +153,8 @@ async function submitReview(ctx: HandlerContext<SubmitReviewBody>): Promise<Resp
     if (error.code === "23505") {
       throw new ConflictError("You have already reviewed this exchange");
     }
-    logger.error("Failed to submit review", new Error(error.message));
-    throw error;
+    logger.error("Failed to submit review", { error: error.message });
+    throw new Error(error.message);
   }
 
   // Update reviewee's rating stats (if trigger doesn't handle it)
@@ -197,23 +193,14 @@ async function submitReview(ctx: HandlerContext<SubmitReviewBody>): Promise<Resp
 // =============================================================================
 
 function transformReview(data: Record<string, unknown>) {
-  const reviewer = data.reviewer as Record<string, unknown> | null;
-
   return {
     id: data.id,
     revieweeId: data.profile_id,
     postId: data.post_id,
-    reviewerId: data.reviewer_id,
+    reviewerId: data.profile_id,
     rating: data.reviewed_rating,
     feedback: data.feedback,
     createdAt: data.created_at,
-    reviewer: reviewer
-      ? {
-          id: reviewer.id,
-          name: `${reviewer.first_name || ""} ${reviewer.second_name || ""}`.trim(),
-          avatarUrl: reviewer.avatar_url,
-        }
-      : null,
   };
 }
 
