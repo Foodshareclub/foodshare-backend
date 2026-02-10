@@ -17,6 +17,21 @@ const CIRCUIT_CONFIG = {
 
 const FETCH_TIMEOUT = 10000; // 10 seconds
 
+// When true, all sent messages are auto-scheduled for deletion after 5 min.
+// Set via enableGroupAutoDelete / disableGroupAutoDelete around group message handling.
+let _groupAutoDelete = false;
+let _groupAutoDeleteChatId: number | null = null;
+
+export function enableGroupAutoDelete(chatId: number): void {
+  _groupAutoDelete = true;
+  _groupAutoDeleteChatId = chatId;
+}
+
+export function disableGroupAutoDelete(): void {
+  _groupAutoDelete = false;
+  _groupAutoDeleteChatId = null;
+}
+
 /**
  * Fetch with timeout support
  */
@@ -54,7 +69,7 @@ export async function sendMessage(
   chatId: number,
   text: string,
   options: Record<string, unknown> = {}
-): Promise<boolean> {
+): Promise<number | null> {
   try {
     return await withCircuitBreaker(
       "telegram-api",
@@ -78,19 +93,27 @@ export async function sendMessage(
           if (response.status >= 500) {
             throw new Error(`Telegram API error: ${result.description}`);
           }
+          return null;
         }
 
-        return result.ok;
+        const messageId = result.result?.message_id ?? null;
+
+        // Auto-delete in group chats
+        if (messageId && _groupAutoDelete) {
+          scheduleGroupMessageDeletion(chatId, messageId);
+        }
+
+        return messageId;
       },
       CIRCUIT_CONFIG
     );
   } catch (error) {
     if (error instanceof CircuitBreakerError) {
       logger.warn("Telegram API circuit breaker open, message not sent");
-      return false;
+      return null;
     }
     logger.error("Send message error", { error: String(error) });
-    return false;
+    return null;
   }
 }
 
@@ -207,6 +230,55 @@ export async function setWebhook(url: string): Promise<boolean> {
     logger.error("Set webhook error", { error: String(error) });
     return false;
   }
+}
+
+export async function deleteMessage(chatId: number, messageId: number): Promise<boolean> {
+  try {
+    return await withCircuitBreaker(
+      "telegram-api",
+      async () => {
+        const response = await fetchWithTimeout(`${TELEGRAM_API}/deleteMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            message_id: messageId,
+          }),
+        });
+
+        const result = await response.json();
+
+        if (!result.ok && response.status >= 500) {
+          throw new Error(`Telegram API error: ${result.description}`);
+        }
+
+        return result.ok;
+      },
+      CIRCUIT_CONFIG
+    );
+  } catch (error) {
+    if (error instanceof CircuitBreakerError) {
+      logger.warn("Telegram API circuit breaker open, message not deleted");
+      return false;
+    }
+    logger.error("Delete message error", { error: String(error), chatId, messageId });
+    return false;
+  }
+}
+
+const AUTO_DELETE_DELAY_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Schedule a bot message for auto-deletion in group chats after 5 minutes.
+ * Fire-and-forget — failures are logged but don't propagate.
+ */
+export function scheduleGroupMessageDeletion(chatId: number, messageId: number): void {
+  setTimeout(async () => {
+    const ok = await deleteMessage(chatId, messageId);
+    if (ok) {
+      logger.info("Auto-deleted group message", { chatId, messageId });
+    }
+  }, AUTO_DELETE_DELAY_MS);
 }
 
 export async function answerCallbackQuery(

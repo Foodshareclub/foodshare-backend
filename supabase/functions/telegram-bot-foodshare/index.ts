@@ -17,7 +17,7 @@ import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handle
 import { logger } from "../_shared/logger.ts";
 import { isDevelopment } from "../_shared/utils.ts";
 import { AppError } from "../_shared/errors.ts";
-import { setWebhook, getTelegramApiStatus } from "./services/telegram-api.ts";
+import { setWebhook, getTelegramApiStatus, enableGroupAutoDelete, disableGroupAutoDelete } from "./services/telegram-api.ts";
 import { verifyTelegramWebhook as verifyTelegramSignature } from "../_shared/webhook-security.ts";
 import { handleCallbackQuery } from "./handlers/callbacks.ts";
 import {
@@ -359,68 +359,75 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
         }
       }
 
-      // Handle commands
-      if (text?.startsWith("/")) {
-        const [command, ...args] = text.split(" ");
-        const commandArg = args.join(" ");
+      // In group chats, auto-delete bot replies after 5 minutes
+      if (!isPrivateChat) enableGroupAutoDelete(chatId);
 
-        switch (command) {
-          case "/start":
-            if (msgUserId && message.from) {
-              await handleStartCommand(chatId, msgUserId, message.from, message.from.language_code);
-            }
-            break;
-          case "/help":
-            await handleHelpCommand(chatId, message.from?.language_code);
-            break;
-          case "/share":
-            if (msgUserId && message.from) {
-              await handleShareCommand(chatId, msgUserId, message.from, message.from.language_code);
-            }
-            break;
-          case "/find":
-            await handleFindCommand(chatId, commandArg, message.from?.language_code);
-            break;
-          case "/nearby":
-            if (msgUserId) await handleNearbyCommand(chatId, msgUserId);
-            break;
-          case "/profile":
-            if (msgUserId) await handleProfileCommand(chatId, msgUserId);
-            break;
-          case "/impact":
-            if (msgUserId) await handleImpactCommand(chatId, msgUserId);
-            break;
-          case "/stats":
-            if (msgUserId) await handleStatsCommand(chatId, msgUserId, message.from?.language_code);
-            break;
-          case "/leaderboard":
-            await handleLeaderboardCommand(chatId, message.from?.language_code);
-            break;
-          case "/language":
-          case "/lang":
-            if (msgUserId) await handleLanguageCommand(chatId, msgUserId);
-            break;
-          case "/resend":
-            if (message.from) await handleResendCode(message.from, chatId);
-            break;
-          case "/cancel":
-            await handleTextMessage(message);
-            break;
-          default:
-            break;
+      try {
+        // Handle commands
+        if (text?.startsWith("/")) {
+          const [command, ...args] = text.split(" ");
+          const commandArg = args.join(" ");
+
+          switch (command) {
+            case "/start":
+              if (msgUserId && message.from) {
+                await handleStartCommand(chatId, msgUserId, message.from, message.from.language_code);
+              }
+              break;
+            case "/help":
+              await handleHelpCommand(chatId, message.from?.language_code);
+              break;
+            case "/share":
+              if (msgUserId && message.from) {
+                await handleShareCommand(chatId, msgUserId, message.from, message.from.language_code);
+              }
+              break;
+            case "/find":
+              await handleFindCommand(chatId, commandArg, message.from?.language_code);
+              break;
+            case "/nearby":
+              if (msgUserId) await handleNearbyCommand(chatId, msgUserId);
+              break;
+            case "/profile":
+              if (msgUserId) await handleProfileCommand(chatId, msgUserId);
+              break;
+            case "/impact":
+              if (msgUserId) await handleImpactCommand(chatId, msgUserId);
+              break;
+            case "/stats":
+              if (msgUserId) await handleStatsCommand(chatId, msgUserId, message.from?.language_code);
+              break;
+            case "/leaderboard":
+              await handleLeaderboardCommand(chatId, message.from?.language_code);
+              break;
+            case "/language":
+            case "/lang":
+              if (msgUserId) await handleLanguageCommand(chatId, msgUserId);
+              break;
+            case "/resend":
+              if (message.from) await handleResendCode(message.from, chatId);
+              break;
+            case "/cancel":
+              await handleTextMessage(message);
+              break;
+            default:
+              break;
+          }
+
+          logger.info("Command handled", {
+            userId: msgUserId,
+            command,
+            durationMs: Date.now() - startTime,
+          });
+        } else if (message.location) {
+          await handleLocationMessage(message);
+        } else if (message.photo) {
+          await handlePhotoMessage(message);
+        } else if (text) {
+          await handleTextMessage(message);
         }
-
-        logger.info("Command handled", {
-          userId: msgUserId,
-          command,
-          durationMs: Date.now() - startTime,
-        });
-      } else if (message.location) {
-        await handleLocationMessage(message);
-      } else if (message.photo) {
-        await handlePhotoMessage(message);
-      } else if (text) {
-        await handleTextMessage(message);
+      } finally {
+        disableGroupAutoDelete();
       }
     }
 

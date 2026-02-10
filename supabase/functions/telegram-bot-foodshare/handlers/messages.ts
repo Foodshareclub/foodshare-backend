@@ -3,7 +3,7 @@
  */
 
 import { logger } from "../../_shared/logger.ts";
-import { sendMessage } from "../services/telegram-api.ts";
+import { sendMessage, scheduleGroupMessageDeletion } from "../services/telegram-api.ts";
 import { getUserState, setUserState } from "../services/user-state.ts";
 import { getProfileByTelegramId, updateProfile } from "../services/profile.ts";
 import { trackMessage } from "../services/tracking.ts";
@@ -98,7 +98,8 @@ export async function handleNewChatMembers(chatId: number, newMembers: TelegramU
     `${emoji.LEAF} <b>Reduce Waste</b> - Help the planet\n\n` +
     `${emoji.INFO} Message me directly to get started or use /start`;
 
-  await sendMessage(chatId, greeting);
+  const msgId = await sendMessage(chatId, greeting);
+  if (msgId) scheduleGroupMessageDeletion(chatId, msgId);
   logger.info("Greeted new members in group", { chatId, members: humans.map((m) => m.id) });
 }
 
