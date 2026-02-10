@@ -47,6 +47,7 @@ import {
   buildSuccessResponse,
   buildErrorResponse,
   shouldUseTransitionalFormat,
+  type UIHints,
 } from "./response-adapter.ts";
 import { logger } from "./logger.ts";
 import { trackError } from "./error-tracking.ts";
@@ -733,8 +734,19 @@ export function createAPIHandler(config: APIHandlerConfig) {
 /**
  * Create a success response from a handler
  */
-export function ok<T>(data: T, ctx: HandlerContext, status = 200): Response {
-  return buildSuccessResponse(data, ctx.corsHeaders, { status });
+export function ok<T>(
+  data: T,
+  ctx: HandlerContext,
+  statusOrOptions?: number | { status?: number; cacheTTL?: number; uiHints?: Record<string, unknown> }
+): Response {
+  const options = typeof statusOrOptions === "number"
+    ? { status: statusOrOptions }
+    : statusOrOptions || {};
+  return buildSuccessResponse(data, ctx.corsHeaders, {
+    status: options.status || 200,
+    cacheTTL: options.cacheTTL,
+    uiHints: options.uiHints as UIHints | undefined,
+  });
 }
 
 /**

@@ -247,3 +247,13 @@ export function withTimeoutWrapper<TArgs extends unknown[], TResult>(
     return withTimeout(fn(...args), timeoutMs, name);
   };
 }
+
+/**
+ * Execute a promise with a named operation timeout from TIMEOUT_DEFAULTS
+ */
+export function withOperationTimeout<T>(
+  promise: Promise<T>,
+  operation: keyof typeof TIMEOUT_DEFAULTS
+): Promise<T> {
+  return withTimeout(promise, TIMEOUT_DEFAULTS[operation], operation);
+}

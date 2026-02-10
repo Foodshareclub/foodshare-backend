@@ -43,7 +43,7 @@
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
-import { ValidationError, AuthError, ServerError } from "../_shared/errors.ts";
+import { ValidationError, AuthenticationError as AuthError, ServerError } from "../_shared/errors.ts";
 
 // =============================================================================
 // Configuration
