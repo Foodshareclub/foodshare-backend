@@ -8,15 +8,24 @@
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import {
-  ok,
   created,
-  noContent,
-  paginated,
   type HandlerContext,
+  noContent,
+  ok,
+  paginated,
 } from "../../_shared/api-handler.ts";
-import { NotFoundError, ValidationError, AuthorizationError, ConflictError } from "../../_shared/errors.ts";
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from "../../_shared/errors.ts";
 import { logger } from "../../_shared/logger.ts";
-import { transformFoodRoom, transformFoodRoomDetail, transformFoodMessage } from "./transformers.ts";
+import {
+  transformFoodMessage,
+  transformFoodRoom,
+  transformFoodRoomDetail,
+} from "./transformers.ts";
 
 // =============================================================================
 // Schemas
@@ -68,14 +77,17 @@ export async function foodListRooms(ctx: HandlerContext<unknown, ListQuery>): Pr
 
   let roomsQuery = supabase
     .from("rooms")
-    .select(`
+    .select(
+      `
       id, post_id, sharer, requester,
       last_message, last_message_sent_by, last_message_seen_by, last_message_time,
       post_arranged_to, post_arranged_at, is_archived, created_at,
       posts:post_id (id, post_name, images, post_type),
       sharer_profile:sharer (id, first_name, second_name, avatar_url),
       requester_profile:requester (id, first_name, second_name, avatar_url)
-    `, { count: "exact" })
+    `,
+      { count: "exact" },
+    )
     .or(`sharer.eq.${userId},requester.eq.${userId}`)
     .eq("is_archived", false)
     .order("last_message_time", { ascending: false, nullsFirst: false })
@@ -99,7 +111,7 @@ export async function foodListRooms(ctx: HandlerContext<unknown, ListQuery>): Pr
   return paginated(
     resultItems.map((room) => transformFoodRoom(room, userId)),
     ctx,
-    { offset: 0, limit, total: count || resultItems.length }
+    { offset: 0, limit, total: count || resultItems.length },
   );
 }
 
@@ -212,7 +224,10 @@ export async function foodCreateRoom(ctx: HandlerContext<FoodCreateRoomBody>): P
   }
 
   logger.info("Food chat room created", {
-    roomId: newRoom.id, postId: body.postId, sharerId: body.sharerId, requesterId: userId,
+    roomId: newRoom.id,
+    postId: body.postId,
+    sharerId: body.sharerId,
+    requesterId: userId,
   });
 
   return created({ roomId: newRoom.id, created: true }, ctx);
@@ -265,7 +280,9 @@ export async function foodSendMessage(ctx: HandlerContext<FoodSendMessageBody>):
   return created(transformFoodMessage(message), ctx);
 }
 
-export async function foodUpdateRoom(ctx: HandlerContext<FoodUpdateRoomBody, ListQuery>): Promise<Response> {
+export async function foodUpdateRoom(
+  ctx: HandlerContext<FoodUpdateRoomBody, ListQuery>,
+): Promise<Response> {
   const { supabase, userId, body, query } = ctx;
   const roomId = query.roomId;
 
@@ -298,7 +315,10 @@ export async function foodUpdateRoom(ctx: HandlerContext<FoodUpdateRoomBody, Lis
       }
 
       const address = post?.post_address || "Address not set";
-      const acceptMessage = `🎉 Request Accepted!\n\n📍 Pickup Address:\n${address}\n\nPlease arrange a time to collect "${post?.post_name || "the item"}".`;
+      const acceptMessage =
+        `🎉 Request Accepted!\n\n📍 Pickup Address:\n${address}\n\nPlease arrange a time to collect "${
+          post?.post_name || "the item"
+        }".`;
 
       await supabase
         .from("rooms")
@@ -306,7 +326,9 @@ export async function foodUpdateRoom(ctx: HandlerContext<FoodUpdateRoomBody, Lis
         .eq("id", roomId);
 
       await supabase.from("room_participants").insert({
-        room_id: roomId, profile_id: userId, text: acceptMessage,
+        room_id: roomId,
+        profile_id: userId,
+        text: acceptMessage,
       });
 
       await supabase
@@ -335,7 +357,9 @@ export async function foodUpdateRoom(ctx: HandlerContext<FoodUpdateRoomBody, Lis
       }
 
       await supabase.from("room_participants").insert({
-        room_id: roomId, profile_id: userId, text: completeMessage,
+        room_id: roomId,
+        profile_id: userId,
+        text: completeMessage,
       });
 
       await supabase

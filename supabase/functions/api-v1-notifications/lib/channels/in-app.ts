@@ -10,8 +10,8 @@
 import type {
   ChannelAdapter,
   ChannelDeliveryResult,
-  NotificationContext,
   InAppPayload,
+  NotificationContext,
 } from "../types.ts";
 import { logger } from "../../../_shared/logger.ts";
 
@@ -21,7 +21,7 @@ export class InAppChannelAdapter implements ChannelAdapter {
 
   async send(
     payload: InAppPayload,
-    context: NotificationContext
+    context: NotificationContext,
   ): Promise<ChannelDeliveryResult> {
     const startTime = performance.now();
 
@@ -113,7 +113,7 @@ export class InAppChannelAdapter implements ChannelAdapter {
 
   async sendBatch(
     payloads: InAppPayload[],
-    context: NotificationContext
+    context: NotificationContext,
   ): Promise<ChannelDeliveryResult[]> {
     logger.info("Sending batch in-app notifications", {
       requestId: context.requestId,
@@ -122,7 +122,7 @@ export class InAppChannelAdapter implements ChannelAdapter {
 
     // Send in parallel
     const results = await Promise.all(
-      payloads.map((payload) => this.send(payload, context))
+      payloads.map((payload) => this.send(payload, context)),
     );
 
     return results;
@@ -169,7 +169,7 @@ export class InAppChannelAdapter implements ChannelAdapter {
 export async function markAsRead(
   context: NotificationContext,
   notificationId: string,
-  userId: string
+  userId: string,
 ): Promise<boolean> {
   try {
     const { error } = await context.supabase
@@ -201,7 +201,7 @@ export async function markAsRead(
  */
 export async function getUnreadCount(
   context: NotificationContext,
-  userId: string
+  userId: string,
 ): Promise<number> {
   try {
     const { count, error } = await context.supabase
@@ -227,7 +227,7 @@ export async function getUnreadCount(
  */
 export async function markAllAsRead(
   context: NotificationContext,
-  userId: string
+  userId: string,
 ): Promise<boolean> {
   try {
     const { error } = await context.supabase

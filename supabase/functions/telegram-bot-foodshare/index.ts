@@ -13,32 +13,36 @@
  * See README.md for architecture documentation.
  */
 
-import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { isDevelopment } from "../_shared/utils.ts";
-import { AppError } from "../_shared/errors.ts";
-import { setWebhook, getTelegramApiStatus, enableGroupAutoDelete, disableGroupAutoDelete } from "./services/telegram-api.ts";
+import {
+  disableGroupAutoDelete,
+  enableGroupAutoDelete,
+  getTelegramApiStatus,
+  setWebhook,
+} from "./services/telegram-api.ts";
 import { verifyTelegramWebhook as verifyTelegramSignature } from "../_shared/webhook-security.ts";
 import { handleCallbackQuery } from "./handlers/callbacks.ts";
 import {
-  handleTextMessage,
-  handlePhotoMessage,
   handleLocationMessage,
   handleNewChatMembers,
+  handlePhotoMessage,
+  handleTextMessage,
 } from "./handlers/messages.ts";
 import { handleResendCode } from "./handlers/auth.ts";
 import { BOT_USERNAME } from "./config/index.ts";
 import {
-  handleStartCommand,
-  handleHelpCommand,
-  handleShareCommand,
   handleFindCommand,
+  handleHelpCommand,
+  handleImpactCommand,
+  handleLanguageCommand,
+  handleLeaderboardCommand,
   handleNearbyCommand,
   handleProfileCommand,
-  handleImpactCommand,
+  handleShareCommand,
+  handleStartCommand,
   handleStatsCommand,
-  handleLeaderboardCommand,
-  handleLanguageCommand,
 } from "./handlers/commands.ts";
 import { checkRateLimitDistributed } from "./services/rate-limiter.ts";
 import { cleanupExpiredStates } from "./services/user-state.ts";
@@ -169,7 +173,11 @@ function jsonOk(body: unknown, ctx: HandlerContext, status = 200): Response {
 
 async function handleGet(ctx: HandlerContext): Promise<Response> {
   if (!isInitialized) {
-    return jsonOk({ error: "Service temporarily unavailable", details: initError?.message }, ctx, 503);
+    return jsonOk(
+      { error: "Service temporarily unavailable", details: initError?.message },
+      ctx,
+      503,
+    );
   }
 
   const url = new URL(ctx.request.url);
@@ -184,10 +192,14 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
 
     const success = await setWebhook(webhookUrl);
     logger.info("Webhook setup", { success, webhookUrl });
-    return jsonOk({
-      success,
-      message: success ? "Webhook set successfully" : "Failed to set webhook",
-    }, ctx, success ? 200 : 500);
+    return jsonOk(
+      {
+        success,
+        message: success ? "Webhook set successfully" : "Failed to set webhook",
+      },
+      ctx,
+      success ? 200 : 500,
+    );
   }
 
   // Metrics endpoint
@@ -217,7 +229,14 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
       }
 
       const chatIds = new Set<number>();
-      const messages: { chat_id: number; chat_type: string; from: string; username: string; text: string; date: string }[] = [];
+      const messages: {
+        chat_id: number;
+        chat_type: string;
+        from: string;
+        username: string;
+        text: string;
+        date: string;
+      }[] = [];
 
       for (const update of tgResult.result) {
         if (update.message) {
@@ -236,7 +255,8 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
 
       return jsonOk({
         success: true,
-        instructions: "Send any message to your bot, then call this endpoint again to see your chat_id",
+        instructions:
+          "Send any message to your bot, then call this endpoint again to see your chat_id",
         unique_chat_ids: Array.from(chatIds),
         recent_messages: messages,
       }, ctx);
@@ -258,30 +278,38 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
   const telegramStatus = getTelegramApiStatus();
   const overallStatus = telegramStatus.status === "OPEN" ? "degraded" : "healthy";
 
-  return jsonOk({
-    status: overallStatus,
-    service: SERVICE,
-    version: VERSION,
-    timestamp: new Date().toISOString(),
-    dependencies: {
-      telegram: {
-        status: telegramStatus.status,
-        failures: telegramStatus.failures,
+  return jsonOk(
+    {
+      status: overallStatus,
+      service: SERVICE,
+      version: VERSION,
+      timestamp: new Date().toISOString(),
+      dependencies: {
+        telegram: {
+          status: telegramStatus.status,
+          failures: telegramStatus.failures,
+        },
       },
+      maintenance: {
+        expiredStatesCleaned: cleanedStates,
+        expiredCacheCleaned: cleanedCache,
+      },
+      metrics: getMetrics(),
     },
-    maintenance: {
-      expiredStatesCleaned: cleanedStates,
-      expiredCacheCleaned: cleanedCache,
-    },
-    metrics: getMetrics(),
-  }, ctx, overallStatus === "healthy" ? 200 : 503);
+    ctx,
+    overallStatus === "healthy" ? 200 : 503,
+  );
 }
 
 async function handlePost(ctx: HandlerContext): Promise<Response> {
   const startTime = Date.now();
 
   if (!isInitialized) {
-    return jsonOk({ error: "Service temporarily unavailable", details: initError?.message }, ctx, 503);
+    return jsonOk(
+      { error: "Service temporarily unavailable", details: initError?.message },
+      ctx,
+      503,
+    );
   }
 
   // Verify webhook signature for security
@@ -306,7 +334,11 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
         recordMetric("ratelimit", latency);
         logger.warn("Rate limit exceeded", { userId, retryAfter: rateLimit.retryAfterSeconds });
         // Return 200 to Telegram but include rate limit info
-        return jsonOk({ ok: false, error: "Rate limit exceeded", retryAfter: rateLimit.retryAfterSeconds }, ctx);
+        return jsonOk({
+          ok: false,
+          error: "Rate limit exceeded",
+          retryAfter: rateLimit.retryAfterSeconds,
+        }, ctx);
       }
     }
 
@@ -348,7 +380,9 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
         // Check if bot is @mentioned in the message
         const isBotMentioned = text?.toLowerCase().includes(`@${BOT_USERNAME}`) ||
           message.entities?.some(
-            (e) => e.type === "mention" && text?.substring(e.offset, e.offset + e.length).toLowerCase() === `@${BOT_USERNAME}`
+            (e) =>
+              e.type === "mention" &&
+              text?.substring(e.offset, e.offset + e.length).toLowerCase() === `@${BOT_USERNAME}`,
           );
 
         // Skip if not a command and not a bot mention
@@ -371,7 +405,12 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
           switch (command) {
             case "/start":
               if (msgUserId && message.from) {
-                await handleStartCommand(chatId, msgUserId, message.from, message.from.language_code);
+                await handleStartCommand(
+                  chatId,
+                  msgUserId,
+                  message.from,
+                  message.from.language_code,
+                );
               }
               break;
             case "/help":
@@ -379,7 +418,12 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
               break;
             case "/share":
               if (msgUserId && message.from) {
-                await handleShareCommand(chatId, msgUserId, message.from, message.from.language_code);
+                await handleShareCommand(
+                  chatId,
+                  msgUserId,
+                  message.from,
+                  message.from.language_code,
+                );
               }
               break;
             case "/find":
@@ -395,7 +439,9 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
               if (msgUserId) await handleImpactCommand(chatId, msgUserId);
               break;
             case "/stats":
-              if (msgUserId) await handleStatsCommand(chatId, msgUserId, message.from?.language_code);
+              if (msgUserId) {
+                await handleStatsCommand(chatId, msgUserId, message.from?.language_code);
+              }
               break;
             case "/leaderboard":
               await handleLeaderboardCommand(chatId, message.from?.language_code);

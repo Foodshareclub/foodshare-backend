@@ -4,11 +4,11 @@
  */
 
 import {
+  cleanupCache as sharedCleanupCache,
+  type Coordinates,
   geocodeAddress,
   geocodeWithCountryFallback,
-  cleanupCache as sharedCleanupCache,
   getCacheStats as sharedGetCacheStats,
-  type Coordinates,
 } from "../../_shared/geocoding.ts";
 
 /**

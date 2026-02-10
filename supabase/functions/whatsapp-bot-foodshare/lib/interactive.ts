@@ -102,7 +102,7 @@ export function getLocationButtons(_lang: Language): Array<{ id: string; title: 
  */
 export function getFoodActionButtons(
   postId: string,
-  _lang: Language
+  _lang: Language,
 ): Array<{ id: string; title: string }> {
   return [
     { id: `view_${postId}`, title: `${emoji.SEARCH} View Details` },
@@ -201,8 +201,9 @@ export function getFoodCardMessage(food: {
   let message = `${emoji.FOOD} *${food.name}*\n`;
 
   if (food.description) {
-    const desc =
-      food.description.length > 100 ? food.description.substring(0, 100) + "..." : food.description;
+    const desc = food.description.length > 100
+      ? food.description.substring(0, 100) + "..."
+      : food.description;
     message += `\n${emoji.TEXT} ${desc}`;
   }
 

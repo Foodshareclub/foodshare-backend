@@ -35,24 +35,19 @@
  */
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
-import { createContext, clearContext, setUserId, type RequestContext } from "./context.ts";
+import { clearContext, createContext, type RequestContext, setUserId } from "./context.ts";
 import { getCorsHeaders, handleCorsPreflight } from "./cors.ts";
+import { AppError, AuthenticationError, RateLimitError, ValidationError } from "./errors.ts";
 import {
-  AppError,
-  AuthenticationError,
-  ValidationError,
-  RateLimitError,
-} from "./errors.ts";
-import {
-  buildSuccessResponse,
   buildErrorResponse,
+  buildSuccessResponse,
   shouldUseTransitionalFormat,
   type UIHints,
 } from "./response-adapter.ts";
 import { logger } from "./logger.ts";
 import { trackError } from "./error-tracking.ts";
-import { trackRequest, checkMemoryUsage } from "./performance.ts";
-import { validateCsrf, type CsrfOptions, CsrfError } from "./csrf.ts";
+import { checkMemoryUsage, trackRequest } from "./performance.ts";
+import { CsrfError, type CsrfOptions, validateCsrf } from "./csrf.ts";
 
 // =============================================================================
 // Types
@@ -62,9 +57,15 @@ import { validateCsrf, type CsrfOptions, CsrfError } from "./csrf.ts";
 interface Schema<T = unknown> {
   // Zod
   parse?: (data: unknown) => T;
-  safeParse?: (data: unknown) => { success: true; data: T } | { success: false; error: { errors: Array<{ path: (string | number)[]; message: string }> } };
-  // Valibot
-  _parse?: (input: unknown) => { output: T } | { issues: Array<{ path?: Array<{ key: string }>; message: string }> };
+  safeParse?: (
+    data: unknown,
+  ) => { success: true; data: T } | {
+    success: false;
+    error: { errors: Array<{ path: (string | number)[]; message: string }> };
+  };
+  // Valibot (use `any` for input/output to remain compatible with Zod's internal types)
+  // deno-lint-ignore no-explicit-any
+  _parse?: (input: any) => any;
 }
 
 /** Handler context with parsed data and auth info */
@@ -94,7 +95,7 @@ export interface HandlerContext<TBody = unknown, TQuery = Record<string, string>
 
 /** Route handler function */
 export type RouteHandler<TBody = unknown, TQuery = Record<string, string>> = (
-  ctx: HandlerContext<TBody, TQuery>
+  ctx: HandlerContext<TBody, TQuery>,
 ) => Promise<Response>;
 
 /** Route configuration */
@@ -186,7 +187,7 @@ function createSupabaseClient(authHeader?: string | null) {
 
 // deno-lint-ignore no-explicit-any
 async function authenticateRequest(
-  supabase: SupabaseClient<any, any, any>
+  supabase: SupabaseClient<any, any, any>,
 ): Promise<string | null> {
   try {
     const { data: { user }, error } = await supabase.auth.getUser();
@@ -209,7 +210,7 @@ async function authenticateRequest(
 async function checkIdempotencyKey(
   supabase: SupabaseClient<any, any, any>,
   key: string,
-  operation: string
+  operation: string,
 ): Promise<{ cached: boolean; response?: unknown }> {
   const { data, error } = await supabase.rpc("check_idempotency_key", {
     p_key: key,
@@ -230,7 +231,7 @@ async function storeIdempotencyKey(
   supabase: SupabaseClient<any, any, any>,
   key: string,
   operation: string,
-  response: unknown
+  response: unknown,
 ): Promise<void> {
   const { error } = await supabase.rpc("check_idempotency_key", {
     p_key: key,
@@ -306,8 +307,10 @@ function validateWithSchema<T>(schema: Schema<T>, data: unknown, location: strin
     const result = schema._parse(data);
 
     if ("issues" in result) {
-      const errors = result.issues.map((issue) => ({
-        field: issue.path?.map((p) => p.key).join(".") || "root",
+      const errors = result.issues.map((
+        issue: { path?: Array<{ key: string }>; message: string },
+      ) => ({
+        field: issue.path?.map((p: { key: string }) => p.key).join(".") || "root",
         message: issue.message,
       }));
       throw new ValidationError(`Invalid ${location}`, errors);
@@ -388,7 +391,7 @@ const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
 function checkInMemoryRateLimit(
   key: string,
   limit: number,
-  windowMs: number
+  windowMs: number,
 ): { allowed: boolean; remaining: number; resetAt: number } {
   const now = Date.now();
   const existing = rateLimitStore.get(key);
@@ -424,7 +427,7 @@ setInterval(() => {
 function getRateLimitKey(
   ctx: HandlerContext,
   keyBy: RateLimitConfig["keyBy"],
-  service: string
+  service: string,
 ): string {
   if (typeof keyBy === "function") {
     return keyBy(ctx);
@@ -432,10 +435,15 @@ function getRateLimitKey(
 
   switch (keyBy) {
     case "user":
-      return ctx.userId ? `user:${ctx.userId}:${service}` : `anon:${getClientIp(ctx.request)}:${service}`;
-    case "device":
+      return ctx.userId
+        ? `user:${ctx.userId}:${service}`
+        : `anon:${getClientIp(ctx.request)}:${service}`;
+    case "device": {
       const deviceId = ctx.headers.get("x-device-id") || ctx.headers.get("x-client-id");
-      return deviceId ? `device:${deviceId}:${service}` : `ip:${getClientIp(ctx.request)}:${service}`;
+      return deviceId
+        ? `device:${deviceId}:${service}`
+        : `ip:${getClientIp(ctx.request)}:${service}`;
+    }
     case "ip":
     default:
       return `ip:${getClientIp(ctx.request)}:${service}`;
@@ -499,10 +507,10 @@ export function createAPIHandler(config: APIHandlerConfig) {
           new AppError(
             `Method ${method} not allowed. Use: ${allowedMethods.join(", ")}`,
             "METHOD_NOT_ALLOWED",
-            405
+            405,
           ),
           corsHeaders,
-          { version, includeTransitional: useTransitional }
+          { version, includeTransitional: useTransitional },
         );
       }
 
@@ -525,10 +533,10 @@ export function createAPIHandler(config: APIHandlerConfig) {
             new AppError(
               "Request blocked: origin validation failed",
               "CSRF_VALIDATION_FAILED",
-              403
+              403,
             ),
             corsHeaders,
-            { version, includeTransitional: useTransitional }
+            { version, includeTransitional: useTransitional },
           );
         }
       }
@@ -552,7 +560,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
           return buildErrorResponse(
             new AuthenticationError(),
             corsHeaders,
-            { version, includeTransitional: useTransitional }
+            { version, includeTransitional: useTransitional },
           );
         }
 
@@ -593,7 +601,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
         const idempotencyCheck = await checkIdempotencyKey(
           supabase,
           idempotencyKey,
-          `${service}:${method}`
+          `${service}:${method}`,
         );
 
         if (idempotencyCheck.cached && idempotencyCheck.response) {
@@ -628,7 +636,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
           const rateLimitResult = checkInMemoryRateLimit(
             rateLimitKey,
             rateLimit.limit,
-            rateLimit.windowMs
+            rateLimit.windowMs,
           );
 
           if (!rateLimitResult.allowed) {
@@ -636,7 +644,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
             return buildErrorResponse(
               new RateLimitError("Rate limit exceeded", retryAfterMs),
               corsHeaders,
-              { version, includeTransitional: useTransitional, retryAfterMs }
+              { version, includeTransitional: useTransitional, retryAfterMs },
             );
           }
         }
@@ -667,7 +675,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
             supabase,
             idempotencyKey,
             `${service}:${method}`,
-            responseData.data
+            responseData.data,
           );
         } catch {
           // Non-critical, log and continue
@@ -702,7 +710,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
         return buildErrorResponse(
           new AppError(error.message, "CSRF_VALIDATION_FAILED", 403),
           corsHeaders,
-          { version, includeTransitional: useTransitional }
+          { version, includeTransitional: useTransitional },
         );
       }
 
@@ -719,7 +727,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
       return buildErrorResponse(
         appError,
         corsHeaders,
-        { version, includeTransitional: useTransitional }
+        { version, includeTransitional: useTransitional },
       );
     } finally {
       clearContext();
@@ -737,7 +745,11 @@ export function createAPIHandler(config: APIHandlerConfig) {
 export function ok<T>(
   data: T,
   ctx: HandlerContext,
-  statusOrOptions?: number | { status?: number; cacheTTL?: number; uiHints?: Record<string, unknown> }
+  statusOrOptions?: number | {
+    status?: number;
+    cacheTTL?: number;
+    uiHints?: Record<string, unknown>;
+  },
 ): Response {
   const options = typeof statusOrOptions === "number"
     ? { status: statusOrOptions }
@@ -778,7 +790,7 @@ export function paginated<T>(
     total: number;
     /** Next cursor for cursor-based pagination */
     nextCursor?: string | null;
-  }
+  },
 ): Response {
   // Support both offset-based and cursor-based pagination
   const hasMore = pagination.nextCursor !== undefined

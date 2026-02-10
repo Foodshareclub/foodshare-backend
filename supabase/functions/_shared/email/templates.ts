@@ -11,32 +11,32 @@
 import {
   BRAND,
   buildEmail,
-  greeting,
-  paragraph,
+  type BulletItem,
   bulletList,
+  disclaimerBox,
+  greeting,
   highlightBox,
   infoBox,
-  disclaimerBox,
-  type BulletItem,
+  paragraph,
 } from "./template-components.ts";
 import { extractDisplayName } from "../display-name.ts";
 
 // Re-export templates from the component-based builder
 export {
-  welcomeTemplate,
-  emailVerificationTemplate,
-  passwordResetTemplate,
   chatNotificationTemplate,
-  newListingTemplate,
-  volunteerWelcomeTemplate,
   completeProfileTemplate,
+  emailVerificationTemplate,
+  feedbackAlertTemplate,
   firstShareTipsTemplate,
   milestoneTemplate,
+  newListingTemplate,
+  passwordResetTemplate,
   reengagementTemplate,
-  feedbackAlertTemplate,
   renderTemplate,
   templates,
   type TemplateSlug,
+  volunteerWelcomeTemplate,
+  welcomeTemplate,
 } from "./template-builder.ts";
 
 // Re-export components and BRAND for direct usage
@@ -55,18 +55,48 @@ export function welcomeEmail(params: WelcomeEmailParams): { subject: string; htm
   const displayName = extractDisplayName({ firstName: params.name, email: params.email });
 
   const features: BulletItem[] = [
-    { emoji: "🍎", title: "Share Surplus Food", description: "Post your extra groceries for neighbors", color: BRAND.primaryColor },
-    { emoji: "🗺️", title: "Discover Food Near You", description: "Browse the map to find available food", color: BRAND.accentTeal },
-    { emoji: "💬", title: "Connect & Chat", description: "Message members to coordinate pickups", color: BRAND.accentOrange },
-    { emoji: "🏆", title: "Join Challenges", description: "Participate in community challenges", color: BRAND.accentPurple },
+    {
+      emoji: "🍎",
+      title: "Share Surplus Food",
+      description: "Post your extra groceries for neighbors",
+      color: BRAND.primaryColor,
+    },
+    {
+      emoji: "🗺️",
+      title: "Discover Food Near You",
+      description: "Browse the map to find available food",
+      color: BRAND.accentTeal,
+    },
+    {
+      emoji: "💬",
+      title: "Connect & Chat",
+      description: "Message members to coordinate pickups",
+      color: BRAND.accentOrange,
+    },
+    {
+      emoji: "🏆",
+      title: "Join Challenges",
+      description: "Participate in community challenges",
+      color: BRAND.accentPurple,
+    },
   ];
 
   const content = `
     ${greeting(displayName)}
-    ${paragraph(`We're thrilled to have you join the <strong style="color: ${BRAND.primaryColor};">FoodShare</strong> community! Get ready to embark on a journey of delicious discoveries and meaningful connections.`)}
+    ${
+    paragraph(
+      `We're thrilled to have you join the <strong style="color: ${BRAND.primaryColor};">FoodShare</strong> community! Get ready to embark on a journey of delicious discoveries and meaningful connections.`,
+    )
+  }
     <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};"><strong>🌱 Here's what you can do:</strong></p>
     ${bulletList(features)}
-    ${infoBox("Your Impact Matters", "Together, we're reducing food waste and building stronger communities. Every meal shared makes a difference!", "✨")}
+    ${
+    infoBox(
+      "Your Impact Matters",
+      "Together, we're reducing food waste and building stronger communities. Every meal shared makes a difference!",
+      "✨",
+    )
+  }
   `;
 
   return {
@@ -97,9 +127,19 @@ export function goodbyeEmail(params: GoodbyeEmailParams): { subject: string; htm
       Hey <strong>${displayName}</strong>,
     </p>
     ${paragraph("We're very sad to see you go. Your presence in our community will be missed.")}
-    ${paragraph("If there's anything we could have done better, please don't hesitate to let us know. Your feedback helps us improve for everyone.")}
+    ${
+    paragraph(
+      "If there's anything we could have done better, please don't hesitate to let us know. Your feedback helps us improve for everyone.",
+    )
+  }
     ${paragraph("Remember, you're always welcome back if you change your mind! 💚")}
-    ${infoBox("Note", "Your account data has been securely removed. If you ever want to return, just sign up again – we'd love to have you back!", "📝")}
+    ${
+    infoBox(
+      "Note",
+      "Your account data has been securely removed. If you ever want to return, just sign up again – we'd love to have you back!",
+      "📝",
+    )
+  }
   `;
 
   return {
@@ -128,9 +168,23 @@ export function emailVerificationEmail(params: EmailVerificationParams): {
 } {
   const content = `
     <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: ${BRAND.textPrimary};">Thanks for signing up for <strong style="color: ${BRAND.primaryColor};">FoodShare</strong>! 🥗</p>
-    ${paragraph("We're excited to have you join our community dedicated to reducing food waste and sharing delicious meals. To complete your registration and start making a difference, please confirm your email address below:")}
-    ${infoBox("What happens next?", "Once confirmed, your email will be uniquely associated with your account, and you'll gain full access to share and discover food in your community.", "✨")}
-    ${disclaimerBox(`<strong style="color: ${BRAND.textMuted};">Didn't sign up?</strong><br>If you didn't register with FoodShare, you can safely ignore this email.`)}
+    ${
+    paragraph(
+      "We're excited to have you join our community dedicated to reducing food waste and sharing delicious meals. To complete your registration and start making a difference, please confirm your email address below:",
+    )
+  }
+    ${
+    infoBox(
+      "What happens next?",
+      "Once confirmed, your email will be uniquely associated with your account, and you'll gain full access to share and discover food in your community.",
+      "✨",
+    )
+  }
+    ${
+    disclaimerBox(
+      `<strong style="color: ${BRAND.textMuted};">Didn't sign up?</strong><br>If you didn't register with FoodShare, you can safely ignore this email.`,
+    )
+  }
   `;
 
   return {
@@ -159,9 +213,23 @@ export function passwordResetEmail(params: PasswordResetParams): { subject: stri
 
   const content = `
     ${greeting(params.name, "")}
-    ${paragraph("We received a request to reset your password. Click the button below to create a new password:")}
-    ${infoBox("Time Sensitive", `This link will expire in <strong>${expiresIn}</strong>. If you didn't request this, you can safely ignore this email.`, "⏰")}
-    ${disclaimerBox(`<strong style="color: ${BRAND.textMuted};">Didn't request this?</strong><br>If you didn't request a password reset, your account is still secure. No action is needed.`)}
+    ${
+    paragraph(
+      "We received a request to reset your password. Click the button below to create a new password:",
+    )
+  }
+    ${
+    infoBox(
+      "Time Sensitive",
+      `This link will expire in <strong>${expiresIn}</strong>. If you didn't request this, you can safely ignore this email.`,
+      "⏰",
+    )
+  }
+    ${
+    disclaimerBox(
+      `<strong style="color: ${BRAND.textMuted};">Didn't request this?</strong><br>If you didn't request a password reset, your account is still secure. No action is needed.`,
+    )
+  }
   `;
 
   return {
@@ -203,9 +271,9 @@ export function feedbackAlertEmail(params: FeedbackAlertParams): {
   const emoji = typeEmoji[params.feedback_type] || "📩";
   const timestamp = params.created_at
     ? new Date(params.created_at).toLocaleString("en-US", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      })
+      dateStyle: "medium",
+      timeStyle: "short",
+    })
     : new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 
   const feedbackBox = `
@@ -268,8 +336,16 @@ export function newListingEmail(params: NewListingEmailParams): { subject: strin
 
   const listingBox = `
     <p style="font-size: 20px; font-weight: 700; margin: 0 0 12px; color: ${BRAND.textPrimary};">${emoji} ${params.listingTitle}</p>
-    ${params.listingAddress ? `<p style="margin: 0 0 8px; color: ${BRAND.textMuted}; font-size: 14px;">📍 ${params.listingAddress}</p>` : ""}
-    ${shortDesc ? `<p style="margin: 12px 0 0; font-size: 15px; line-height: 1.6; color: ${BRAND.textSecondary};">${shortDesc}</p>` : ""}
+    ${
+    params.listingAddress
+      ? `<p style="margin: 0 0 8px; color: ${BRAND.textMuted}; font-size: 14px;">📍 ${params.listingAddress}</p>`
+      : ""
+  }
+    ${
+    shortDesc
+      ? `<p style="margin: 12px 0 0; font-size: 15px; line-height: 1.6; color: ${BRAND.textSecondary};">${shortDesc}</p>`
+      : ""
+  }
     <p style="margin: 12px 0 0; color: ${BRAND.textLight}; font-size: 14px;">Posted by <strong style="color: ${BRAND.textSecondary};">${params.posterName}</strong></p>
   `;
 
@@ -306,15 +382,22 @@ export function chatNotificationEmail(params: ChatNotificationParams): {
   subject: string;
   html: string;
 } {
-  const preview =
-    params.messagePreview.length > 100
-      ? params.messagePreview.substring(0, 100) + "..."
-      : params.messagePreview;
+  const preview = params.messagePreview.length > 100
+    ? params.messagePreview.substring(0, 100) + "..."
+    : params.messagePreview;
 
   const content = `
     ${greeting(params.recipientName)}
-    ${paragraph(`You have a new message from <strong style="color: ${BRAND.primaryColor};">${params.senderName}</strong>:`)}
-    ${highlightBox(`<p style="margin: 0; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary}; font-style: italic;">"${preview}"</p>`)}
+    ${
+    paragraph(
+      `You have a new message from <strong style="color: ${BRAND.primaryColor};">${params.senderName}</strong>:`,
+    )
+  }
+    ${
+    highlightBox(
+      `<p style="margin: 0; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary}; font-style: italic;">"${preview}"</p>`,
+    )
+  }
     ${paragraph("Reply now to continue the conversation! 💬", "0")}
   `;
 
@@ -362,7 +445,13 @@ export function notificationEmail(params: NotificationEmailParams): {
 
   const content = `
     ${greeting(params.recipientName)}
-    ${highlightBox(`<p style="margin: 0; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};">${params.body.replace(/\n/g, "<br>")}</p>`)}
+    ${
+    highlightBox(
+      `<p style="margin: 0; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};">${
+        params.body.replace(/\n/g, "<br>")
+      }</p>`,
+    )
+  }
     <p style="margin: 20px 0 0; font-size: 13px; color: ${BRAND.textLight}; text-align: center;">
       You received this email because you have ${categoryLabel} notifications enabled.
       <a href="${params.unsubscribeUrl}" style="color: ${BRAND.primaryColor}; text-decoration: none;">Unsubscribe</a>
@@ -408,7 +497,11 @@ export function digestEmail(params: DigestEmailParams): {
   subject: string;
   html: string;
 } {
-  const frequencyLabel = params.frequency === "hourly" ? "Hourly" : params.frequency === "daily" ? "Daily" : "Weekly";
+  const frequencyLabel = params.frequency === "hourly"
+    ? "Hourly"
+    : params.frequency === "daily"
+    ? "Daily"
+    : "Weekly";
 
   const categoryNames: Record<string, string> = {
     posts: "Listings",
@@ -471,7 +564,9 @@ export function digestEmail(params: DigestEmailParams): {
       itemsHtml += `
       <tr>
         <td style="padding: 8px 0;">
-          <p style="margin: 0; font-size: 13px; color: ${BRAND.textLight};">...and ${categoryItems.length - 5} more</p>
+          <p style="margin: 0; font-size: 13px; color: ${BRAND.textLight};">...and ${
+        categoryItems.length - 5
+      } more</p>
         </td>
       </tr>`;
     }
@@ -479,22 +574,34 @@ export function digestEmail(params: DigestEmailParams): {
 
   const content = `
     ${greeting(params.recipientName)}
-    ${paragraph(`Here's your ${frequencyLabel.toLowerCase()} digest with <strong>${params.items.length}</strong> notification${params.items.length !== 1 ? "s" : ""}:`)}
+    ${
+    paragraph(
+      `Here's your ${frequencyLabel.toLowerCase()} digest with <strong>${params.items.length}</strong> notification${
+        params.items.length !== 1 ? "s" : ""
+      }:`,
+    )
+  }
     <table width="100%" cellpadding="0" cellspacing="0" style="margin: 0 0 24px;">
       ${itemsHtml}
     </table>
     <p style="margin: 20px 0 0; font-size: 13px; color: ${BRAND.textLight}; text-align: center;">
-      <a href="${params.settingsUrl || "https://foodshare.club/settings/notifications"}" style="color: ${BRAND.primaryColor}; text-decoration: none;">Manage Preferences</a>
+      <a href="${
+    params.settingsUrl || "https://foodshare.club/settings/notifications"
+  }" style="color: ${BRAND.primaryColor}; text-decoration: none;">Manage Preferences</a>
       &nbsp;|&nbsp;
       <a href="${params.unsubscribeUrl}" style="color: ${BRAND.primaryColor}; text-decoration: none;">Unsubscribe</a>
     </p>
   `;
 
   return {
-    subject: `${frequencyLabel} Digest: ${params.items.length} new notification${params.items.length !== 1 ? "s" : ""}`,
+    subject: `${frequencyLabel} Digest: ${params.items.length} new notification${
+      params.items.length !== 1 ? "s" : ""
+    }`,
     html: buildEmail({
       title: `Your ${frequencyLabel} Digest`,
-      subtitle: `${params.items.length} notification${params.items.length !== 1 ? "s" : ""} to catch up on`,
+      subtitle: `${params.items.length} notification${
+        params.items.length !== 1 ? "s" : ""
+      } to catch up on`,
       content,
       cta: { text: "Open FoodShare", url: "https://foodshare.club" },
       footer: { showUnsubscribe: true, unsubscribeUrl: params.unsubscribeUrl },

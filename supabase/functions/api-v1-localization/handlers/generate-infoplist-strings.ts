@@ -23,8 +23,27 @@ const CACHE_TABLE = "infoplist_translation_cache";
 
 // All 21 supported locales
 const ALL_LOCALES = [
-  "en", "cs", "de", "es", "fr", "pt", "ru", "uk", "zh", "hi",
-  "ar", "it", "pl", "nl", "ja", "ko", "tr", "vi", "id", "th", "sv"
+  "en",
+  "cs",
+  "de",
+  "es",
+  "fr",
+  "pt",
+  "ru",
+  "uk",
+  "zh",
+  "hi",
+  "ar",
+  "it",
+  "pl",
+  "nl",
+  "ja",
+  "ko",
+  "tr",
+  "vi",
+  "id",
+  "th",
+  "sv",
 ] as const;
 
 type Locale = typeof ALL_LOCALES[number];
@@ -32,18 +51,51 @@ type Locale = typeof ALL_LOCALES[number];
 const TARGET_LOCALES = ALL_LOCALES.filter((l): l is Exclude<Locale, "en"> => l !== "en");
 
 const LOCALE_NAMES: Record<Locale, string> = {
-  en: "English", cs: "Czech", de: "German", es: "Spanish", fr: "French",
-  pt: "Portuguese", ru: "Russian", uk: "Ukrainian", zh: "Chinese (Simplified)",
-  hi: "Hindi", ar: "Arabic", it: "Italian", pl: "Polish", nl: "Dutch",
-  ja: "Japanese", ko: "Korean", tr: "Turkish", vi: "Vietnamese",
-  id: "Indonesian", th: "Thai", sv: "Swedish",
+  en: "English",
+  cs: "Czech",
+  de: "German",
+  es: "Spanish",
+  fr: "French",
+  pt: "Portuguese",
+  ru: "Russian",
+  uk: "Ukrainian",
+  zh: "Chinese (Simplified)",
+  hi: "Hindi",
+  ar: "Arabic",
+  it: "Italian",
+  pl: "Polish",
+  nl: "Dutch",
+  ja: "Japanese",
+  ko: "Korean",
+  tr: "Turkish",
+  vi: "Vietnamese",
+  id: "Indonesian",
+  th: "Thai",
+  sv: "Swedish",
 };
 
 const LPROJ_FOLDERS: Record<Locale, string> = {
-  en: "en", cs: "cs", de: "de", es: "es", fr: "fr", pt: "pt-BR",
-  ru: "ru", uk: "uk", zh: "zh-Hans", hi: "hi", ar: "ar", it: "it",
-  pl: "pl", nl: "nl", ja: "ja", ko: "ko", tr: "tr", vi: "vi",
-  id: "id", th: "th", sv: "sv",
+  en: "en",
+  cs: "cs",
+  de: "de",
+  es: "es",
+  fr: "fr",
+  pt: "pt-BR",
+  ru: "ru",
+  uk: "uk",
+  zh: "zh-Hans",
+  hi: "hi",
+  ar: "ar",
+  it: "it",
+  pl: "pl",
+  nl: "nl",
+  ja: "ja",
+  ko: "ko",
+  tr: "tr",
+  vi: "vi",
+  id: "id",
+  th: "th",
+  sv: "sv",
 };
 
 const KEY_COMMENTS: Record<string, string> = {
@@ -104,7 +156,7 @@ function hashContent(strings: Record<string, string>): string {
  */
 async function getCachedTranslations(
   contentHash: string,
-  locale: string
+  locale: string,
 ): Promise<Record<string, string> | null> {
   try {
     const supabase = getSupabaseClient();
@@ -128,7 +180,7 @@ async function getCachedTranslations(
 async function cacheTranslations(
   contentHash: string,
   locale: string,
-  translations: Record<string, string>
+  translations: Record<string, string>,
 ): Promise<void> {
   try {
     const supabase = getSupabaseClient();
@@ -172,7 +224,7 @@ async function translateLocale(
   strings: Record<string, string>,
   targetLocale: string,
   contentHash: string,
-  skipCache: boolean
+  skipCache: boolean,
 ): Promise<LocaleResult> {
   const start = performance.now();
 
@@ -204,10 +256,10 @@ async function translateLocale(
           value,
           "en",
           targetLocale,
-          `iOS permission dialog for "${key}". Keep "Foodshare" untranslated. Clear, friendly tone.`
+          `iOS permission dialog for "${key}". Keep "Foodshare" untranslated. Clear, friendly tone.`,
         );
         return { key, translation: result.text, quality: result.quality };
-      })
+      }),
     );
 
     for (const result of results) {
@@ -242,7 +294,7 @@ async function translateLocale(
 async function processLocalesParallel(
   strings: Record<string, string>,
   contentHash: string,
-  skipCache: boolean
+  skipCache: boolean,
 ): Promise<LocaleResult[]> {
   const results: LocaleResult[] = [];
   const queue = [...TARGET_LOCALES];
@@ -277,16 +329,22 @@ async function processLocalesParallel(
   return results;
 }
 
-export default async function generateInfoPlistStringsHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
+export default async function generateInfoPlistStringsHandler(
+  req: Request,
+  corsHeaders: Record<string, string>,
+): Promise<Response> {
   const startTime = performance.now();
   const requestId = crypto.randomUUID().slice(0, 8);
 
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({
-      success: false,
-      error: "method_not_allowed",
-      message: "Use POST",
-    }), { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "method_not_allowed",
+        message: "Use POST",
+      }),
+      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   }
 
   try {
@@ -295,11 +353,14 @@ export default async function generateInfoPlistStringsHandler(req: Request, cors
 
     // Validate input
     if (!strings || typeof strings !== "object" || Object.keys(strings).length === 0) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "invalid_request",
-        message: "strings object is required with at least one key",
-      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "invalid_request",
+          message: "strings object is required with at least one key",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
     const stringCount = Object.keys(strings).length;
@@ -371,7 +432,6 @@ export default async function generateInfoPlistStringsHandler(req: Request, cors
         "X-Duration-Ms": durationMs.toString(),
       },
     });
-
   } catch (error) {
     const durationMs = Math.round(performance.now() - startTime);
     logger.error("InfoPlist generation failed", {
@@ -380,19 +440,22 @@ export default async function generateInfoPlistStringsHandler(req: Request, cors
       stack: (error as Error).stack,
     });
 
-    return new Response(JSON.stringify({
-      success: false,
-      error: "generation_failed",
-      message: (error as Error).message,
-      requestId,
-    }), {
-      status: 500,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json",
-        "X-Request-Id": requestId,
-        "X-Duration-Ms": durationMs.toString(),
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "generation_failed",
+        message: (error as Error).message,
+        requestId,
+      }),
+      {
+        status: 500,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+          "X-Request-Id": requestId,
+          "X-Duration-Ms": durationMs.toString(),
+        },
       },
-    });
+    );
   }
 }

@@ -5,7 +5,7 @@
  * Uses in-memory state that persists within function instance lifetime.
  */
 
-import { AlertState, ALERT_COOLDOWN_MS } from "../types.ts";
+import { ALERT_COOLDOWN_MS, AlertState } from "../types.ts";
 
 // =============================================================================
 // Alert State Manager

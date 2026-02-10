@@ -70,7 +70,7 @@ const reportReasonEmoji: Record<string, string> = {
 async function sendTelegram(
   chatId: string,
   text: string,
-  threadId?: string
+  threadId?: string,
 ): Promise<boolean> {
   if (!botToken || !chatId) {
     logger.warn("Telegram not configured", { hasBotToken: !!botToken, hasChatId: !!chatId });
@@ -106,7 +106,7 @@ async function sendTelegram(
 async function sendTelegramPhoto(
   chatId: string,
   photoUrl: string,
-  caption: string
+  caption: string,
 ): Promise<boolean> {
   if (!botToken || !chatId) return false;
 
@@ -149,7 +149,11 @@ function stripHtml(html: string | null | undefined): string {
   return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
 }
 
-function getProfileName(profile: { first_name?: string | null; second_name?: string | null; nickname?: string | null } | null): string {
+function getProfileName(
+  profile:
+    | { first_name?: string | null; second_name?: string | null; nickname?: string | null }
+    | null,
+): string {
   if (!profile) return "Unknown";
   const fullName = [profile.first_name, profile.second_name].filter(Boolean).join(" ");
   return fullName || profile.nickname || "Unknown";
@@ -161,7 +165,7 @@ function getProfileName(profile: { first_name?: string | null; second_name?: str
 
 export async function handleTriggerNewPost(
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   const payload = body as { record?: Record<string, unknown> };
   const record = payload.record;
@@ -215,7 +219,7 @@ export async function handleTriggerNewPost(
 
 export async function handleTriggerNewUser(
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   const payload = body as { record?: Record<string, unknown> };
   const record = payload.record;
@@ -228,7 +232,11 @@ export async function handleTriggerNewUser(
     record.nickname ||
     "New user";
 
-  const message = `🎉 <b>New user joined FoodShare!</b>\n\n👤 <b>${escapeHtml(name as string)}</b>\n📧 ${escapeHtml((record.email as string) || "N/A")}\n📅 ${record.created_time || new Date().toISOString()}`;
+  const message = `🎉 <b>New user joined FoodShare!</b>\n\n👤 <b>${
+    escapeHtml(name as string)
+  }</b>\n📧 ${escapeHtml((record.email as string) || "N/A")}\n📅 ${
+    record.created_time || new Date().toISOString()
+  }`;
 
   const sent = await sendTelegram(adminChatId, message);
 
@@ -250,7 +258,7 @@ export async function handleTriggerNewUser(
 
 export async function handleTriggerForumPost(
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{ success: boolean; adminSent?: boolean; channelSent?: boolean; error?: string }> {
   const payload = body as { record?: Record<string, unknown> };
   const record = payload.record;
@@ -284,7 +292,7 @@ export async function handleTriggerForumPost(
       .eq("profile_id", record.profile_id);
 
     const isSuperAdmin = roles?.some(
-      (r: { roles: { name: string } }) => r.roles?.name === "superadmin"
+      (r: { roles: { name: string } }) => r.roles?.name === "superadmin",
     );
 
     if (isSuperAdmin) {
@@ -312,7 +320,7 @@ export async function handleTriggerForumPost(
 
 export async function handleTriggerNewReport(
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{ success: boolean; message?: string; hasImage?: boolean; error?: string }> {
   const payload = body as { record?: Record<string, unknown>; table?: string };
   const record = payload.record;
@@ -327,7 +335,12 @@ export async function handleTriggerNewReport(
 
   // Get reporter profile
   const reporterId = (record.reporter_id || record.profile_id) as string | null;
-  let reporter: { first_name?: string | null; second_name?: string | null; nickname?: string | null; email?: string | null } | null = null;
+  let reporter: {
+    first_name?: string | null;
+    second_name?: string | null;
+    nickname?: string | null;
+    email?: string | null;
+  } | null = null;
   if (reporterId && context.supabase) {
     const { data } = await context.supabase
       .from("profiles")
@@ -382,8 +395,7 @@ export async function handleTriggerNewReport(
 
     message += `\n<b>👤 Reported by:</b> ${getProfileName(reporter)}`;
     message += `\n\n🔧 <a href="${appUrl}/admin/reports">Manage in Admin</a>`;
-  }
-  // Handle forum reports
+  } // Handle forum reports
   else if (tableName === "forum_reports" || record.forum_id !== undefined) {
     const isCommentReport = !!record.comment_id;
 
@@ -398,12 +410,13 @@ export async function handleTriggerNewReport(
 
     message += `\n<b>👤 Reported by:</b> ${getProfileName(reporter)}`;
     message += `\n\n🔧 <a href="${appUrl}/admin/forum/reports">Manage in Admin</a>`;
-  }
-  // General reports
+  } // General reports
   else {
     message = `📢 <b>GENERAL REPORT</b>\n━━━━━━━━━━━━━━━━━━━━\n\n`;
     if (record.description && record.description !== "-") {
-      message += `<b>Description:</b>\n${escapeHtml(truncate(record.description as string, 400))}\n`;
+      message += `<b>Description:</b>\n${
+        escapeHtml(truncate(record.description as string, 400))
+      }\n`;
     }
     message += `\n<b>👤 Reported by:</b> ${getProfileName(reporter)}`;
     message += `\n\n🔧 <a href="${appUrl}/admin/reports">Manage in Admin</a>`;
@@ -439,7 +452,7 @@ export async function handleTriggerNewReport(
 
 export async function handleTriggerNewListing(
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{
   success: boolean;
   notificationCount?: number;
@@ -462,7 +475,10 @@ export async function handleTriggerNewListing(
   };
 
   if (!request.foodItemId || !request.title || !request.latitude || !request.longitude) {
-    return { success: false, error: "Missing required fields: foodItemId, title, latitude, longitude" };
+    return {
+      success: false,
+      error: "Missing required fields: foodItemId, title, latitude, longitude",
+    };
   }
 
   const {
@@ -493,7 +509,7 @@ export async function handleTriggerNewListing(
         p_radius_km: radiusKm,
         p_consolidation_key: `nearby_post_${latitude.toFixed(2)}_${longitude.toFixed(2)}`,
         p_bypass_quiet_hours: bypassQuietHours,
-      }
+      },
     );
 
     if (!queueError && queueResult) {
@@ -515,7 +531,7 @@ export async function handleTriggerNewListing(
         p_title: title,
         p_notification_type: "new_listing",
         p_radius_km: radiusKm,
-      }
+      },
     );
 
     if (rpcError) {
@@ -548,7 +564,7 @@ export async function handleTriggerNewListing(
 export async function handleTrigger(
   triggerType: string,
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{ success: boolean; data?: unknown; error?: string }> {
   logger.info("Processing trigger", {
     requestId: context.requestId,

@@ -22,17 +22,12 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import {
-  createAPIHandler,
-  ok,
-  noContent,
-  type HandlerContext,
-} from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext, noContent, ok } from "../_shared/api-handler.ts";
 import { NotFoundError, ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
 import { cache, CACHE_KEYS, invalidateProfileCache } from "../_shared/cache.ts";
 import { PROFILE, sanitizeHtml } from "../_shared/validation-rules.ts";
-import { aggregateCounts, aggregateStats, aggregateImpact } from "../_shared/aggregation.ts";
+import { aggregateCounts, aggregateImpact, aggregateStats } from "../_shared/aggregation.ts";
 import { formatDisplayName, transformAddress } from "../_shared/transformers.ts";
 
 const VERSION = "1.0.0";
@@ -71,7 +66,7 @@ const uploadAvatarSchema = z.object({
 
 const querySchema = z.object({
   action: z.enum(["avatar", "address", "dashboard", "account", "session"]).optional(),
-  includeListings: z.string().transform(v => v === "true").optional(),
+  includeListings: z.string().transform((v) => v === "true").optional(),
 });
 
 type UpdateProfileBody = z.infer<typeof updateProfileSchema>;
@@ -227,9 +222,7 @@ async function uploadAvatar(ctx: HandlerContext<UploadAvatarBody>): Promise<Resp
   }
 
   // Extract base64 data (strip data URL prefix if present)
-  const base64Data = body.imageData.includes(",")
-    ? body.imageData.split(",")[1]
-    : body.imageData;
+  const base64Data = body.imageData.includes(",") ? body.imageData.split(",")[1] : body.imageData;
 
   // SECURITY: Check base64 string length BEFORE decoding to prevent memory exhaustion
   // Base64 has ~4:3 ratio (3 bytes become 4 base64 chars)
@@ -279,7 +272,7 @@ async function uploadAvatar(ctx: HandlerContext<UploadAvatarBody>): Promise<Resp
         Authorization: `Bearer ${serviceKey}`,
       },
       body: formData,
-    }
+    },
   );
 
   if (!uploadResponse.ok) {
@@ -397,12 +390,14 @@ async function deleteAccount(ctx: HandlerContext): Promise<Response> {
     const { data: avatarFiles } = await supabaseAdmin.storage.from("avatars").list(userId);
     if (avatarFiles?.length) {
       await supabaseAdmin.storage.from("avatars").remove(
-        avatarFiles.map(f => `${userId}/${f.name}`)
+        avatarFiles.map((f) => `${userId}/${f.name}`),
       );
       logger.info("Deleted avatar files", { count: avatarFiles.length });
     }
   } catch (error) {
-    logger.warn("Storage cleanup error", { error: error instanceof Error ? error.message : String(error) });
+    logger.warn("Storage cleanup error", {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   // Clean up post images
@@ -410,12 +405,14 @@ async function deleteAccount(ctx: HandlerContext): Promise<Response> {
     const { data: postImages } = await supabaseAdmin.storage.from("post-images").list(userId);
     if (postImages?.length) {
       await supabaseAdmin.storage.from("post-images").remove(
-        postImages.map(f => `${userId}/${f.name}`)
+        postImages.map((f) => `${userId}/${f.name}`),
       );
       logger.info("Deleted post images", { count: postImages.length });
     }
   } catch (error) {
-    logger.warn("Post images cleanup error", { error: error instanceof Error ? error.message : String(error) });
+    logger.warn("Post images cleanup error", {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   // Delete user from auth (cascades to profiles)
@@ -578,7 +575,12 @@ function handleGet(ctx: HandlerContext<unknown, QueryParams>): Promise<Response>
   // Health check
   const url = new URL(ctx.request.url);
   if (url.pathname.endsWith("/health")) {
-    return ok({ status: "healthy", service: "api-v1-profile", version: VERSION, timestamp: new Date().toISOString() }, ctx);
+    return ok({
+      status: "healthy",
+      service: "api-v1-profile",
+      version: VERSION,
+      timestamp: new Date().toISOString(),
+    }, ctx);
   }
 
   if (ctx.query.action === "session") {
@@ -633,7 +635,9 @@ async function getDashboard(ctx: HandlerContext<unknown, QueryParams>): Promise<
   });
 }
 
-function handlePut(ctx: HandlerContext<UpdateProfileBody | UpdateAddressBody, QueryParams>): Promise<Response> {
+function handlePut(
+  ctx: HandlerContext<UpdateProfileBody | UpdateAddressBody, QueryParams>,
+): Promise<Response> {
   if (ctx.query.action === "address") {
     return updateAddress(ctx as HandlerContext<UpdateAddressBody, QueryParams>);
   }

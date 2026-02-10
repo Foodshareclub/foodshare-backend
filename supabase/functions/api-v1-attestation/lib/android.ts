@@ -8,7 +8,13 @@
  */
 
 import { logger } from "../../_shared/logger.ts";
-import type { TrustLevel, DeviceVerdict, AppVerdict, AccountVerdict, PlayIntegrityPayload } from "./types.ts";
+import type {
+  AccountVerdict,
+  AppVerdict,
+  DeviceVerdict,
+  PlayIntegrityPayload,
+  TrustLevel,
+} from "./types.ts";
 
 // =============================================================================
 // Environment Configuration
@@ -52,27 +58,32 @@ async function getGoogleAccessToken(): Promise<string | null> {
       exp: now + 3600,
     };
 
-    const headerBase64 = btoa(JSON.stringify(header)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-    const payloadBase64 = btoa(JSON.stringify(payload)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    const headerBase64 = btoa(JSON.stringify(header)).replace(/\+/g, "-").replace(/\//g, "_")
+      .replace(/=/g, "");
+    const payloadBase64 = btoa(JSON.stringify(payload)).replace(/\+/g, "-").replace(/\//g, "_")
+      .replace(/=/g, "");
 
     const signatureInput = `${headerBase64}.${payloadBase64}`;
 
     const privateKeyPem = credentials.private_key;
-    const pemContents = privateKeyPem.replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "").replace(/\s/g, "");
-    const binaryKey = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
+    const pemContents = privateKeyPem.replace("-----BEGIN PRIVATE KEY-----", "").replace(
+      "-----END PRIVATE KEY-----",
+      "",
+    ).replace(/\s/g, "");
+    const binaryKey = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
 
     const cryptoKey = await crypto.subtle.importKey(
       "pkcs8",
       binaryKey,
       { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
       false,
-      ["sign"]
+      ["sign"],
     );
 
     const signatureBuffer = await crypto.subtle.sign(
       "RSASSA-PKCS1-v1_5",
       cryptoKey,
-      new TextEncoder().encode(signatureInput)
+      new TextEncoder().encode(signatureInput),
     );
 
     const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)))
@@ -103,7 +114,10 @@ async function getGoogleAccessToken(): Promise<string | null> {
 
     return cachedAccessToken.token;
   } catch (error) {
-    logger.error("Failed to get Google access token", error instanceof Error ? error : new Error(String(error)));
+    logger.error(
+      "Failed to get Google access token",
+      error instanceof Error ? error : new Error(String(error)),
+    );
     return null;
   }
 }
@@ -112,7 +126,9 @@ async function getGoogleAccessToken(): Promise<string | null> {
 // Play Integrity Token Decoding
 // =============================================================================
 
-async function decodeIntegrityToken(integrityToken: string): Promise<{ success: boolean; payload?: PlayIntegrityPayload; error?: string }> {
+async function decodeIntegrityToken(
+  integrityToken: string,
+): Promise<{ success: boolean; payload?: PlayIntegrityPayload; error?: string }> {
   const accessToken = await getGoogleAccessToken();
 
   if (!accessToken) {
@@ -129,7 +145,7 @@ async function decodeIntegrityToken(integrityToken: string): Promise<{ success: 
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ integrityToken }),
-      }
+      },
     );
 
     if (!response.ok) {
@@ -141,7 +157,10 @@ async function decodeIntegrityToken(integrityToken: string): Promise<{ success: 
     const data = await response.json();
     return { success: true, payload: data.tokenPayloadExternal };
   } catch (error) {
-    logger.error("Failed to decode integrity token", error instanceof Error ? error : new Error(String(error)));
+    logger.error(
+      "Failed to decode integrity token",
+      error instanceof Error ? error : new Error(String(error)),
+    );
     return { success: false, error: "Token decoding failed" };
   }
 }
@@ -153,7 +172,7 @@ async function decodeIntegrityToken(integrityToken: string): Promise<{ success: 
 export async function verifyPlayIntegrity(
   integrityToken: string,
   expectedNonce: string | undefined,
-  expectedPackageName: string
+  expectedPackageName: string,
 ): Promise<{
   verified: boolean;
   trustLevel: TrustLevel;
@@ -162,19 +181,34 @@ export async function verifyPlayIntegrity(
   verdicts?: { device: DeviceVerdict[]; app: AppVerdict; account: AccountVerdict };
 }> {
   if (!integrityToken || integrityToken.length < 100) {
-    return { verified: false, trustLevel: "unknown", riskScore: 100, message: "Invalid integrity token format" };
+    return {
+      verified: false,
+      trustLevel: "unknown",
+      riskScore: 100,
+      message: "Invalid integrity token format",
+    };
   }
 
   const decodeResult = await decodeIntegrityToken(integrityToken);
 
   if (!decodeResult.success || !decodeResult.payload) {
-    return { verified: false, trustLevel: "unknown", riskScore: 100, message: decodeResult.error || "Token decoding failed" };
+    return {
+      verified: false,
+      trustLevel: "unknown",
+      riskScore: 100,
+      message: decodeResult.error || "Token decoding failed",
+    };
   }
 
   const payload = decodeResult.payload;
 
   if (payload.requestDetails.requestPackageName !== expectedPackageName) {
-    return { verified: false, trustLevel: "suspicious", riskScore: 100, message: "Package name mismatch" };
+    return {
+      verified: false,
+      trustLevel: "suspicious",
+      riskScore: 100,
+      message: "Package name mismatch",
+    };
   }
 
   if (expectedNonce && payload.requestDetails.nonce !== expectedNonce) {
@@ -240,31 +274,59 @@ export async function verifyPlayIntegrity(
     deviceVerdicts.includes("MEETS_VIRTUAL_INTEGRITY")
   );
 
-  logger.info("Play Integrity verified", { verified, device: deviceVerdicts, app: appVerdict, account: accountVerdict, risk: riskScore });
+  logger.info("Play Integrity verified", {
+    verified,
+    device: deviceVerdicts,
+    app: appVerdict,
+    account: accountVerdict,
+    risk: riskScore,
+  });
 
-  return { verified, trustLevel, riskScore, verdicts: { device: deviceVerdicts, app: appVerdict, account: accountVerdict } };
+  return {
+    verified,
+    trustLevel,
+    riskScore,
+    verdicts: { device: deviceVerdicts, app: appVerdict, account: accountVerdict },
+  };
 }
 
 // =============================================================================
 // SafetyNet Verification (Deprecated)
 // =============================================================================
 
-export async function verifySafetyNet(attestation: string): Promise<{ verified: boolean; trustLevel: TrustLevel; riskScore: number; message?: string }> {
+export async function verifySafetyNet(
+  attestation: string,
+): Promise<{ verified: boolean; trustLevel: TrustLevel; riskScore: number; message?: string }> {
   if (!attestation || attestation.length < 100) {
-    return { verified: false, trustLevel: "unknown", riskScore: 100, message: "Invalid SafetyNet attestation" };
+    return {
+      verified: false,
+      trustLevel: "unknown",
+      riskScore: 100,
+      message: "Invalid SafetyNet attestation",
+    };
   }
 
   try {
     const parts = attestation.split(".");
     if (parts.length !== 3) {
-      return { verified: false, trustLevel: "unknown", riskScore: 100, message: "Invalid attestation format" };
+      return {
+        verified: false,
+        trustLevel: "unknown",
+        riskScore: 100,
+        message: "Invalid attestation format",
+      };
     }
 
     const payloadJson = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
     const payload = JSON.parse(payloadJson);
 
     if (!payload.ctsProfileMatch && !payload.basicIntegrity) {
-      return { verified: false, trustLevel: "suspicious", riskScore: 80, message: "Device failed integrity checks" };
+      return {
+        verified: false,
+        trustLevel: "suspicious",
+        riskScore: 80,
+        message: "Device failed integrity checks",
+      };
     }
 
     let riskScore = 40;
@@ -272,9 +334,22 @@ export async function verifySafetyNet(attestation: string): Promise<{ verified: 
     if (payload.basicIntegrity) riskScore -= 10;
 
     logger.warn("SafetyNet attestation accepted (deprecated API)");
-    return { verified: true, trustLevel: riskScore <= 30 ? "trusted" : "unknown", riskScore, message: "SafetyNet is deprecated - please update to Play Integrity" };
+    return {
+      verified: true,
+      trustLevel: riskScore <= 30 ? "trusted" : "unknown",
+      riskScore,
+      message: "SafetyNet is deprecated - please update to Play Integrity",
+    };
   } catch (error) {
-    logger.error("SafetyNet verification error", error instanceof Error ? error : new Error(String(error)));
-    return { verified: false, trustLevel: "unknown", riskScore: 100, message: "SafetyNet verification failed" };
+    logger.error(
+      "SafetyNet verification error",
+      error instanceof Error ? error : new Error(String(error)),
+    );
+    return {
+      verified: false,
+      trustLevel: "unknown",
+      riskScore: 100,
+      message: "SafetyNet verification failed",
+    };
   }
 }

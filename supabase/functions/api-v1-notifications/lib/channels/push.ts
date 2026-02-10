@@ -9,22 +9,18 @@
  * @module api-v1-notifications/channels/push
  */
 
-import type {
-  ChannelAdapter,
-  ChannelDeliveryResult,
-  NotificationContext,
-} from "../types.ts";
+import type { ChannelAdapter, ChannelDeliveryResult, NotificationContext } from "../types.ts";
 import { logger } from "../../../_shared/logger.ts";
-import { withRetry, RETRY_PRESETS } from "../../../_shared/retry.ts";
+import { RETRY_PRESETS, withRetry } from "../../../_shared/retry.ts";
 import { getCircuitStatus } from "../../../_shared/circuit-breaker.ts";
 import {
+  type DeviceToken,
+  type Platform,
+  type PushPayload,
   sendApns,
   sendFcm,
-  sendWebPush,
-  type PushPayload,
-  type DeviceToken,
   type SendResult,
-  type Platform,
+  sendWebPush,
 } from "../providers/index.ts";
 
 export class PushChannelAdapter implements ChannelAdapter {
@@ -33,7 +29,7 @@ export class PushChannelAdapter implements ChannelAdapter {
 
   async send(
     payload: PushPayload,
-    context: NotificationContext
+    context: NotificationContext,
   ): Promise<ChannelDeliveryResult> {
     const startTime = performance.now();
 
@@ -76,16 +72,16 @@ export class PushChannelAdapter implements ChannelAdapter {
       logger.info("Push notification completed", {
         requestId: context.requestId,
         userId: context.userId,
-        delivered: results.filter(r => r.success).length,
-        failed: results.filter(r => !r.success).length,
+        delivered: results.filter((r) => r.success).length,
+        failed: results.filter((r) => !r.success).length,
         durationMs: Math.round(duration),
       });
 
       await this.cleanupInvalidTokens(context, results);
 
       const deliveredTo = results
-        .filter(r => r.success)
-        .map(r => r.platform);
+        .filter((r) => r.success)
+        .map((r) => r.platform);
 
       return {
         channel: "push",
@@ -112,7 +108,7 @@ export class PushChannelAdapter implements ChannelAdapter {
 
   async sendBatch(
     payloads: PushPayload[],
-    context: NotificationContext
+    context: NotificationContext,
   ): Promise<ChannelDeliveryResult[]> {
     logger.info("Sending batch push notifications", {
       requestId: context.requestId,
@@ -126,7 +122,7 @@ export class PushChannelAdapter implements ChannelAdapter {
     for (let i = 0; i < payloads.length; i += BATCH_SIZE) {
       const batch = payloads.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.all(
-        batch.map((payload) => this.send(payload, context))
+        batch.map((payload) => this.send(payload, context)),
       );
       results.push(...batchResults);
     }
@@ -163,7 +159,8 @@ export class PushChannelAdapter implements ChannelAdapter {
       const latencyMs = Math.round(performance.now() - startTime);
 
       return {
-        healthy: (fcmConfigured || apnsConfigured) && Object.values(circuits).every(s => s !== "open"),
+        healthy: (fcmConfigured || apnsConfigured) &&
+          Object.values(circuits).every((s) => s !== "open"),
         latencyMs,
       };
     } catch (error) {
@@ -194,7 +191,7 @@ export class PushChannelAdapter implements ChannelAdapter {
   private async sendToDevices(
     payload: PushPayload,
     devices: DeviceToken[],
-    context: NotificationContext
+    _context: NotificationContext,
   ): Promise<SendResult[]> {
     const CONCURRENCY = 10;
     const results: SendResult[] = [];
@@ -239,7 +236,7 @@ export class PushChannelAdapter implements ChannelAdapter {
               error: (e as Error).message,
             } as SendResult;
           }
-        })
+        }),
       );
 
       results.push(...chunkResults);
@@ -250,7 +247,7 @@ export class PushChannelAdapter implements ChannelAdapter {
 
   private async cleanupInvalidTokens(
     context: NotificationContext,
-    results: SendResult[]
+    results: SendResult[],
   ): Promise<void> {
     const invalidTokens = results.filter((r) => !r.success && !r.retryable && r.token);
 
@@ -281,7 +278,7 @@ export class PushChannelAdapter implements ChannelAdapter {
 
 export async function cleanupInactiveTokens(
   context: NotificationContext,
-  tokenIds: string[]
+  tokenIds: string[],
 ): Promise<void> {
   if (tokenIds.length === 0) return;
 

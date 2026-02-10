@@ -20,18 +20,23 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
 import { parseRoute } from "../_shared/routing.ts";
 import { AppError, ValidationError } from "../_shared/errors.ts";
 
 // Lib imports
 import type { AttestationResponse } from "./lib/types.ts";
-import { iosAttestationSchema, androidAttestationSchema } from "./lib/types.ts";
-import { verifyAppAttest, BUNDLE_ID } from "./lib/app-attest.ts";
+import { androidAttestationSchema, iosAttestationSchema } from "./lib/types.ts";
+import { BUNDLE_ID, verifyAppAttest } from "./lib/app-attest.ts";
 import { verifyAssertion } from "./lib/assertion.ts";
 import { verifyDeviceCheck } from "./lib/device-check.ts";
-import { verifyPlayIntegrity, verifySafetyNet, ANDROID_PACKAGE_NAME } from "./lib/android.ts";
-import { generateDeviceId, getDeviceRecord, updateDeviceRecord, calculateTrustLevel } from "./lib/device-record.ts";
+import { ANDROID_PACKAGE_NAME, verifyPlayIntegrity, verifySafetyNet } from "./lib/android.ts";
+import {
+  calculateTrustLevel,
+  generateDeviceId,
+  getDeviceRecord,
+  updateDeviceRecord,
+} from "./lib/device-record.ts";
 import { handleCertificatePins } from "./lib/cert-pinning.ts";
 
 const VERSION = "1.0.0";
@@ -50,7 +55,9 @@ async function handleIOSAttestation(
 
   if (body.type === "attestation") {
     if (!body.keyId || !body.attestation || !body.challenge) {
-      throw new ValidationError("Missing required App Attest fields: keyId, attestation, challenge");
+      throw new ValidationError(
+        "Missing required App Attest fields: keyId, attestation, challenge",
+      );
     }
 
     const result = await verifyAppAttest(body.keyId, body.attestation, body.challenge, bundleId);
@@ -64,7 +71,7 @@ async function handleIOSAttestation(
       result.publicKey || null,
       0,
       result.riskScore,
-      "ios"
+      "ios",
     );
 
     return ok({
@@ -80,7 +87,9 @@ async function handleIOSAttestation(
 
   if (body.type === "assertion") {
     if (!body.keyId || !body.assertion || !body.clientDataHash) {
-      throw new ValidationError("Missing required assertion fields: keyId, assertion, clientDataHash");
+      throw new ValidationError(
+        "Missing required assertion fields: keyId, assertion, clientDataHash",
+      );
     }
 
     const deviceRecord = await getDeviceRecord(supabase, body.keyId);
@@ -107,10 +116,14 @@ async function handleIOSAttestation(
       body.assertion,
       body.clientDataHash,
       deviceRecord.assertion_counter,
-      deviceRecord.public_key
+      deviceRecord.public_key,
     );
 
-    const trustLevel = calculateTrustLevel(result.verified, result.riskScore, deviceRecord.verification_count + 1);
+    const trustLevel = calculateTrustLevel(
+      result.verified,
+      result.riskScore,
+      deviceRecord.verification_count + 1,
+    );
 
     const deviceId = await updateDeviceRecord(
       supabase,
@@ -120,7 +133,7 @@ async function handleIOSAttestation(
       null,
       result.newCounter,
       result.riskScore,
-      "ios"
+      "ios",
     );
 
     return ok({
@@ -155,7 +168,7 @@ async function handleIOSAttestation(
       null,
       0,
       result.riskScore,
-      "ios"
+      "ios",
     );
 
     return ok({
@@ -192,7 +205,7 @@ async function handleAndroidAttestation(
       0,
       result.riskScore,
       "android",
-      result.verdicts
+      result.verdicts,
     );
 
     return ok({
@@ -219,7 +232,7 @@ async function handleAndroidAttestation(
       null,
       0,
       result.riskScore,
-      "android"
+      "android",
     );
 
     return ok({
@@ -275,7 +288,7 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
   if (route.resource === "ios") {
     const parsed = iosAttestationSchema.safeParse(body);
     if (!parsed.success) {
-      throw new ValidationError(parsed.error.errors.map(e => e.message).join(", "));
+      throw new ValidationError(parsed.error.errors.map((e) => e.message).join(", "));
     }
     return handleIOSAttestation(parsed.data, ctx);
   }
@@ -283,7 +296,7 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
   if (route.resource === "android") {
     const parsed = androidAttestationSchema.safeParse(body);
     if (!parsed.success) {
-      throw new ValidationError(parsed.error.errors.map(e => e.message).join(", "));
+      throw new ValidationError(parsed.error.errors.map((e) => e.message).join(", "));
     }
     return handleAndroidAttestation(parsed.data, ctx);
   }
@@ -300,7 +313,9 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
       return handleAndroidAttestation(androidParsed.data, ctx);
     }
 
-    throw new ValidationError("Invalid attestation request. Provide iOS type (attestation/assertion/device_check) or Android type (integrity/safetynet)");
+    throw new ValidationError(
+      "Invalid attestation request. Provide iOS type (attestation/assertion/device_check) or Android type (integrity/safetynet)",
+    );
   }
 
   throw new AppError("Not found", "NOT_FOUND", 404);

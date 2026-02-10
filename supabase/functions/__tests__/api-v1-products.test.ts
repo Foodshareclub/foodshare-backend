@@ -8,11 +8,11 @@
 import {
   assertEquals,
   assertExists,
-  createMockUser,
-  createMockRequest,
-  createMockProduct,
-  setupTestEnv,
   cleanupTestEnv,
+  createMockProduct,
+  createMockRequest,
+  createMockUser,
+  setupTestEnv,
 } from "./test-utils.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
@@ -30,7 +30,6 @@ Deno.test({
     // ========================================================================
 
     await t.step("createProductSchema - validates required fields", () => {
-
       const createProductSchema = z.object({
         title: z.string().min(3).max(100),
         description: z.string().max(2000).optional(),

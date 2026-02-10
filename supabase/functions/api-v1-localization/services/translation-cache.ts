@@ -97,12 +97,12 @@ class UpstashRestClient implements RedisClient {
       // Retry with exponential backoff
       if (attempt < this.retries) {
         const backoffMs = RETRY_DELAY_MS * Math.pow(2, attempt);
-        logger.warn("Redis command failed, retrying", { 
-          attempt: attempt + 1, 
-          backoffMs, 
-          error: (error as Error).message 
+        logger.warn("Redis command failed, retrying", {
+          attempt: attempt + 1,
+          backoffMs,
+          error: (error as Error).message,
         });
-        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
         return this.execute(command, attempt + 1);
       }
       throw error;
@@ -138,17 +138,17 @@ class UpstashRestClient implements RedisClient {
    */
   async pipeline(commands: string[][]): Promise<unknown[]> {
     const results: unknown[] = [];
-    
+
     // Execute commands in batches of 10 for better performance
     const BATCH_SIZE = 10;
     for (let i = 0; i < commands.length; i += BATCH_SIZE) {
       const batch = commands.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.all(
-        batch.map(cmd => this.execute(cmd))
+        batch.map((cmd) => this.execute(cmd)),
       );
       results.push(...batchResults);
     }
-    
+
     return results;
   }
 }
@@ -158,12 +158,12 @@ async function initRedis(): Promise<RedisClient | null> {
   redisInitialized = true;
 
   // Support self-hosted Redis HTTP adapter (priority) and Upstash (fallback)
-  const redisUrl = Deno.env.get("REDIS_HTTP_URL")
-    || Deno.env.get("UPSTASH_REDIS_REST_URL")
-    || Deno.env.get("UPSTASH_REDIS_URL");
-  const redisToken = Deno.env.get("REDIS_HTTP_TOKEN")
-    || Deno.env.get("UPSTASH_REDIS_REST_TOKEN")
-    || Deno.env.get("UPSTASH_REDIS_TOKEN");
+  const redisUrl = Deno.env.get("REDIS_HTTP_URL") ||
+    Deno.env.get("UPSTASH_REDIS_REST_URL") ||
+    Deno.env.get("UPSTASH_REDIS_URL");
+  const redisToken = Deno.env.get("REDIS_HTTP_TOKEN") ||
+    Deno.env.get("UPSTASH_REDIS_REST_TOKEN") ||
+    Deno.env.get("UPSTASH_REDIS_TOKEN");
 
   if (!redisUrl || !redisToken) {
     logger.info("Translation cache: Redis not configured, using database only");
@@ -187,7 +187,7 @@ function getCacheKey(
   contentType: string,
   contentId: string,
   field: string,
-  locale: string
+  locale: string,
 ): string {
   return `${CACHE_PREFIX}:${contentType}:${contentId}:${field}:${locale}`;
 }
@@ -203,7 +203,7 @@ export const translationCache = {
     contentType: string,
     contentId: string,
     field: string,
-    locale: string
+    locale: string,
   ): Promise<string | null> {
     const redis = await initRedis();
     if (!redis) return null;
@@ -224,7 +224,7 @@ export const translationCache = {
     contentType: string,
     contentId: string,
     fields: string[],
-    locale: string
+    locale: string,
   ): Promise<Record<string, string | null>> {
     const redis = await initRedis();
     const result: Record<string, string | null> = {};
@@ -237,7 +237,7 @@ export const translationCache = {
     if (!redis) return result;
 
     try {
-      const keys = fields.map(f => getCacheKey(contentType, contentId, f, locale));
+      const keys = fields.map((f) => getCacheKey(contentType, contentId, f, locale));
       const values = await redis.mget(...keys);
 
       for (let i = 0; i < fields.length; i++) {
@@ -258,7 +258,7 @@ export const translationCache = {
     contentId: string,
     field: string,
     locale: string,
-    translation: string
+    translation: string,
   ): Promise<void> {
     const redis = await initRedis();
     if (!redis) return;
@@ -278,7 +278,7 @@ export const translationCache = {
     contentType: string,
     contentId: string,
     translations: Record<string, string>,
-    locale: string
+    locale: string,
   ): Promise<void> {
     const redis = await initRedis();
     if (!redis) return;
@@ -288,14 +288,14 @@ export const translationCache = {
         const key = getCacheKey(contentType, contentId, field, locale);
         return ["SETEX", key, String(CACHE_TTL), translation];
       });
-      
+
       if (commands.length > 0) {
         await redis.pipeline(commands);
-        logger.debug("Cached translations", { 
-          count: commands.length, 
-          contentType, 
-          contentId, 
-          locale 
+        logger.debug("Cached translations", {
+          count: commands.length,
+          contentType,
+          contentId,
+          locale,
         });
       }
     } catch (error) {
@@ -312,26 +312,26 @@ export const translationCache = {
       contentId: string;
       translations: Record<string, string>;
       locale: string;
-    }>
+    }>,
   ): Promise<void> {
     const redis = await initRedis();
     if (!redis) return;
 
     try {
       const commands: string[][] = [];
-      
+
       for (const item of items) {
         for (const [field, translation] of Object.entries(item.translations)) {
           const key = getCacheKey(item.contentType, item.contentId, field, item.locale);
           commands.push(["SETEX", key, String(CACHE_TTL), translation]);
         }
       }
-      
+
       if (commands.length > 0) {
         await redis.pipeline(commands);
-        logger.debug("Batch cached translations", { 
-          count: commands.length, 
-          itemCount: items.length 
+        logger.debug("Batch cached translations", {
+          count: commands.length,
+          itemCount: items.length,
         });
       }
     } catch (error) {
@@ -344,7 +344,7 @@ export const translationCache = {
    */
   async invalidate(
     contentType: string,
-    contentId: string
+    contentId: string,
   ): Promise<void> {
     const redis = await initRedis();
     if (!redis) return;
@@ -353,11 +353,11 @@ export const translationCache = {
       const pattern = `${CACHE_PREFIX}:${contentType}:${contentId}:*`;
       const keys = await redis.keys(pattern);
       if (keys.length > 0) {
-        await Promise.all(keys.map(key => redis.del(key)));
-        logger.debug("Translation cache invalidated", { 
-          keyCount: keys.length, 
-          contentType, 
-          contentId 
+        await Promise.all(keys.map((key) => redis.del(key)));
+        logger.debug("Translation cache invalidated", {
+          keyCount: keys.length,
+          contentType,
+          contentId,
         });
       }
     } catch (error) {
@@ -382,7 +382,7 @@ export const translationCache = {
     sampleKeys: string[];
   }> {
     const redis = await initRedis();
-    
+
     if (!redis) {
       return { available: false, totalKeys: 0, sampleKeys: [] };
     }
@@ -571,7 +571,7 @@ export async function getContentTranslationsBatch(
   contentType: string,
   items: TranslatableContent[],
   locale: string,
-  fields: string[] = ["title", "description"]
+  fields: string[] = ["title", "description"],
 ): Promise<Map<string, Record<string, string | null>>> {
   const translationsMap = new Map<string, Record<string, string | null>>();
 
@@ -588,7 +588,7 @@ export async function getContentTranslationsBatch(
         contentType,
         contentId,
         fields,
-        locale
+        locale,
       );
       return { contentId, translations };
     });
@@ -598,10 +598,10 @@ export async function getContentTranslationsBatch(
       translationsMap.set(contentId, translations);
     }
 
-    logger.debug("Translations fetched", { 
-      itemCount: items.length, 
-      translatedCount: translationsMap.size, 
-      locale 
+    logger.debug("Translations fetched", {
+      itemCount: items.length,
+      translatedCount: translationsMap.size,
+      locale,
     });
   } catch (error) {
     logger.warn("Failed to fetch content translations", { error: (error as Error).message });

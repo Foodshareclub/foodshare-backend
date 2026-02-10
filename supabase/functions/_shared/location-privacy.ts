@@ -39,7 +39,7 @@ function mulberry32(seed: number): () => number {
 export function approximateLocation(
   lat: number,
   lng: number,
-  postId: number
+  postId: number,
 ): { latitude: number; longitude: number } {
   // Seeded pseudo-random number generator (mulberry32)
   // Using post ID ensures same offset for same post across requests
@@ -51,8 +51,7 @@ export function approximateLocation(
   const angle = random1() * 2 * Math.PI;
 
   // Random distance between MIN_OFFSET and RADIUS (100-200m)
-  const distance =
-    LOCATION_PRIVACY.MIN_OFFSET_METERS +
+  const distance = LOCATION_PRIVACY.MIN_OFFSET_METERS +
     random2() * (LOCATION_PRIVACY.RADIUS_METERS - LOCATION_PRIVACY.MIN_OFFSET_METERS);
 
   // Convert meters to degrees (approximation)

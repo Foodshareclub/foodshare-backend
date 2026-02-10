@@ -2,8 +2,8 @@
  * Image proxy and URL upload handlers.
  */
 
-import { ok, type HandlerContext } from "../../_shared/api-handler.ts";
-import { ValidationError, PayloadTooLargeError } from "../../_shared/errors.ts";
+import { type HandlerContext, ok } from "../../_shared/api-handler.ts";
+import { PayloadTooLargeError, ValidationError } from "../../_shared/errors.ts";
 import { compressImage } from "../../_shared/compression/index.ts";
 import { validateImageUrl } from "../../_shared/url-validation.ts";
 import { detectFormat, downloadImage, logUploadMetrics } from "../../_shared/image-utils.ts";
@@ -46,7 +46,11 @@ export async function handleProxy(ctx: HandlerContext): Promise<Response> {
   const filename = `${crypto.randomUUID()}.${format}`;
 
   const { publicUrl, storage } = await uploadWithFallback(
-    ctx.supabase, bucket, filename, compressed.buffer, `image/${format}`,
+    ctx.supabase,
+    bucket,
+    filename,
+    compressed.buffer,
+    `image/${format}`,
   );
 
   return ok({
@@ -96,7 +100,11 @@ export async function handleUploadFromUrl(ctx: HandlerContext): Promise<Response
   const filename = customPath || `${crypto.randomUUID()}.${format}`;
 
   const { publicUrl, storage } = await uploadWithFallback(
-    supabase, bucket, filename, compressed.buffer, `image/${format}`,
+    supabase,
+    bucket,
+    filename,
+    compressed.buffer,
+    `image/${format}`,
   );
 
   if (challengeId) {

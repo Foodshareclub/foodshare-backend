@@ -15,8 +15,16 @@ export const processSchema = z.object({
 });
 
 export const emailTypeEnum = z.enum([
-  "auth", "chat", "food_listing", "feedback", "review_reminder",
-  "newsletter", "announcement", "welcome", "goodbye", "notification",
+  "auth",
+  "chat",
+  "food_listing",
+  "feedback",
+  "review_reminder",
+  "newsletter",
+  "announcement",
+  "welcome",
+  "goodbye",
+  "notification",
 ]);
 
 export const sendSchema = z.object({

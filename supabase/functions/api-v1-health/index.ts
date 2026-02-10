@@ -17,13 +17,8 @@
  */
 
 import { createAPIHandler, type HandlerContext } from "../_shared/api-handler.ts";
-import { logger } from "../_shared/logger.ts";
 import { parseRoute } from "../_shared/routing.ts";
-import {
-  getHealthService,
-  HEALTH_VERSION,
-  FunctionHealthResult,
-} from "../_shared/health/index.ts";
+import { FunctionHealthResult, getHealthService, HEALTH_VERSION } from "../_shared/health/index.ts";
 import { getHealthMetrics } from "../_shared/performance.ts";
 import { getErrorStats, getRecentAlerts } from "../_shared/error-tracking.ts";
 import { getAllCircuitStatuses } from "../_shared/circuit-breaker.ts";
@@ -71,39 +66,42 @@ async function handleMetrics(corsHeaders: Record<string, string>): Promise<Respo
   const responseTime = Date.now() - startTime;
   const httpStatus = status === "unhealthy" ? 503 : 200;
 
-  return new Response(JSON.stringify({
-    status,
-    timestamp: new Date().toISOString(),
-    responseTimeMs: responseTime,
-    system: {
-      uptime: healthMetrics.uptime,
-      memory: healthMetrics.memory,
+  return new Response(
+    JSON.stringify({
+      status,
+      timestamp: new Date().toISOString(),
+      responseTimeMs: responseTime,
+      system: {
+        uptime: healthMetrics.uptime,
+        memory: healthMetrics.memory,
+      },
+      database: {
+        healthy: databaseHealthy,
+        latencyMs: databaseLatencyMs,
+      },
+      performance: {
+        recentMetrics: healthMetrics.recentMetrics,
+        slowQueries: healthMetrics.slowQueries,
+      },
+      errors: {
+        total: errorStats.total,
+        bySeverity: errorStats.bySeverity,
+        topErrors: errorStats.topErrors.slice(0, 5),
+        recentAlerts: recentAlerts.length,
+      },
+      circuitBreakers: Object.entries(circuitBreakers).map(([name, cb]) => ({
+        name,
+        state: cb.state,
+        failures: cb.failures,
+        totalRequests: cb.totalRequests,
+        totalFailures: cb.totalFailures,
+      })),
+    }),
+    {
+      status: httpStatus,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     },
-    database: {
-      healthy: databaseHealthy,
-      latencyMs: databaseLatencyMs,
-    },
-    performance: {
-      recentMetrics: healthMetrics.recentMetrics,
-      slowQueries: healthMetrics.slowQueries,
-    },
-    errors: {
-      total: errorStats.total,
-      bySeverity: errorStats.bySeverity,
-      topErrors: errorStats.topErrors.slice(0, 5),
-      recentAlerts: recentAlerts.length,
-    },
-    circuitBreakers: Object.entries(circuitBreakers).map(([name, cb]) => ({
-      name,
-      state: cb.state,
-      failures: cb.failures,
-      totalRequests: cb.totalRequests,
-      totalFailures: cb.totalFailures,
-    })),
-  }), {
-    status: httpStatus,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+  );
 }
 
 // =============================================================================
@@ -136,32 +134,37 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
 
     const httpStatus = fullHealth.status === "unhealthy" ? 503 : 200;
 
-    return new Response(JSON.stringify({
-      ...fullHealth,
-      system: {
-        uptime: metricsResponse.healthMetrics.uptime,
-        memory: metricsResponse.healthMetrics.memory,
+    return new Response(
+      JSON.stringify({
+        ...fullHealth,
+        system: {
+          uptime: metricsResponse.healthMetrics.uptime,
+          memory: metricsResponse.healthMetrics.memory,
+        },
+        performance: {
+          recentMetrics: metricsResponse.healthMetrics.recentMetrics,
+          slowQueries: metricsResponse.healthMetrics.slowQueries,
+        },
+        errors: {
+          total: metricsResponse.errorStats.total,
+          bySeverity: metricsResponse.errorStats.bySeverity,
+          topErrors: metricsResponse.errorStats.topErrors.slice(0, 5),
+        },
+        circuitBreakersDetailed: Object.entries(metricsResponse.circuitBreakers).map((
+          [name, cb],
+        ) => ({
+          name,
+          state: cb.state,
+          failures: cb.failures,
+          totalRequests: cb.totalRequests,
+          totalFailures: cb.totalFailures,
+        })),
+      }),
+      {
+        status: httpStatus,
+        headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
       },
-      performance: {
-        recentMetrics: metricsResponse.healthMetrics.recentMetrics,
-        slowQueries: metricsResponse.healthMetrics.slowQueries,
-      },
-      errors: {
-        total: metricsResponse.errorStats.total,
-        bySeverity: metricsResponse.errorStats.bySeverity,
-        topErrors: metricsResponse.errorStats.topErrors.slice(0, 5),
-      },
-      circuitBreakersDetailed: Object.entries(metricsResponse.circuitBreakers).map(([name, cb]) => ({
-        name,
-        state: cb.state,
-        failures: cb.failures,
-        totalRequests: cb.totalRequests,
-        totalFailures: cb.totalFailures,
-      })),
-    }), {
-      status: httpStatus,
-      headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
-    });
+    );
   }
 
   // GET / — quick health (DB ping)
@@ -169,7 +172,11 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
   const httpStatus = result.status === "ok" ? 200 : 503;
   return new Response(JSON.stringify(result), {
     status: httpStatus,
-    headers: { ...ctx.corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=10" },
+    headers: {
+      ...ctx.corsHeaders,
+      "Content-Type": "application/json",
+      "Cache-Control": "public, max-age=10",
+    },
   });
 }
 
@@ -191,7 +198,11 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
     }
 
     const healthResult = result as FunctionHealthResult;
-    const httpStatus = healthResult.status === "healthy" ? 200 : healthResult.status === "degraded" ? 200 : 503;
+    const httpStatus = healthResult.status === "healthy"
+      ? 200
+      : healthResult.status === "degraded"
+      ? 200
+      : 503;
     return new Response(JSON.stringify(result), {
       status: httpStatus,
       headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
@@ -210,22 +221,25 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
   }
 
   // 404
-  return new Response(JSON.stringify({
-    error: "Not found",
-    version: HEALTH_VERSION,
-    availableEndpoints: [
-      "GET  /                   Quick health (DB ping)",
-      "GET  /?full=true         Full health + observability",
-      "GET  /full               Alias for /?full=true",
-      "GET  /metrics            System metrics & observability",
-      "POST /functions          Check all edge functions",
-      "POST /functions?quick=true  Quick fleet check",
-      "POST /functions/:name    Check single edge function",
-    ],
-  }), {
-    status: 404,
-    headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
-  });
+  return new Response(
+    JSON.stringify({
+      error: "Not found",
+      version: HEALTH_VERSION,
+      availableEndpoints: [
+        "GET  /                   Quick health (DB ping)",
+        "GET  /?full=true         Full health + observability",
+        "GET  /full               Alias for /?full=true",
+        "GET  /metrics            System metrics & observability",
+        "POST /functions          Check all edge functions",
+        "POST /functions?quick=true  Quick fleet check",
+        "POST /functions/:name    Check single edge function",
+      ],
+    }),
+    {
+      status: 404,
+      headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
+    },
+  );
 }
 
 // =============================================================================

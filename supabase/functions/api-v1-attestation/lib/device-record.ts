@@ -8,7 +8,13 @@
  */
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
-import type { TrustLevel, DeviceVerdict, AppVerdict, AccountVerdict, DeviceRecord } from "./types.ts";
+import type {
+  AccountVerdict,
+  AppVerdict,
+  DeviceRecord,
+  DeviceVerdict,
+  TrustLevel,
+} from "./types.ts";
 
 // =============================================================================
 // Device ID Generation
@@ -28,7 +34,7 @@ export async function generateDeviceId(keyId: string): Promise<string> {
 
 export async function getDeviceRecord(
   supabase: SupabaseClient,
-  keyId: string
+  keyId: string,
 ): Promise<DeviceRecord | null> {
   const { data } = await supabase
     .from("device_attestations")
@@ -48,7 +54,7 @@ export async function updateDeviceRecord(
   counter: number,
   riskScore: number,
   platform: "ios" | "android",
-  verdicts?: { device?: DeviceVerdict[]; app?: AppVerdict; account?: AccountVerdict }
+  verdicts?: { device?: DeviceVerdict[]; app?: AppVerdict; account?: AccountVerdict },
 ): Promise<string> {
   const now = new Date().toISOString();
   const deviceId = await generateDeviceId(keyId);
@@ -99,7 +105,11 @@ export async function updateDeviceRecord(
 // Trust Level Calculation
 // =============================================================================
 
-export function calculateTrustLevel(verified: boolean, riskScore: number, verificationCount: number): TrustLevel {
+export function calculateTrustLevel(
+  verified: boolean,
+  riskScore: number,
+  verificationCount: number,
+): TrustLevel {
   if (!verified) return "suspicious";
   if (riskScore >= 80) return "suspicious";
   if (riskScore >= 50) return "unknown";

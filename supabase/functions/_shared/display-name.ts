@@ -416,7 +416,7 @@ function extractNameFromEmail(email: string, minLength: number): string | null {
  */
 export function extractDisplayName(
   profile: ProfileNameData,
-  options: ExtractOptions = {}
+  options: ExtractOptions = {},
 ): string {
   const {
     preferFirstNameOnly = true,
@@ -510,7 +510,7 @@ export function formatGreeting(
   profile: ProfileNameData,
   prefix = "Hey",
   suffix = "!",
-  options: ExtractOptions = {}
+  options: ExtractOptions = {},
 ): string {
   const name = extractDisplayName(profile, options);
   return `${prefix} ${name}${suffix}`;
@@ -526,7 +526,7 @@ export function formatGreeting(
  */
 export function isNameFallback(
   profile: ProfileNameData,
-  options: ExtractOptions = {}
+  options: ExtractOptions = {},
 ): boolean {
   const { fallback = "there" } = options;
   return extractDisplayName(profile, options) === fallback;
@@ -551,12 +551,14 @@ export function isNameFallback(
  * ```
  */
 export function mapDatabaseProfile(
-  row: Record<string, unknown>
+  row: Record<string, unknown>,
 ): ProfileNameData {
   return {
     displayName: (row.display_name ?? row.displayName ?? row.name) as string | null,
     firstName: (row.first_name ?? row.firstName) as string | null,
-    secondName: (row.second_name ?? row.secondName ?? row.last_name ?? row.lastName) as string | null,
+    secondName: (row.second_name ?? row.secondName ?? row.last_name ?? row.lastName) as
+      | string
+      | null,
     nickname: row.nickname as string | null,
     email: row.email as string | null,
   };

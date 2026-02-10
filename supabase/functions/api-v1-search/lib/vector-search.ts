@@ -3,34 +3,31 @@
  */
 
 import { logger } from "../../_shared/logger.ts";
-import { ValidationError, AppError } from "../../_shared/errors.ts";
+import { AppError, ValidationError } from "../../_shared/errors.ts";
+import { generateEmbedding, generateEmbeddings } from "../../_shared/embeddings.ts";
 import {
-  generateEmbedding,
-  generateEmbeddings,
-} from "../../_shared/embeddings.ts";
-import {
-  getVectorClient,
   buildVectorFilter,
+  getVectorClient,
   type VectorRecord,
 } from "../../_shared/upstash-vector.ts";
 import {
-  type SearchResultItem,
+  applyRRF,
+  type BatchIndexRequest,
+  EMBEDDING_BATCH_SIZE,
+  filterByDistance,
+  type IndexResult,
+  MAX_BATCH_SIZE,
+  MAX_LIMIT,
+  MIN_SCORE_THRESHOLD,
+  type PostRecord,
   type SearchFilters,
   type SearchMode,
-  type WebhookPayload,
-  type PostRecord,
-  type BatchIndexRequest,
-  type IndexResult,
-  MIN_SCORE_THRESHOLD,
-  MAX_LIMIT,
-  MAX_BATCH_SIZE,
-  EMBEDDING_BATCH_SIZE,
+  type SearchResultItem,
   transformVectorResult,
-  filterByDistance,
-  applyRRF,
   validateUUID,
+  type WebhookPayload,
 } from "./types.ts";
-import { textSearch, fuzzySearch } from "./text-search.ts";
+import { fuzzySearch, textSearch } from "./text-search.ts";
 
 // =============================================================================
 // Semantic Search (vector embeddings)
@@ -100,25 +97,21 @@ export async function hybridSearch(
     textSearch(supabase, query, limit * 2, 0, filters),
   ]);
 
-  const semanticResults =
-    semanticResult.status === "fulfilled" ? semanticResult.value.results : [];
-  const textResults =
-    textResult.status === "fulfilled" ? textResult.value.results : [];
+  const semanticResults = semanticResult.status === "fulfilled" ? semanticResult.value.results : [];
+  const textResults = textResult.status === "fulfilled" ? textResult.value.results : [];
 
   if (semanticResult.status === "rejected") {
     logger.warn("Semantic search failed in hybrid mode", {
-      error:
-        semanticResult.reason instanceof Error
-          ? semanticResult.reason.message
-          : String(semanticResult.reason),
+      error: semanticResult.reason instanceof Error
+        ? semanticResult.reason.message
+        : String(semanticResult.reason),
     });
   }
   if (textResult.status === "rejected") {
     logger.warn("Text search failed in hybrid mode", {
-      error:
-        textResult.reason instanceof Error
-          ? textResult.reason.message
-          : String(textResult.reason),
+      error: textResult.reason instanceof Error
+        ? textResult.reason.message
+        : String(textResult.reason),
     });
   }
 
@@ -142,10 +135,7 @@ export async function hybridSearch(
   return {
     results: paginatedResults,
     total: fusedResults.length,
-    provider:
-      semanticResult.status === "fulfilled"
-        ? semanticResult.value.provider
-        : undefined,
+    provider: semanticResult.status === "fulfilled" ? semanticResult.value.provider : undefined,
   };
 }
 
@@ -181,8 +171,7 @@ export async function executeSearch(
 
 async function indexPost(post: PostRecord): Promise<void> {
   const category = post.category_name || `category_${post.category_id}`;
-  const textToEmbed =
-    `${post.post_name} ${post.post_description} ${category}`.slice(0, 8000);
+  const textToEmbed = `${post.post_name} ${post.post_description} ${category}`.slice(0, 8000);
   const embeddingResult = await generateEmbeddings([textToEmbed]);
 
   const vectorRecord: VectorRecord = {
@@ -516,4 +505,3 @@ export async function handleBatchIndex(
 
   return indexPostsBatch(transformedPosts);
 }
-

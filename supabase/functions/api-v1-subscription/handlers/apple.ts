@@ -12,23 +12,23 @@
  * - Performance tracking for verification operations
  */
 
-import { verifyAppleJWS, decodeJWS } from "../../_shared/subscriptions/apple-jws.ts";
+import { decodeJWS, verifyAppleJWS } from "../../_shared/subscriptions/apple-jws.ts";
 import {
-  ResponseBodyV2DecodedPayload,
-  JWSTransactionDecodedPayload,
   JWSRenewalInfoDecodedPayload,
+  JWSTransactionDecodedPayload,
   mapNotificationToStatus,
-  parseAppAccountToken,
-  NotificationType,
   NotificationSubtype,
+  NotificationType,
+  parseAppAccountToken,
+  ResponseBodyV2DecodedPayload,
 } from "../../_shared/subscriptions/apple-notifications.ts";
 import {
+  normalizeEnvironment,
   PlatformHandler,
+  SubscriptionData,
   SubscriptionEvent,
   SubscriptionEventType,
-  SubscriptionData,
   SubscriptionStatus,
-  normalizeEnvironment,
 } from "../../_shared/subscriptions/types.ts";
 import { logger } from "../../_shared/logger.ts";
 import { measureAsync, PerformanceTimer } from "../../_shared/performance.ts";
@@ -48,15 +48,21 @@ const CACHE_TTL_MS = 30000; // 30 seconds
 // Event Type Mapping
 // =============================================================================
 
-const EVENT_TYPE_MAP: Record<NotificationType, SubscriptionEventType | ((subtype?: NotificationSubtype) => SubscriptionEventType)> = {
-  "SUBSCRIBED": (subtype) => subtype === "RESUBSCRIBE" ? "subscription_reactivated" : "subscription_created",
-  "DID_RENEW": (subtype) => subtype === "BILLING_RECOVERY" ? "billing_recovered" : "subscription_renewed",
+const EVENT_TYPE_MAP: Record<
+  NotificationType,
+  SubscriptionEventType | ((subtype?: NotificationSubtype) => SubscriptionEventType)
+> = {
+  "SUBSCRIBED": (subtype) =>
+    subtype === "RESUBSCRIBE" ? "subscription_reactivated" : "subscription_created",
+  "DID_RENEW": (subtype) =>
+    subtype === "BILLING_RECOVERY" ? "billing_recovered" : "subscription_renewed",
   "DID_FAIL_TO_RENEW": () => "billing_issue",
   "GRACE_PERIOD_EXPIRED": () => "grace_period_expired",
   "EXPIRED": () => "subscription_expired",
   "REFUND": () => "refunded",
   "REVOKE": () => "revoked",
-  "DID_CHANGE_RENEWAL_STATUS": (subtype) => subtype === "AUTO_RENEW_DISABLED" ? "subscription_canceled" : "subscription_reactivated",
+  "DID_CHANGE_RENEWAL_STATUS": (subtype) =>
+    subtype === "AUTO_RENEW_DISABLED" ? "subscription_canceled" : "subscription_reactivated",
   "DID_CHANGE_RENEWAL_PREF": () => "plan_changed",
   "OFFER_REDEEMED": () => "subscription_created",
   "RENEWAL_EXTENDED": () => "subscription_renewed",
@@ -72,7 +78,7 @@ const EVENT_TYPE_MAP: Record<NotificationType, SubscriptionEventType | ((subtype
 
 function mapAppleEventType(
   notificationType: NotificationType,
-  subtype?: NotificationSubtype
+  subtype?: NotificationSubtype,
 ): SubscriptionEventType {
   const mapping = EVENT_TYPE_MAP[notificationType];
 
@@ -91,7 +97,7 @@ function mapAppleEventType(
 function mapAppleStatus(
   notificationType: NotificationType,
   subtype?: NotificationSubtype,
-  renewalInfo?: JWSRenewalInfoDecodedPayload
+  renewalInfo?: JWSRenewalInfoDecodedPayload,
 ): SubscriptionStatus {
   return mapNotificationToStatus(notificationType, subtype, renewalInfo);
 }
@@ -131,7 +137,7 @@ function cachePayload(signedPayload: string, payload: ResponseBodyV2DecodedPaylo
 
 async function verifyAndDecodePayload(
   signedPayload: string,
-  context: Record<string, unknown> = {}
+  context: Record<string, unknown> = {},
 ): Promise<ResponseBodyV2DecodedPayload> {
   return await measureAsync(
     "apple.verify_jws",
@@ -139,20 +145,20 @@ async function verifyAndDecodePayload(
       const result = await verifyAppleJWS<ResponseBodyV2DecodedPayload>(signedPayload);
       return result;
     },
-    context
+    context,
   );
 }
 
 async function verifyNestedJWS<T>(
   signedData: string,
   name: string,
-  context: Record<string, unknown> = {}
+  context: Record<string, unknown> = {},
 ): Promise<T | null> {
   try {
     return await measureAsync(
       `apple.verify_${name}`,
       async () => await verifyAppleJWS<T>(signedData),
-      context
+      context,
     );
   } catch (error) {
     logger.warn(`Failed to verify Apple ${name}`, {
@@ -217,10 +223,12 @@ export const appleHandler: PlatformHandler = {
 
       timer.end({ success: true, bundleId: verified.data.bundleId });
       return true;
-
     } catch (error) {
       timer.end({ success: false, error: error instanceof Error ? error.message : String(error) });
-      logger.error("Apple webhook verification failed", error instanceof Error ? error : new Error(String(error)));
+      logger.error(
+        "Apple webhook verification failed",
+        error instanceof Error ? error : new Error(String(error)),
+      );
       return false;
     }
   },
@@ -254,7 +262,7 @@ export const appleHandler: PlatformHandler = {
       transactionInfo = await verifyNestedJWS<JWSTransactionDecodedPayload>(
         decodedPayload.data.signedTransactionInfo,
         "transaction_info",
-        context
+        context,
       ) ?? undefined;
     }
 
@@ -264,7 +272,7 @@ export const appleHandler: PlatformHandler = {
       renewalInfo = await verifyNestedJWS<JWSRenewalInfoDecodedPayload>(
         decodedPayload.data.signedRenewalInfo,
         "renewal_info",
-        context
+        context,
       ) ?? undefined;
     }
 
@@ -281,9 +289,7 @@ export const appleHandler: PlatformHandler = {
       originalPurchaseDate: transactionInfo?.originalPurchaseDate
         ? new Date(transactionInfo.originalPurchaseDate)
         : undefined,
-      expiresDate: transactionInfo?.expiresDate
-        ? new Date(transactionInfo.expiresDate)
-        : undefined,
+      expiresDate: transactionInfo?.expiresDate ? new Date(transactionInfo.expiresDate) : undefined,
       autoRenewEnabled: renewalInfo?.autoRenewStatus === 1,
       autoRenewProductId: renewalInfo?.autoRenewProductId,
       appUserId: parseAppAccountToken(transactionInfo?.appAccountToken) || undefined,
@@ -302,9 +308,7 @@ export const appleHandler: PlatformHandler = {
       eventType: mapAppleEventType(notificationType, subtype),
       rawEventType: notificationType,
       rawSubtype: subtype,
-      eventTime: decodedPayload.signedDate
-        ? new Date(decodedPayload.signedDate)
-        : new Date(),
+      eventTime: decodedPayload.signedDate ? new Date(decodedPayload.signedDate) : new Date(),
       subscription,
       rawPayload: signedPayload,
       environment: normalizeEnvironment(decodedPayload.data.environment),

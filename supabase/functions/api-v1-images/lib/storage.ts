@@ -8,7 +8,14 @@ import { ServerError } from "../../_shared/errors.ts";
 import { isR2Configured, uploadToR2 } from "../../_shared/r2-storage.ts";
 
 export const ALLOWED_BUCKETS = [
-  "food-images", "profiles", "forum", "challenges", "rooms", "assets", "avatars", "posts",
+  "food-images",
+  "profiles",
+  "forum",
+  "challenges",
+  "rooms",
+  "assets",
+  "avatars",
+  "posts",
 ];
 
 // Rate limiting: 100 uploads per user per day
@@ -17,7 +24,10 @@ const RATE_LIMIT_MAX = 100;
 const RATE_LIMIT_WINDOW = 86400; // 24 hours
 
 // deno-lint-ignore no-explicit-any
-export async function checkRateLimit(userId: string, supabase: SupabaseClient<any, any, any>): Promise<boolean> {
+export async function checkRateLimit(
+  userId: string,
+  supabase: SupabaseClient<any, any, any>,
+): Promise<boolean> {
   const { data, error } = await supabase
     .from("user_rate_limits")
     .select("count, reset_at")

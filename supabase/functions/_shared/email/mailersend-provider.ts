@@ -11,11 +11,11 @@
 import {
   EmailProvider,
   EmailProviderName,
-  SendEmailParams,
-  SendEmailResult,
+  PROVIDER_LIMITS,
   ProviderHealth,
   ProviderQuota,
-  PROVIDER_LIMITS,
+  SendEmailParams,
+  SendEmailResult,
 } from "./types.ts";
 
 const MAILERSEND_API_BASE = "https://api.mailersend.com/v1";
@@ -38,7 +38,7 @@ interface MailerSendEmailResponse {
 async function fetchWithTimeout(
   url: string,
   options: RequestInit,
-  timeoutMs: number = REQUEST_TIMEOUT_MS
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -60,7 +60,8 @@ export class MailerSendProvider implements EmailProvider {
   constructor(config: Partial<MailerSendConfig> = {}) {
     this.config = {
       apiKey: config.apiKey || Deno.env.get("MAILERSEND_API_KEY") || "",
-      fromEmail: config.fromEmail || Deno.env.get("MAILERSEND_SENDER_EMAIL") || "contact@foodshare.club",
+      fromEmail: config.fromEmail || Deno.env.get("MAILERSEND_SENDER_EMAIL") ||
+        "contact@foodshare.club",
       fromName: config.fromName || Deno.env.get("MAILERSEND_SENDER_NAME") || "FoodShare",
     };
   }
@@ -139,8 +140,8 @@ export class MailerSendProvider implements EmailProvider {
       const data: MailerSendEmailResponse = await response.json();
       const errorMessage = data.message || data.errors
         ? Object.entries(data.errors || {})
-            .map(([field, errors]) => `${field}: ${errors.join(", ")}`)
-            .join("; ")
+          .map(([field, errors]) => `${field}: ${errors.join(", ")}`)
+          .join("; ")
         : `HTTP ${response.status}`;
 
       return {
@@ -152,12 +153,9 @@ export class MailerSendProvider implements EmailProvider {
       };
     } catch (error) {
       const latencyMs = Math.round(performance.now() - startTime);
-      const message =
-        error instanceof Error
-          ? error.name === "AbortError"
-            ? "Request timeout"
-            : error.message
-          : "Unknown error";
+      const message = error instanceof Error
+        ? error.name === "AbortError" ? "Request timeout" : error.message
+        : "Unknown error";
 
       return {
         success: false,
@@ -228,12 +226,9 @@ export class MailerSendProvider implements EmailProvider {
       };
     } catch (error) {
       const latencyMs = Math.round(performance.now() - startTime);
-      const message =
-        error instanceof Error
-          ? error.name === "AbortError"
-            ? "Request timeout (10s)"
-            : error.message
-          : "Unknown error";
+      const message = error instanceof Error
+        ? error.name === "AbortError" ? "Request timeout (10s)" : error.message
+        : "Unknown error";
 
       return {
         provider: this.name,

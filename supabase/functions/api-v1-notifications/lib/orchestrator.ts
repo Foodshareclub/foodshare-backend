@@ -13,17 +13,17 @@
  */
 
 import type {
-  SendRequest,
-  DeliveryResult,
   ChannelDeliveryResult,
-  NotificationContext,
+  DeliveryResult,
   NotificationChannel,
+  NotificationContext,
+  SendRequest,
 } from "./types.ts";
 import { getChannelAdapter } from "./channels/index.ts";
 import {
-  shouldSendNotification,
   mapTypeToCategory,
   shouldBypassPreferences,
+  shouldSendNotification,
 } from "../../_shared/notification-preferences.ts";
 import { logger } from "../../_shared/logger.ts";
 import { getUserEmail, isEmailSuppressed } from "./channels/email.ts";
@@ -73,7 +73,7 @@ function renderTemplateString(template: string, variables: Record<string, unknow
 
 export async function sendNotification(
   request: SendRequest,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<DeliveryResult> {
   const startTime = performance.now();
   const notificationId = crypto.randomUUID();
@@ -111,8 +111,8 @@ export async function sendNotification(
 
     // 2. Check preferences, quiet hours, DND
     const category = mapTypeToCategory(request.type);
-    const bypassPreferences =
-      shouldBypassPreferences(request.type) || request.priority === "critical";
+    const bypassPreferences = shouldBypassPreferences(request.type) ||
+      request.priority === "critical";
 
     const preferenceResults = await Promise.all(
       channels.map((channel) =>
@@ -121,7 +121,7 @@ export async function sendNotification(
           channel,
           bypassPreferences,
         })
-      )
+      ),
     );
 
     // 3. Handle scheduling (quiet hours)
@@ -143,7 +143,7 @@ export async function sendNotification(
 
     // 4. Handle digest batching
     const firstDigest = preferenceResults.find(
-      (r) => r.frequency && r.frequency !== "instant"
+      (r) => r.frequency && r.frequency !== "instant",
     );
     if (firstDigest && !bypassPreferences) {
       await queueForDigest(request, firstDigest.frequency!, context);
@@ -160,7 +160,7 @@ export async function sendNotification(
     }
 
     // 5. Filter blocked channels
-    const allowedChannels = channels.filter((channel, index) => {
+    const allowedChannels = channels.filter((_channel, index) => {
       const result = preferenceResults[index];
       return result?.send === true;
     });
@@ -188,7 +188,7 @@ export async function sendNotification(
       request,
       allowedChannels,
       context,
-      notificationId
+      notificationId,
     );
 
     // 7. Track delivery
@@ -240,7 +240,7 @@ export async function sendNotification(
 
 async function determineChannels(
   request: SendRequest,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<NotificationChannel[]> {
   // If channels explicitly specified, use those
   if (request.channels && request.channels.length > 0) {
@@ -313,7 +313,7 @@ async function sendToChannels(
   request: SendRequest,
   channels: NotificationChannel[],
   context: NotificationContext,
-  notificationId: string
+  _notificationId: string,
 ): Promise<ChannelDeliveryResult[]> {
   const results: ChannelDeliveryResult[] = [];
 
@@ -366,7 +366,7 @@ async function sendToChannels(
 async function buildChannelPayload(
   request: SendRequest,
   channel: NotificationChannel,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<unknown | null> {
   switch (channel) {
     case "email": {
@@ -472,7 +472,11 @@ function formatEmailHtml(request: SendRequest): string {
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
   <h2 style="color: #1a1a1a; margin-bottom: 20px;">${renderedTitle}</h2>
   <p style="margin-bottom: 20px;">${renderedBody}</p>
-  ${request.imageUrl ? `<img src="${request.imageUrl}" alt="" style="max-width: 100%; height: auto; border-radius: 8px; margin-bottom: 20px;">` : ""}
+  ${
+    request.imageUrl
+      ? `<img src="${request.imageUrl}" alt="" style="max-width: 100%; height: auto; border-radius: 8px; margin-bottom: 20px;">`
+      : ""
+  }
   <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
   <p style="font-size: 12px; color: #666;">
     You received this notification because you are subscribed to FoodShare updates.
@@ -490,7 +494,7 @@ function formatEmailHtml(request: SendRequest): string {
 async function scheduleNotification(
   request: SendRequest,
   scheduledFor: string,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<void> {
   try {
     await context.supabase.from("notification_queue").insert({
@@ -517,7 +521,7 @@ async function scheduleNotification(
 async function queueForDigest(
   request: SendRequest,
   frequency: string,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<void> {
   try {
     const now = new Date();
@@ -533,12 +537,13 @@ async function queueForDigest(
         scheduledFor.setDate(scheduledFor.getDate() + 1);
         scheduledFor.setHours(9, 0, 0, 0);
         break;
-      case "weekly":
+      case "weekly": {
         scheduledFor = new Date(now);
         const daysUntilMonday = (8 - scheduledFor.getDay()) % 7 || 7;
         scheduledFor.setDate(scheduledFor.getDate() + daysUntilMonday);
         scheduledFor.setHours(9, 0, 0, 0);
         break;
+      }
       default:
         scheduledFor = new Date(now.getTime() + 60 * 60 * 1000);
     }
@@ -576,7 +581,7 @@ async function trackDelivery(
   notificationId: string,
   request: SendRequest,
   results: ChannelDeliveryResult[],
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<void> {
   try {
     await context.supabase.from("notification_delivery_log").insert({
@@ -604,7 +609,7 @@ async function trackDelivery(
 async function handleFallbacks(
   request: SendRequest,
   results: ChannelDeliveryResult[],
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<void> {
   // Fallback chain: push → email → SMS
   const pushResult = results.find((r) => r.channel === "push");

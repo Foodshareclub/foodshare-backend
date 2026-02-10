@@ -28,25 +28,25 @@
 
 // Types
 export type {
-  EmailProviderName,
-  EmailType,
   CircuitState,
-  SendEmailParams,
-  SendEmailResult,
+  EmailProvider,
+  EmailProviderName,
+  EmailServiceConfig,
+  EmailType,
+  ProviderConfig,
   ProviderHealth,
   ProviderQuota,
-  EmailProvider,
-  ProviderConfig,
-  EmailServiceConfig,
+  SendEmailParams,
+  SendEmailResult,
 } from "./types.ts";
 
 export { DEFAULT_EMAIL_CONFIG, PROVIDER_LIMITS } from "./types.ts";
 
 // Providers
-export { ResendProvider, createResendProvider } from "./resend-provider.ts";
+export { createResendProvider, ResendProvider } from "./resend-provider.ts";
 export { BrevoProvider, createBrevoProvider } from "./brevo-provider.ts";
 export { AWSSESProvider, createAWSSESProvider } from "./aws-ses-provider.ts";
-export { MailerSendProvider, createMailerSendProvider } from "./mailersend-provider.ts";
+export { createMailerSendProvider, MailerSendProvider } from "./mailersend-provider.ts";
 
 // Service
 export {
@@ -59,67 +59,67 @@ export {
 // Templates - Component System
 export { BRAND } from "./template-components.ts";
 export type {
-  HeaderProps,
   BulletItem,
   CTAProps,
-  FooterProps,
   EmailConfig,
-  StatItem,
   FeaturedItem,
+  FooterProps,
+  HeaderProps,
+  StatItem,
 } from "./template-components.ts";
 
 export {
+  appStoreBadges,
+  buildEmail,
+  bulletList,
+  contentSection,
+  ctaButton,
+  disclaimerBox,
+  divider,
   documentWrapper,
   emailContainer,
-  header,
-  contentSection,
-  greeting,
-  paragraph,
-  bulletList,
-  infoBox,
-  highlightBox,
-  disclaimerBox,
-  ctaButton,
-  heroImage,
-  statsBar,
   featuredItems,
-  divider,
-  signOff,
-  appStoreBadges,
-  socialIcons,
   footer,
-  buildEmail,
-  growingCommunityBox,
   formatStatNumber,
+  greeting,
+  growingCommunityBox,
+  header,
+  heroImage,
+  highlightBox,
+  infoBox,
+  paragraph,
+  signOff,
+  socialIcons,
+  statsBar,
 } from "./template-components.ts";
 
 // Templates - Pre-built
 export {
-  welcomeTemplate,
-  emailVerificationTemplate,
-  passwordResetTemplate,
   chatNotificationTemplate,
-  newListingTemplate,
-  volunteerWelcomeTemplate,
   completeProfileTemplate,
+  emailVerificationTemplate,
+  feedbackAlertTemplate,
   firstShareTipsTemplate,
   milestoneTemplate,
+  newListingTemplate,
+  passwordResetTemplate,
   reengagementTemplate,
-  feedbackAlertTemplate,
   renderTemplate,
   templates,
   type TemplateSlug,
+  volunteerWelcomeTemplate,
+  welcomeTemplate,
 } from "./template-builder.ts";
 
 // Templates - Legacy (backwards compatible)
 export {
-  welcomeEmail,
-  goodbyeEmail,
-  emailVerificationEmail,
-  passwordResetEmail,
-  feedbackAlertEmail,
-  newListingEmail,
   chatNotificationEmail,
-  notificationEmail,
   digestEmail,
+  emailVerificationEmail,
+  feedbackAlertEmail,
+  goodbyeEmail,
+  newListingEmail,
+  notificationEmail,
+  passwordResetEmail,
+  welcomeEmail,
 } from "./templates.ts";

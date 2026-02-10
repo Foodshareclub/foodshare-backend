@@ -12,17 +12,17 @@
  */
 
 import {
-  welcomeTemplate,
-  emailVerificationTemplate,
-  passwordResetTemplate,
   chatNotificationTemplate,
-  newListingTemplate,
-  volunteerWelcomeTemplate,
   completeProfileTemplate,
+  emailVerificationTemplate,
+  feedbackAlertTemplate,
   firstShareTipsTemplate,
   milestoneTemplate,
+  newListingTemplate,
+  passwordResetTemplate,
   reengagementTemplate,
-  feedbackAlertTemplate,
+  volunteerWelcomeTemplate,
+  welcomeTemplate,
 } from "./template-builder.ts";
 
 interface TemplateDefinition {
@@ -214,34 +214,130 @@ const TEMPLATE_DEFINITIONS: Omit<TemplateDefinition, "html_content">[] = [
 const SAMPLE_DATA: Record<string, Record<string, unknown>> = {
   welcome: { name: "John", nearbyMembers: 127, mealsSharedMonthly: 52000 },
   "email-verification": { verifyUrl: "https://foodshare.club/verify?token=abc123" },
-  "password-reset": { name: "John", resetUrl: "https://foodshare.club/reset?token=xyz789", expiresIn: "1 hour" },
-  "chat-notification": { recipientName: "John", senderName: "Sarah", messagePreview: "Hey! Is the pasta still available?", chatUrl: "https://foodshare.club/chat/123" },
-  "new-listing-nearby": { recipientName: "John", listingTitle: "Fresh vegetables", listingDescription: "Organic tomatoes and cucumbers from my garden", listingAddress: "123 Main St", posterName: "Sarah", listingUrl: "https://foodshare.club/food/456", listingType: "food", listingEmoji: "🍎" },
+  "password-reset": {
+    name: "John",
+    resetUrl: "https://foodshare.club/reset?token=xyz789",
+    expiresIn: "1 hour",
+  },
+  "chat-notification": {
+    recipientName: "John",
+    senderName: "Sarah",
+    messagePreview: "Hey! Is the pasta still available?",
+    chatUrl: "https://foodshare.club/chat/123",
+  },
+  "new-listing-nearby": {
+    recipientName: "John",
+    listingTitle: "Fresh vegetables",
+    listingDescription: "Organic tomatoes and cucumbers from my garden",
+    listingAddress: "123 Main St",
+    posterName: "Sarah",
+    listingUrl: "https://foodshare.club/food/456",
+    listingType: "food",
+    listingEmoji: "🍎",
+  },
   "volunteer-welcome": { name: "John" },
   "complete-profile": { name: "John", completionPercent: 65 },
   "first-share-tips": { name: "John" },
-  "milestone-celebration": { name: "John", milestoneName: "First Share", milestoneDescription: "You shared your first meal with the community!", milestoneEmoji: "🎉", percentile: 10, nextMilestone: "Share 5 more meals to unlock Food Hero badge" },
-  reengagement: { name: "John", daysSinceLastVisit: 14, newListingsNearby: 8, mealsSavedCommunity: 234, newMembersNearby: 12, unsubscribeUrl: "https://foodshare.club/unsubscribe?token=abc" },
-  "feedback-alert": { feedbackId: "fb-123", feedbackType: "feature", feedbackEmoji: "✨", subject: "Add dark mode", submitterName: "John Doe", submitterEmail: "john@example.com", message: "It would be great to have a dark mode option for the app.", timestamp: "2024-02-01T10:30:00Z" },
+  "milestone-celebration": {
+    name: "John",
+    milestoneName: "First Share",
+    milestoneDescription: "You shared your first meal with the community!",
+    milestoneEmoji: "🎉",
+    percentile: 10,
+    nextMilestone: "Share 5 more meals to unlock Food Hero badge",
+  },
+  reengagement: {
+    name: "John",
+    daysSinceLastVisit: 14,
+    newListingsNearby: 8,
+    mealsSavedCommunity: 234,
+    newMembersNearby: 12,
+    unsubscribeUrl: "https://foodshare.club/unsubscribe?token=abc",
+  },
+  "feedback-alert": {
+    feedbackId: "fb-123",
+    feedbackType: "feature",
+    feedbackEmoji: "✨",
+    subject: "Add dark mode",
+    submitterName: "John Doe",
+    submitterEmail: "john@example.com",
+    message: "It would be great to have a dark mode option for the app.",
+    timestamp: "2024-02-01T10:30:00Z",
+  },
 };
 
 // Template render functions map
-const TEMPLATE_FUNCTIONS: Record<string, (params: Record<string, unknown>) => { subject: string; html: string }> = {
-  welcome: (p) => welcomeTemplate({
-    name: String(p.name),
-    nearbyMembers: p.nearbyMembers as number,
-    mealsSharedMonthly: p.mealsSharedMonthly as number,
-  }),
+const TEMPLATE_FUNCTIONS: Record<
+  string,
+  (params: Record<string, unknown>) => { subject: string; html: string }
+> = {
+  welcome: (p) =>
+    welcomeTemplate({
+      name: String(p.name),
+      nearbyMembers: p.nearbyMembers as number,
+      mealsSharedMonthly: p.mealsSharedMonthly as number,
+    }),
   "email-verification": (p) => emailVerificationTemplate({ verifyUrl: String(p.verifyUrl) }),
-  "password-reset": (p) => passwordResetTemplate({ name: String(p.name), resetUrl: String(p.resetUrl), expiresIn: p.expiresIn as string }),
-  "chat-notification": (p) => chatNotificationTemplate({ recipientName: String(p.recipientName), senderName: String(p.senderName), messagePreview: String(p.messagePreview), chatUrl: String(p.chatUrl) }),
-  "new-listing-nearby": (p) => newListingTemplate({ recipientName: String(p.recipientName), listingTitle: String(p.listingTitle), listingDescription: p.listingDescription as string, listingAddress: p.listingAddress as string, posterName: String(p.posterName), listingUrl: String(p.listingUrl), listingType: p.listingType as string, listingEmoji: p.listingEmoji as string }),
+  "password-reset": (p) =>
+    passwordResetTemplate({
+      name: String(p.name),
+      resetUrl: String(p.resetUrl),
+      expiresIn: p.expiresIn as string,
+    }),
+  "chat-notification": (p) =>
+    chatNotificationTemplate({
+      recipientName: String(p.recipientName),
+      senderName: String(p.senderName),
+      messagePreview: String(p.messagePreview),
+      chatUrl: String(p.chatUrl),
+    }),
+  "new-listing-nearby": (p) =>
+    newListingTemplate({
+      recipientName: String(p.recipientName),
+      listingTitle: String(p.listingTitle),
+      listingDescription: p.listingDescription as string,
+      listingAddress: p.listingAddress as string,
+      posterName: String(p.posterName),
+      listingUrl: String(p.listingUrl),
+      listingType: p.listingType as string,
+      listingEmoji: p.listingEmoji as string,
+    }),
   "volunteer-welcome": (p) => volunteerWelcomeTemplate({ name: String(p.name) }),
-  "complete-profile": (p) => completeProfileTemplate({ name: String(p.name), completionPercent: p.completionPercent as number }),
+  "complete-profile": (p) =>
+    completeProfileTemplate({
+      name: String(p.name),
+      completionPercent: p.completionPercent as number,
+    }),
   "first-share-tips": (p) => firstShareTipsTemplate({ name: String(p.name) }),
-  "milestone-celebration": (p) => milestoneTemplate({ name: String(p.name), milestoneName: String(p.milestoneName), milestoneDescription: String(p.milestoneDescription), milestoneEmoji: p.milestoneEmoji as string, percentile: p.percentile as number, nextMilestone: p.nextMilestone as string }),
-  reengagement: (p) => reengagementTemplate({ name: String(p.name), daysSinceLastVisit: p.daysSinceLastVisit as number, newListingsNearby: p.newListingsNearby as number, mealsSavedCommunity: p.mealsSavedCommunity as number, newMembersNearby: p.newMembersNearby as number, unsubscribeUrl: String(p.unsubscribeUrl) }),
-  "feedback-alert": (p) => feedbackAlertTemplate({ feedbackId: String(p.feedbackId), feedbackType: String(p.feedbackType), feedbackEmoji: p.feedbackEmoji as string, subject: String(p.subject), submitterName: String(p.submitterName), submitterEmail: String(p.submitterEmail), message: String(p.message), timestamp: p.timestamp as string }),
+  "milestone-celebration": (p) =>
+    milestoneTemplate({
+      name: String(p.name),
+      milestoneName: String(p.milestoneName),
+      milestoneDescription: String(p.milestoneDescription),
+      milestoneEmoji: p.milestoneEmoji as string,
+      percentile: p.percentile as number,
+      nextMilestone: p.nextMilestone as string,
+    }),
+  reengagement: (p) =>
+    reengagementTemplate({
+      name: String(p.name),
+      daysSinceLastVisit: p.daysSinceLastVisit as number,
+      newListingsNearby: p.newListingsNearby as number,
+      mealsSavedCommunity: p.mealsSavedCommunity as number,
+      newMembersNearby: p.newMembersNearby as number,
+      unsubscribeUrl: String(p.unsubscribeUrl),
+    }),
+  "feedback-alert": (p) =>
+    feedbackAlertTemplate({
+      feedbackId: String(p.feedbackId),
+      feedbackType: String(p.feedbackType),
+      feedbackEmoji: p.feedbackEmoji as string,
+      subject: String(p.subject),
+      submitterName: String(p.submitterName),
+      submitterEmail: String(p.submitterEmail),
+      message: String(p.message),
+      timestamp: p.timestamp as string,
+    }),
 };
 
 function escapeSQL(str: string): string {
@@ -276,7 +372,9 @@ function generateSQL(): string {
     const htmlContent = rendered.html;
 
     lines.push(`-- Template: ${def.name}`);
-    lines.push(`INSERT INTO email_templates (slug, name, category, subject, html_content, text_content, variables, metadata, is_active, version)`);
+    lines.push(
+      `INSERT INTO email_templates (slug, name, category, subject, html_content, text_content, variables, metadata, is_active, version)`,
+    );
     lines.push(`VALUES (`);
     lines.push(`  '${escapeSQL(def.slug)}',`);
     lines.push(`  '${escapeSQL(def.name)}',`);

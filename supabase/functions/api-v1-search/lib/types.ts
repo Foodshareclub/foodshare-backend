@@ -126,9 +126,10 @@ export interface SearchQuery {
 }
 
 export function parseSearchQuery(params: Record<string, string>): SearchQuery {
-  const mode = (["semantic", "text", "hybrid", "fuzzy"].includes(params.mode)
-    ? params.mode
-    : "hybrid") as SearchMode;
+  const mode =
+    (["semantic", "text", "hybrid", "fuzzy"].includes(params.mode)
+      ? params.mode
+      : "hybrid") as SearchMode;
 
   const limit = Math.min(Math.max(1, parseInt(params.limit, 10) || DEFAULT_LIMIT), MAX_LIMIT);
   const offset = Math.max(0, parseInt(params.offset, 10) || 0);
@@ -197,8 +198,7 @@ export function updateStats(latencyMs: number, cached: boolean, provider?: strin
   stats.total_searches++;
   if (cached) stats.cache_hits++;
   else stats.cache_misses++;
-  stats.avg_latency_ms =
-    (stats.avg_latency_ms * (stats.total_searches - 1) + latencyMs) /
+  stats.avg_latency_ms = (stats.avg_latency_ms * (stats.total_searches - 1) + latencyMs) /
     stats.total_searches;
   if (provider) {
     stats.provider_usage[provider] = (stats.provider_usage[provider] || 0) + 1;
@@ -213,6 +213,7 @@ const DANGEROUS_PATTERNS = [
   /[<>]/g,
   /javascript:/gi,
   /on\w+=/gi,
+  // deno-lint-ignore no-control-regex
   /[\x00-\x1f\x7f]/g,
 ];
 
@@ -242,8 +243,16 @@ export function validateUUID(id: string): boolean {
 // Cache Helpers
 // =============================================================================
 
-export function getCacheKey(mode: string, q: string, filters: SearchFilters | undefined, limit: number, offset: number): string {
-  return `search:${JSON.stringify({ m: mode, q: normalizeQuery(q), f: filters, l: limit, o: offset })}`;
+export function getCacheKey(
+  mode: string,
+  q: string,
+  filters: SearchFilters | undefined,
+  limit: number,
+  offset: number,
+): string {
+  return `search:${
+    JSON.stringify({ m: mode, q: normalizeQuery(q), f: filters, l: limit, o: offset })
+  }`;
 }
 
 // =============================================================================
@@ -285,9 +294,7 @@ export function transformVectorResult(r: VectorQueryResult): SearchResultItem {
     pickup_address: String(m.pickup_address || ""),
     location: transformLocation(m.latitude, m.longitude) ?? undefined,
     posted_at: String(m.posted_at || ""),
-    dietary_tags: Array.isArray(m.dietary_tags)
-      ? (m.dietary_tags as string[])
-      : undefined,
+    dietary_tags: Array.isArray(m.dietary_tags) ? (m.dietary_tags as string[]) : undefined,
   };
 }
 
@@ -299,8 +306,7 @@ export function transformPostsToResults(
     score: 1 - idx * 0.01,
     post_name: String(row.post_name || ""),
     post_description: String(row.post_description || "").slice(0, 500),
-    category:
-      (row.categories as { name: string } | null)?.name || "",
+    category: (row.categories as { name: string } | null)?.name || "",
     pickup_address: String(row.post_address || ""),
     location: transformLocation(row.latitude, row.longitude) ?? undefined,
     posted_at: String(row.created_at || ""),

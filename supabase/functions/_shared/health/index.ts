@@ -35,23 +35,23 @@
 // =============================================================================
 
 export type {
-  HealthStatus,
+  AlertState,
   FunctionConfig,
   FunctionHealthResult,
-  ServiceHealth,
   HealthCheckSummary,
-  AlertState,
+  HealthStatus,
+  ServiceHealth,
 } from "./types.ts";
 
 export {
-  HEALTH_CHECK_TIMEOUT_MS,
-  COLD_START_RETRY_DELAY_MS,
-  MAX_CONCURRENT_CHECKS,
   ALERT_COOLDOWN_MS,
+  COLD_START_RETRY_DELAY_MS,
   DATABASE_DEGRADED_THRESHOLD_MS,
-  STORAGE_DEGRADED_THRESHOLD_MS,
   FUNCTION_DEGRADED_THRESHOLD_MS,
+  HEALTH_CHECK_TIMEOUT_MS,
   HEALTH_VERSION,
+  MAX_CONCURRENT_CHECKS,
+  STORAGE_DEGRADED_THRESHOLD_MS,
 } from "./types.ts";
 
 // =============================================================================
@@ -59,16 +59,16 @@ export {
 // =============================================================================
 
 export {
-  CRITICAL_FUNCTIONS,
   API_FUNCTIONS,
+  CRITICAL_FUNCTIONS,
   DATA_FUNCTIONS,
-  UTILITY_FUNCTIONS,
   EDGE_FUNCTIONS,
-  getFunctionConfig,
-  getCriticalFunctions,
-  getQuickCheckFunctions,
   getAllFunctionNames,
+  getCriticalFunctions,
+  getFunctionConfig,
+  getQuickCheckFunctions,
   isFunctionRegistered,
+  UTILITY_FUNCTIONS,
 } from "./config.ts";
 
 // =============================================================================
@@ -76,14 +76,18 @@ export {
 // =============================================================================
 
 export type { HealthServiceConfig } from "./health-service.ts";
-export { HealthService, getHealthService, resetHealthService } from "./health-service.ts";
+export { getHealthService, HealthService, resetHealthService } from "./health-service.ts";
 
 // =============================================================================
 // Checkers (for testing/extension)
 // =============================================================================
 
 export type { FunctionCheckerConfig } from "./checkers/function-checker.ts";
-export { FunctionChecker, createFunctionChecker, resetFunctionChecker } from "./checkers/function-checker.ts";
+export {
+  createFunctionChecker,
+  FunctionChecker,
+  resetFunctionChecker,
+} from "./checkers/function-checker.ts";
 export { checkDatabase } from "./checkers/database-checker.ts";
 export { checkStorage } from "./checkers/storage-checker.ts";
 
@@ -92,5 +96,13 @@ export { checkStorage } from "./checkers/storage-checker.ts";
 // =============================================================================
 
 export type { TelegramConfig } from "./alerting/telegram-alerter.ts";
-export { TelegramAlerter, createTelegramAlerter, resetTelegramAlerter } from "./alerting/telegram-alerter.ts";
-export { AlertStateManager, getAlertStateManager, resetAlertStateManager } from "./alerting/alert-state.ts";
+export {
+  createTelegramAlerter,
+  resetTelegramAlerter,
+  TelegramAlerter,
+} from "./alerting/telegram-alerter.ts";
+export {
+  AlertStateManager,
+  getAlertStateManager,
+  resetAlertStateManager,
+} from "./alerting/alert-state.ts";

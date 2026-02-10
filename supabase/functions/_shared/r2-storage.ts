@@ -75,7 +75,7 @@ export function isR2Configured(): boolean {
 export async function uploadToR2(
   buffer: Uint8Array,
   path: string,
-  contentType: string
+  contentType: string,
 ): Promise<R2UploadResult> {
   const config = getR2Config();
   if (!config) {

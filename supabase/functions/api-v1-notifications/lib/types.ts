@@ -8,6 +8,7 @@
  */
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { Buffer } from "node:buffer";
 
 // =============================================================================
 // Authentication
@@ -479,7 +480,7 @@ export interface ChannelAdapter {
   send(payload: unknown, context: NotificationContext): Promise<ChannelDeliveryResult>;
   sendBatch?(
     payloads: unknown[],
-    context: NotificationContext
+    context: NotificationContext,
   ): Promise<ChannelDeliveryResult[]>;
   healthCheck?(): Promise<{ healthy: boolean; latencyMs?: number; error?: string }>;
 }

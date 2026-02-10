@@ -67,7 +67,7 @@ export const corsHeaders = {
  */
 export function getCorsHeaders(
   request: Request,
-  additionalOrigins: string[] = []
+  additionalOrigins: string[] = [],
 ): Record<string, string> {
   const origin = request.headers.get("origin");
   const allAllowed = [...DEFAULT_ALLOWED_ORIGINS, ...MOBILE_ORIGINS, ...additionalOrigins];
@@ -80,7 +80,8 @@ export function getCorsHeaders(
         "authorization, x-client-info, apikey, content-type, x-correlation-id, x-request-id, x-client-platform, x-app-version",
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       "Access-Control-Max-Age": "3600",
-      "Access-Control-Expose-Headers": "x-request-id, x-correlation-id, x-response-time, retry-after",
+      "Access-Control-Expose-Headers":
+        "x-request-id, x-correlation-id, x-response-time, retry-after",
     };
   }
 
@@ -90,7 +91,10 @@ export function getCorsHeaders(
     if (allowed.endsWith("//")) {
       return origin.startsWith(allowed);
     }
-    if (allowed.startsWith("capacitor://") || allowed.startsWith("ionic://") || allowed.startsWith("app://")) {
+    if (
+      allowed.startsWith("capacitor://") || allowed.startsWith("ionic://") ||
+      allowed.startsWith("app://")
+    ) {
       return origin === allowed;
     }
     return origin === allowed;
@@ -116,7 +120,7 @@ export function getCorsHeaders(
  */
 export function handleCorsPreflight(
   request: Request,
-  additionalOrigins?: string[]
+  additionalOrigins?: string[],
 ): Response {
   return new Response("ok", {
     headers: getCorsHeaders(request, additionalOrigins),
@@ -168,7 +172,7 @@ export function isMobileOrigin(request: Request): boolean {
 export function isOriginAllowed(
   request: Request,
   allowedOrigins: string[] = DEFAULT_ALLOWED_ORIGINS,
-  allowMobile: boolean = true
+  allowMobile: boolean = true,
 ): boolean {
   const origin = request.headers.get("origin");
 

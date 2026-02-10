@@ -1,6 +1,6 @@
 /**
  * Performance Monitoring Utilities
- * 
+ *
  * Provides performance tracking, metrics collection, and slow query detection
  */
 
@@ -61,7 +61,7 @@ export class PerformanceTimer {
    */
   end(additionalMetadata?: Record<string, unknown>): number {
     const durationMs = Math.round(performance.now() - this.startTime);
-    
+
     const metric: PerformanceMetric = {
       operation: this.operation,
       durationMs,
@@ -107,10 +107,10 @@ export class PerformanceTimer {
 export async function measureAsync<T>(
   operation: string,
   fn: () => Promise<T>,
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>,
 ): Promise<T> {
   const timer = new PerformanceTimer(operation, metadata);
-  
+
   try {
     const result = await fn();
     timer.end({ success: true });
@@ -127,10 +127,10 @@ export async function measureAsync<T>(
 export function measureSync<T>(
   operation: string,
   fn: () => T,
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>,
 ): T {
   const timer = new PerformanceTimer(operation, metadata);
-  
+
   try {
     const result = fn();
     timer.end({ success: true });
@@ -151,10 +151,10 @@ export function measureSync<T>(
 export async function trackQuery<T>(
   query: string,
   fn: () => Promise<T>,
-  context?: Record<string, unknown>
+  context?: Record<string, unknown>,
 ): Promise<T> {
   const timer = new PerformanceTimer("database_query", { query, ...context });
-  
+
   try {
     const result = await fn();
     const durationMs = timer.end({ success: true });
@@ -313,7 +313,7 @@ export interface MemoryStats {
  */
 export function getMemoryStats(): MemoryStats {
   const memUsage = Deno.memoryUsage();
-  
+
   return {
     heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024), // MB
     heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024), // MB
@@ -327,7 +327,7 @@ export function getMemoryStats(): MemoryStats {
  */
 export function checkMemoryUsage(thresholdMB = 512): void {
   const stats = getMemoryStats();
-  
+
   if (stats.heapUsed > thresholdMB) {
     logger.warn("High memory usage detected", {
       heapUsedMB: stats.heapUsed,

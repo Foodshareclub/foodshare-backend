@@ -23,15 +23,21 @@ import { VERSION } from "./lib/utils.ts";
 
 // Schemas (used for route-level validation)
 import {
+  automationProcessSchema,
   processSchema,
+  sendInvitationSchema,
   sendSchema,
   sendTemplateSchema,
-  sendInvitationSchema,
-  automationProcessSchema,
 } from "./lib/schemas.ts";
 
 // Handlers
-import { handleSend, handleSendTemplate, handleSendInvitation, handleProviders, handleHealth } from "./lib/send.ts";
+import {
+  handleHealth,
+  handleProviders,
+  handleSend,
+  handleSendInvitation,
+  handleSendTemplate,
+} from "./lib/send.ts";
 import { handleGetStats, handleProcess, handleProcessAutomation } from "./lib/queue.ts";
 
 // =============================================================================
@@ -83,7 +89,11 @@ function handlePost(ctx: HandlerContext): Promise<Response> {
     return handleSend({ ...ctx, body } as HandlerContext<typeof body>);
   }
 
-  throw new AppError("Unknown route. Available: /process, /send, /send/template, /send/invitation", "NOT_FOUND", 404);
+  throw new AppError(
+    "Unknown route. Available: /process, /send, /send/template, /send/invitation",
+    "NOT_FOUND",
+    404,
+  );
 }
 
 // =============================================================================

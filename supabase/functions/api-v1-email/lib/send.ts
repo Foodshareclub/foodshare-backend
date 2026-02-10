@@ -9,24 +9,29 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { ok, type HandlerContext } from "../../_shared/api-handler.ts";
-import { ValidationError, AppError } from "../../_shared/errors.ts";
+import { type HandlerContext, ok } from "../../_shared/api-handler.ts";
+import { AppError, ValidationError } from "../../_shared/errors.ts";
 import { logger } from "../../_shared/logger.ts";
 import {
-  getEmailService,
   type EmailType,
+  getEmailService,
   type SendTemplateEmailParams,
 } from "../../_shared/email/index.ts";
-import { requireServiceAuth, escapeHtml, VERSION } from "./utils.ts";
-import type { sendSchema, sendTemplateSchema, sendInvitationSchema } from "./schemas.ts";
+import { escapeHtml, requireServiceAuth, VERSION } from "./utils.ts";
+import type { sendInvitationSchema, sendSchema, sendTemplateSchema } from "./schemas.ts";
 
 // =============================================================================
 // Invitation Email Builder
 // =============================================================================
 
-function buildInvitationEmail(senderName: string, message?: string): { subject: string; html: string } {
+function buildInvitationEmail(
+  senderName: string,
+  message?: string,
+): { subject: string; html: string } {
   const personalMessage = message
-    ? `<p style="color: #555; font-style: italic; border-left: 3px solid #2ECC71; padding-left: 12px; margin: 20px 0;">"${escapeHtml(message)}"</p>`
+    ? `<p style="color: #555; font-style: italic; border-left: 3px solid #2ECC71; padding-left: 12px; margin: 20px 0;">"${
+      escapeHtml(message)
+    }"</p>`
     : "";
 
   const subject = `${senderName} invited you to join FoodShare!`;
@@ -43,7 +48,9 @@ function buildInvitationEmail(senderName: string, message?: string): { subject: 
     <div style="background: white; border-radius: 16px; padding: 40px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
       <div style="text-align: center; margin-bottom: 30px;">
         <h1 style="color: #2ECC71; font-size: 28px; margin: 0 0 10px;">You're Invited!</h1>
-        <p style="color: #666; font-size: 16px; margin: 0;">${escapeHtml(senderName)} wants you to join FoodShare</p>
+        <p style="color: #666; font-size: 16px; margin: 0;">${
+    escapeHtml(senderName)
+  } wants you to join FoodShare</p>
       </div>
       ${personalMessage}
       <div style="background: #f8faf8; border-radius: 12px; padding: 24px; margin: 24px 0;">
@@ -191,7 +198,7 @@ export async function handleSendInvitation(
     actor_id: ctx.userId,
     activity_type: "shared",
     notes: `invitation:email=${recipientEmail.substring(0, 3)}***`,
-  }).then(undefined, () => { /* analytics failure is non-critical */ });
+  }).then(undefined, () => {/* analytics failure is non-critical */});
 
   return ok(
     {

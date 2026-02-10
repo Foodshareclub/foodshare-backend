@@ -15,38 +15,38 @@
 import { logger } from "../../_shared/logger.ts";
 import { geocodeAddress, getCacheStats } from "../../_shared/geocoding.ts";
 import { getSupabaseClient } from "../../_shared/supabase.ts";
-import { ok, type HandlerContext } from "../../_shared/api-handler.ts";
+import { type HandlerContext, ok } from "../../_shared/api-handler.ts";
 import { parseRoute } from "../../_shared/routing.ts";
 import { AppError } from "../../_shared/errors.ts";
 
 import {
-  VERSION,
-  SERVICE,
-  CONFIG,
-  SIGNUP_LOCATION_CONFIG,
-  ipApiCircuitBreaker,
-  getLocationFromIP,
-  verifySignupWebhook,
-  getAuthenticatedUser,
-  jsonResponse,
-  errorResponse,
-  generateTileUrls,
-  matchUsersSchema,
-  updateAddressSchema,
-  singlePostSchema,
+  type AddressUpdateResult,
   batchPostSchema,
   cleanupSchema,
-  geocodeOnlySchema,
+  CONFIG,
   delay,
-  processQueueItem,
-  type MapPreferencesRow,
-  type MapInteractionEvent,
+  errorResponse,
+  generateTileUrls,
+  geocodeOnlySchema,
+  getAuthenticatedUser,
+  getLocationFromIP,
+  ipApiCircuitBreaker,
+  jsonResponse,
   type MapHotspot,
-  type UserMatch,
-  type AddressUpdateResult,
-  type QueueItem,
+  type MapInteractionEvent,
+  type MapPreferencesRow,
+  matchUsersSchema,
+  processQueueItem,
   type ProcessResult,
+  type QueueItem,
   type QueueStats,
+  SERVICE,
+  SIGNUP_LOCATION_CONFIG,
+  singlePostSchema,
+  updateAddressSchema,
+  type UserMatch,
+  verifySignupWebhook,
+  VERSION,
 } from "./geocoding.ts";
 
 // =============================================================================
@@ -62,16 +62,19 @@ async function handleSignupLocation(
 
   // Health sub-check for GET
   if (req.method === "GET") {
-    return new Response(JSON.stringify({
-      status: "healthy",
-      feature: "signup-location",
-      enabled: SIGNUP_LOCATION_CONFIG.enabled,
-      hookSecretConfigured: !!SIGNUP_LOCATION_CONFIG.hookSecret,
-      circuitBreaker: ipApiCircuitBreaker.state,
-    }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        status: "healthy",
+        feature: "signup-location",
+        enabled: SIGNUP_LOCATION_CONFIG.enabled,
+        hookSecretConfigured: !!SIGNUP_LOCATION_CONFIG.hookSecret,
+        circuitBreaker: ipApiCircuitBreaker.state,
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 
   logger.info("Signup location hook invoked", { requestId });
@@ -97,12 +100,15 @@ async function handleSignupLocation(
           error: verification.error,
           durationMs: Date.now() - startTime,
         });
-        return new Response(JSON.stringify(
-          { error: { message: "Webhook verification failed", http_code: 401 } }
-        ), {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify(
+            { error: { message: "Webhook verification failed", http_code: 401 } },
+          ),
+          {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
 
       logger.info("Signup allowed despite verification failure (graceful degradation)", {
@@ -220,8 +226,10 @@ async function handleMapPreferencesSave(
   requestId: string,
   userId: string,
 ): Promise<Response> {
-  const { center, zoom, mapStyle, searchRadius, platform, deviceId } =
-    body as Record<string, unknown>;
+  const { center, zoom, mapStyle, searchRadius, platform, deviceId } = body as Record<
+    string,
+    unknown
+  >;
 
   if (!center || typeof center !== "object") {
     return errorResponse("Missing or invalid center", corsHeaders, 400, requestId);
@@ -252,7 +260,11 @@ async function handleMapPreferencesSave(
     return errorResponse(error.message, corsHeaders, 500, requestId);
   }
 
-  logger.info("Map preferences saved", { requestId, userId: userId.substring(0, 8), platform: preferences.platform });
+  logger.info("Map preferences saved", {
+    requestId,
+    userId: userId.substring(0, 8),
+    platform: preferences.platform,
+  });
 
   return jsonResponse({ success: true, data }, corsHeaders);
 }
@@ -342,8 +354,7 @@ async function handleMapQualityUpdate(
   requestId: string,
   userId: string,
 ): Promise<Response> {
-  const { bandwidth, latency, connectionType, deviceInfo } =
-    body as Record<string, unknown>;
+  const { bandwidth, latency, connectionType, deviceInfo } = body as Record<string, unknown>;
 
   const supabase = getSupabaseClient();
   const { data, error } = await supabase.rpc("update_network_profile", {
@@ -403,8 +414,11 @@ async function handleMapQualityGet(
       retina: profile.enable_retina,
       vector: profile.enable_vector_tiles,
       concurrent_tiles: profile.max_concurrent_tiles,
-      compression: profile.avg_bandwidth_mbps < 2 ? "high" :
-                   profile.avg_bandwidth_mbps < 10 ? "medium" : "low",
+      compression: profile.avg_bandwidth_mbps < 2
+        ? "high"
+        : profile.avg_bandwidth_mbps < 10
+        ? "medium"
+        : "low",
     },
   }, corsHeaders);
 }
@@ -540,7 +554,7 @@ async function handleMatchUsers(
 async function handleAddressUpdate(
   body: unknown,
   corsHeaders: Record<string, string>,
-  requestId: string
+  requestId: string,
 ): Promise<Response> {
   const parsed = updateAddressSchema.safeParse(body);
   if (!parsed.success) {
@@ -631,10 +645,12 @@ async function handleAddressUpdate(
 async function handlePostBatch(
   body: unknown,
   corsHeaders: Record<string, string>,
-  requestId: string
+  requestId: string,
 ): Promise<Response> {
   const parsed = batchPostSchema.safeParse(body || {});
-  const batchSize = parsed.success ? parsed.data.batch_size || CONFIG.defaultBatchSize : CONFIG.defaultBatchSize;
+  const batchSize = parsed.success
+    ? parsed.data.batch_size || CONFIG.defaultBatchSize
+    : CONFIG.defaultBatchSize;
 
   const supabase = getSupabaseClient();
 
@@ -642,11 +658,16 @@ async function handlePostBatch(
 
   const { data: queueItems, error: fetchError } = await supabase.rpc(
     "get_pending_geocode_queue",
-    { batch_size: batchSize }
+    { batch_size: batchSize },
   );
 
   if (fetchError) {
-    return errorResponse(`Failed to fetch queue: ${fetchError.message}`, corsHeaders, 500, requestId);
+    return errorResponse(
+      `Failed to fetch queue: ${fetchError.message}`,
+      corsHeaders,
+      500,
+      requestId,
+    );
   }
 
   if (!queueItems || queueItems.length === 0) {
@@ -695,7 +716,7 @@ async function handlePostBatch(
 async function handleSinglePost(
   body: unknown,
   corsHeaders: Record<string, string>,
-  requestId: string
+  requestId: string,
 ): Promise<Response> {
   const parsed = singlePostSchema.safeParse(body);
   if (!parsed.success) {
@@ -780,7 +801,7 @@ async function handlePostStats(corsHeaders: Record<string, string>): Promise<Res
 async function handlePostCleanup(
   body: unknown,
   corsHeaders: Record<string, string>,
-  requestId: string
+  requestId: string,
 ): Promise<Response> {
   const parsed = cleanupSchema.safeParse(body || {});
   const daysOld = parsed.success ? parsed.data.days_old || 30 : 30;
@@ -804,7 +825,7 @@ async function handlePostCleanup(
 async function handleGeocodeOnly(
   body: unknown,
   corsHeaders: Record<string, string>,
-  requestId: string
+  requestId: string,
 ): Promise<Response> {
   const parsed = geocodeOnlySchema.safeParse(body);
   if (!parsed.success) {
@@ -845,9 +866,18 @@ export async function handleGet(ctx: HandlerContext): Promise<Response> {
       service: SERVICE,
       timestamp: new Date().toISOString(),
       endpoints: [
-        "address", "post", "post/batch", "post/stats", "post/cleanup",
-        "geocode", "signup-location", "match",
-        "map/preferences", "map/analytics", "map/quality", "map/preload",
+        "address",
+        "post",
+        "post/batch",
+        "post/stats",
+        "post/cleanup",
+        "geocode",
+        "signup-location",
+        "match",
+        "map/preferences",
+        "map/analytics",
+        "map/quality",
+        "map/preload",
       ],
       cacheStats: getCacheStats(),
       signupLocation: {

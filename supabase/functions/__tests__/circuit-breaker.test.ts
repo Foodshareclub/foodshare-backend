@@ -4,10 +4,10 @@
 
 import { assertEquals, assertRejects } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import {
-  withCircuitBreaker,
+  CircuitBreakerError,
   getCircuitStatus,
   resetCircuit,
-  CircuitBreakerError,
+  withCircuitBreaker,
 } from "../_shared/circuit-breaker.ts";
 
 Deno.test("Circuit Breaker - Successful operation", async () => {
@@ -44,7 +44,7 @@ Deno.test("Circuit Breaker - Opens after threshold failures", async () => {
     async () => {
       await withCircuitBreaker(serviceName, async () => "success");
     },
-    CircuitBreakerError
+    CircuitBreakerError,
   );
 });
 

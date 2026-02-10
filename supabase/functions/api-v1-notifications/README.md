@@ -43,6 +43,7 @@ api-v1-notifications/
 ### Send Notifications
 
 #### POST /send
+
 Send a single notification.
 
 ```bash
@@ -61,6 +62,7 @@ curl -X POST https://your-project.supabase.co/functions/v1/api-v1-notifications/
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -88,6 +90,7 @@ Response:
 ```
 
 #### POST /send/batch
+
 Send multiple notifications in batch.
 
 ```bash
@@ -116,6 +119,7 @@ curl -X POST https://your-project.supabase.co/functions/v1/api-v1-notifications/
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -132,6 +136,7 @@ Response:
 ```
 
 #### POST /send/template
+
 Send notification using a template.
 
 ```bash
@@ -152,6 +157,7 @@ curl -X POST https://your-project.supabase.co/functions/v1/api-v1-notifications/
 ### User Preferences
 
 #### GET /preferences
+
 Get user's notification preferences.
 
 ```bash
@@ -160,6 +166,7 @@ curl -X GET https://your-project.supabase.co/functions/v1/api-v1-notifications/p
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -194,6 +201,7 @@ Response:
 ```
 
 #### PUT /preferences
+
 Update notification preferences.
 
 ```bash
@@ -219,6 +227,7 @@ curl -X PUT https://your-project.supabase.co/functions/v1/api-v1-notifications/p
 ```
 
 #### POST /preferences/dnd
+
 Enable Do Not Disturb mode.
 
 ```bash
@@ -231,6 +240,7 @@ curl -X POST https://your-project.supabase.co/functions/v1/api-v1-notifications/
 ```
 
 #### DELETE /preferences/dnd
+
 Disable Do Not Disturb mode.
 
 ```bash
@@ -241,6 +251,7 @@ curl -X DELETE https://your-project.supabase.co/functions/v1/api-v1-notification
 ### Digest Processing (Cron)
 
 #### POST /digest/process
+
 Process queued digest notifications.
 
 ```bash
@@ -257,6 +268,7 @@ curl -X POST https://your-project.supabase.co/functions/v1/api-v1-notifications/
 ### Webhooks
 
 #### POST /webhook/:provider
+
 Handle delivery events from providers (Resend, Brevo, SES, MailerSend, FCM, APNs).
 
 ```bash
@@ -267,6 +279,7 @@ POST https://your-project.supabase.co/functions/v1/api-v1-notifications/webhook/
 ### Dashboard & Health
 
 #### GET /health
+
 Health check endpoint.
 
 ```bash
@@ -274,6 +287,7 @@ curl https://your-project.supabase.co/functions/v1/api-v1-notifications/health
 ```
 
 Response:
+
 ```json
 {
   "status": "healthy",
@@ -283,6 +297,7 @@ Response:
 ```
 
 #### GET /stats
+
 Get system statistics.
 
 ```bash
@@ -290,6 +305,7 @@ curl https://your-project.supabase.co/functions/v1/api-v1-notifications/stats
 ```
 
 #### GET /dashboard
+
 Get dashboard metrics.
 
 ```bash
@@ -462,6 +478,7 @@ All existing functions can continue to work, or migrate to use this unified API.
 ## Support
 
 For issues or questions:
+
 - Check function logs: `supabase functions logs api-v1-notifications`
 - Review database logs for delivery tracking
 - Test with `/health` endpoint first

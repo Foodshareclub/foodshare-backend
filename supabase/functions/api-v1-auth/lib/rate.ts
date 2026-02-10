@@ -146,8 +146,10 @@ export async function handleRateCheck(
       message: status.is_locked
         ? `Account temporarily locked. Try again ${formatTimeRemaining(status.locked_until)}.`
         : status.ip_blocked
-          ? `Too many attempts from this IP. Try again ${formatTimeRemaining(status.ip_blocked_until)}.`
-          : null,
+        ? `Too many attempts from this IP. Try again ${
+          formatTimeRemaining(status.ip_blocked_until)
+        }.`
+        : null,
     }),
     { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
   );
@@ -196,7 +198,9 @@ export async function handleRateRecord(
       failedCount: result?.failed_count || 0,
       ipBlocked: result?.ip_blocked || false,
       message: result?.is_locked
-        ? `Account locked due to too many failed attempts. Try again ${formatTimeRemaining(result.locked_until)}.`
+        ? `Account locked due to too many failed attempts. Try again ${
+          formatTimeRemaining(result.locked_until)
+        }.`
         : null,
     }),
     { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },

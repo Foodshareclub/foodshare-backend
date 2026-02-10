@@ -145,6 +145,7 @@ curl -X GET https://your-project.supabase.co/functions/v1/api-v1-notifications/p
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -283,6 +284,7 @@ curl -X POST https://your-project.supabase.co/functions/v1/api-v1-notifications/
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -309,6 +311,7 @@ curl https://your-project.supabase.co/functions/v1/api-v1-notifications/health
 ```
 
 Response:
+
 ```json
 {
   "status": "healthy",
@@ -324,6 +327,7 @@ curl https://your-project.supabase.co/functions/v1/api-v1-notifications/stats
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -346,6 +350,7 @@ curl https://your-project.supabase.co/functions/v1/api-v1-notifications/dashboar
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -438,65 +443,65 @@ Response:
 ### JavaScript/TypeScript
 
 ```typescript
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
-)
+  process.env.SUPABASE_ANON_KEY!,
+);
 
 // Send notification
 async function sendNotification() {
   const { data, error } = await supabase.functions.invoke(
-    'api-v1-notifications/send',
+    "api-v1-notifications/send",
     {
       body: {
-        userId: 'user-123',
-        type: 'new_message',
-        title: 'New message',
-        body: 'You have a new message',
+        userId: "user-123",
+        type: "new_message",
+        title: "New message",
+        body: "You have a new message",
       },
-    }
-  )
+    },
+  );
 
   if (error) {
-    console.error('Error:', error)
-    return
+    console.error("Error:", error);
+    return;
   }
 
-  console.log('Notification sent:', data)
+  console.log("Notification sent:", data);
 }
 
 // Get preferences
 async function getPreferences() {
   const { data, error } = await supabase.functions.invoke(
-    'api-v1-notifications/preferences',
-    { method: 'GET' }
-  )
+    "api-v1-notifications/preferences",
+    { method: "GET" },
+  );
 
   if (error) {
-    console.error('Error:', error)
-    return
+    console.error("Error:", error);
+    return;
   }
 
-  console.log('Preferences:', data)
+  console.log("Preferences:", data);
 }
 
 // Enable DND
 async function enableDnd(hours: number) {
   const { data, error } = await supabase.functions.invoke(
-    'api-v1-notifications/preferences/dnd',
+    "api-v1-notifications/preferences/dnd",
     {
       body: { duration_hours: hours },
-    }
-  )
+    },
+  );
 
   if (error) {
-    console.error('Error:', error)
-    return
+    console.error("Error:", error);
+    return;
   }
 
-  console.log('DND enabled:', data)
+  console.log("DND enabled:", data);
 }
 ```
 
@@ -550,16 +555,21 @@ def get_preferences():
 ## Common Issues
 
 ### Issue: "Authentication failed"
+
 **Solution**: Check JWT token is valid and not expired
 
 ### Issue: "No device tokens found"
+
 **Solution**: Ensure user has registered device tokens in `device_tokens` table
 
 ### Issue: "Email suppressed"
+
 **Solution**: Check `email_suppressions` table for user's email
 
 ### Issue: "Blocked by preferences"
+
 **Solution**: Check user's notification preferences and quiet hours settings
 
 ### Issue: "Webhook signature invalid"
+
 **Solution**: Verify webhook secret matches provider configuration

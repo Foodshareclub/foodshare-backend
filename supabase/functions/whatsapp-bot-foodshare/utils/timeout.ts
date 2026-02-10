@@ -10,7 +10,7 @@ import { logger } from "../../_shared/logger.ts";
 export async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
-  errorMessage = "Operation timed out"
+  errorMessage = "Operation timed out",
 ): Promise<T> {
   let timeoutId: number;
 
@@ -48,7 +48,7 @@ export async function retryWithBackoff<T>(
     maxDelayMs?: number;
     backoffMultiplier?: number;
     shouldRetry?: (error: Error) => boolean;
-  } = {}
+  } = {},
 ): Promise<T> {
   const {
     maxRetries = 3,

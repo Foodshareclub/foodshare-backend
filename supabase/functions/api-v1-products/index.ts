@@ -24,25 +24,26 @@
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import {
   createAPIHandler,
-  ok,
   created,
-  noContent,
-  paginated,
   type HandlerContext,
+  noContent,
+  ok,
+  paginated,
 } from "../_shared/api-handler.ts";
-import { NotFoundError, ValidationError, ConflictError } from "../_shared/errors.ts";
+import { ConflictError, NotFoundError, ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
 import { cache } from "../_shared/cache.ts";
-import { sanitizeHtml, LISTING, parseIntSafe, parseFloatSafe, parseFloatSafeWithBounds } from "../_shared/validation-rules.ts";
-import { validateProductImageUrls } from "../_shared/storage-urls.ts";
 import {
-  decodeCursor,
-  encodeCursor,
-  normalizeLimit,
-  type CompositeCursor,
-} from "../_shared/pagination.ts";
+  LISTING,
+  parseFloatSafe,
+  parseFloatSafeWithBounds,
+  parseIntSafe,
+  sanitizeHtml,
+} from "../_shared/validation-rules.ts";
+import { validateProductImageUrls } from "../_shared/storage-urls.ts";
+import { decodeCursor, encodeCursor, normalizeLimit } from "../_shared/pagination.ts";
 import { aggregateCounts } from "../_shared/aggregation.ts";
-import { transformProfileSummary, transformCategory } from "../_shared/transformers.ts";
+import { transformCategory, transformProfileSummary } from "../_shared/transformers.ts";
 
 const VERSION = "2.0.0";
 
@@ -198,7 +199,7 @@ async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Re
     // 1. Created before the cursor timestamp, OR
     // 2. Created at the same timestamp but with a smaller ID
     dbQuery = dbQuery.or(
-      `created_at.lt.${cursor.timestamp},and(created_at.eq.${cursor.timestamp},id.lt.${cursor.id})`
+      `created_at.lt.${cursor.timestamp},and(created_at.eq.${cursor.timestamp},id.lt.${cursor.id})`,
     );
   }
 
@@ -231,9 +232,9 @@ async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Re
   const lastItem = resultItems[resultItems.length - 1];
   const nextCursor = hasMore && lastItem
     ? encodeCursor({
-        timestamp: lastItem.created_at,
-        id: String(lastItem.id),
-      })
+      timestamp: lastItem.created_at,
+      id: String(lastItem.id),
+    })
     : null;
 
   const transformedItems = resultItems.map(transformProduct);
@@ -254,7 +255,7 @@ async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Re
       limit,
       total: count || resultItems.length,
       nextCursor,
-    }
+    },
   );
 }
 
@@ -269,7 +270,7 @@ async function getProduct(ctx: HandlerContext<unknown, ListQuery>): Promise<Resp
     throw new ValidationError("Product ID is required");
   }
 
-  const includes = query.include?.split(",").map(s => s.trim()) || [];
+  const includes = query.include?.split(",").map((s) => s.trim()) || [];
   const includeOwner = includes.includes("owner");
   const includeRelated = includes.includes("related");
 
@@ -306,7 +307,7 @@ async function getProduct(ctx: HandlerContext<unknown, ListQuery>): Promise<Resp
       .limit(6);
 
     if (related) {
-      result.relatedListings = related.map(r => ({
+      result.relatedListings = related.map((r) => ({
         id: r.id,
         title: r.title,
         imageUrl: r.images?.[0],
@@ -347,7 +348,7 @@ async function createProduct(ctx: HandlerContext<CreateProductBody>): Promise<Re
   if (!imageCheck.valid) {
     throw new ValidationError(
       "All image URLs must be uploaded through our image API",
-      { invalidUrls: imageCheck.invalidUrls }
+      { invalidUrls: imageCheck.invalidUrls },
     );
   }
 
@@ -363,7 +364,7 @@ async function createProduct(ctx: HandlerContext<CreateProductBody>): Promise<Re
     {
       p_title: sanitizedTitle,
       p_description: sanitizedDescription || "",
-    }
+    },
   );
 
   if (validationError) {
@@ -419,7 +420,7 @@ async function createProduct(ctx: HandlerContext<CreateProductBody>): Promise<Re
         logger.warn("Failed to trigger new-listing notification", {
           error: err instanceof Error ? err.message : String(err),
         });
-      })
+      }),
     );
   } catch {
     // EdgeRuntime.waitUntil may not be available in all environments
@@ -462,7 +463,7 @@ async function updateProduct(ctx: HandlerContext<UpdateProductBody, ListQuery>):
   if (existing.version !== body.version) {
     throw new ConflictError(
       "Product was modified by another request. Please refresh and try again.",
-      { currentVersion: existing.version, expectedVersion: body.version }
+      { currentVersion: existing.version, expectedVersion: body.version },
     );
   }
 
@@ -472,7 +473,7 @@ async function updateProduct(ctx: HandlerContext<UpdateProductBody, ListQuery>):
     if (!imageCheck.valid) {
       throw new ValidationError(
         "All image URLs must be uploaded through our image API",
-        { invalidUrls: imageCheck.invalidUrls }
+        { invalidUrls: imageCheck.invalidUrls },
       );
     }
   }
@@ -582,9 +583,7 @@ function transformProductDetail(data: Record<string, unknown>) {
   const profileSummary = transformProfileSummary(profile);
   return {
     ...base,
-    user: profileSummary
-      ? { ...profileSummary, memberSince: profile?.created_at ?? null }
-      : null,
+    user: profileSummary ? { ...profileSummary, memberSince: profile?.created_at ?? null } : null,
     category: transformCategory(category),
   };
 }
@@ -600,7 +599,12 @@ async function handleGet(ctx: HandlerContext<unknown, ListQuery>): Promise<Respo
   // Health check
   const url = new URL(ctx.request.url);
   if (url.pathname.endsWith("/health")) {
-    return ok({ status: "healthy", service: "api-v1-products", version: VERSION, timestamp: new Date().toISOString() }, ctx);
+    return ok({
+      status: "healthy",
+      service: "api-v1-products",
+      version: VERSION,
+      timestamp: new Date().toISOString(),
+    }, ctx);
   }
 
   if (ctx.query.mode === "feed") {

@@ -19,21 +19,31 @@ import { getSupabaseClient } from "../_shared/supabase.ts";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { logger } from "../_shared/logger.ts";
 import { AppError } from "../_shared/errors.ts";
-import { buildSuccessResponse, buildErrorResponse } from "../_shared/response-adapter.ts";
-import { trackError, getErrorStats } from "../_shared/error-tracking.ts";
-import { measureAsync, PerformanceTimer, getMetricsSummary, getHealthMetrics } from "../_shared/performance.ts";
-import { withCircuitBreaker, getAllCircuitStatuses, isCircuitHealthy, configureCircuit } from "../_shared/circuit-breaker.ts";
+import { buildErrorResponse, buildSuccessResponse } from "../_shared/response-adapter.ts";
+import { getErrorStats, trackError } from "../_shared/error-tracking.ts";
+import {
+  getHealthMetrics,
+  getMetricsSummary,
+  measureAsync,
+  PerformanceTimer,
+} from "../_shared/performance.ts";
+import {
+  configureCircuit,
+  getAllCircuitStatuses,
+  isCircuitHealthy,
+  withCircuitBreaker,
+} from "../_shared/circuit-breaker.ts";
 import {
   PlatformHandler,
-  SubscriptionEvent,
-  SubscriptionPlatform,
-  SubscriptionEventType,
   shouldUpdateSubscription,
+  SubscriptionEvent,
+  SubscriptionEventType,
+  SubscriptionPlatform,
 } from "../_shared/subscriptions/types.ts";
 import {
-  sendSubscriptionAlert,
   sendCircuitBreakerAlert,
   sendErrorRateAlert,
+  sendSubscriptionAlert,
 } from "../_shared/telegram-alerts.ts";
 
 import { appleHandler } from "./handlers/apple.ts";
@@ -51,7 +61,10 @@ const RETRY_CONFIG = {
   backoffMultiplier: 2,
 };
 
-const PLATFORM_RATE_LIMITS: Record<SubscriptionPlatform, { maxRequests: number; windowMs: number }> = {
+const PLATFORM_RATE_LIMITS: Record<
+  SubscriptionPlatform,
+  { maxRequests: number; windowMs: number }
+> = {
   apple: { maxRequests: 200, windowMs: 60000 },
   google_play: { maxRequests: 200, windowMs: 60000 },
   stripe: { maxRequests: 500, windowMs: 60000 },
@@ -86,7 +99,10 @@ interface WebhookMetrics {
   requestsError: number;
   requestsDuplicate: number;
   requestsRateLimited: number;
-  byPlatform: Record<SubscriptionPlatform, { success: number; error: number; lastEventAt: string | null }>;
+  byPlatform: Record<
+    SubscriptionPlatform,
+    { success: number; error: number; lastEventAt: string | null }
+  >;
   avgLatencyMs: number;
   p95LatencyMs: number;
   lastProcessedAt: string | null;
@@ -153,7 +169,7 @@ configureCircuit("subscription-db", {
       sendCircuitBreakerAlert(
         service,
         to as "OPEN" | "HALF_OPEN" | "CLOSED",
-        state.failures
+        state.failures,
       ).catch((err) => {
         logger.warn("Failed to send circuit breaker alert", {
           error: err instanceof Error ? err.message : String(err),
@@ -169,7 +185,7 @@ configureCircuit("subscription-db", {
 
 async function trackRevenueEvent(
   eventType: SubscriptionEventType,
-  event?: SubscriptionEvent
+  event?: SubscriptionEvent,
 ): Promise<void> {
   switch (eventType) {
     case "subscription_created":
@@ -239,7 +255,7 @@ function updateLatencyMetrics(latencyMs: number): void {
   }
 
   metrics.avgLatencyMs = Math.round(
-    latencyBuffer.reduce((a, b) => a + b, 0) / latencyBuffer.length
+    latencyBuffer.reduce((a, b) => a + b, 0) / latencyBuffer.length,
   );
 
   if (latencyBuffer.length >= 20) {
@@ -274,7 +290,7 @@ function checkErrorRateAndAlert(): void {
     sendErrorRateAlert(
       errorRate,
       metrics.requestsTotal,
-      metrics.requestsError
+      metrics.requestsError,
     ).catch((err) => {
       logger.warn("Failed to send error rate alert", {
         error: err instanceof Error ? err.message : String(err),
@@ -289,7 +305,7 @@ async function sleep(ms: number): Promise<void> {
 
 async function retryWithBackoff<T>(
   operation: () => Promise<T>,
-  operationName: string
+  operationName: string,
 ): Promise<T> {
   let lastError: Error | undefined;
 
@@ -303,7 +319,8 @@ async function retryWithBackoff<T>(
         break;
       }
 
-      const baseDelay = RETRY_CONFIG.baseDelayMs * Math.pow(RETRY_CONFIG.backoffMultiplier, attempt);
+      const baseDelay = RETRY_CONFIG.baseDelayMs *
+        Math.pow(RETRY_CONFIG.backoffMultiplier, attempt);
       const jitter = Math.random() * baseDelay * 0.1;
       const delay = Math.min(baseDelay + jitter, RETRY_CONFIG.maxDelayMs);
 
@@ -387,7 +404,7 @@ const getServiceRoleClient = getSupabaseClient;
 async function findUserForTransaction(
   supabase: ReturnType<typeof getServiceRoleClient>,
   appAccountToken: string | undefined,
-  originalTransactionId: string
+  originalTransactionId: string,
 ): Promise<string | null> {
   return await withCircuitBreaker("subscription-db", async () => {
     return await measureAsync("db.find_user", async () => {
@@ -456,7 +473,7 @@ async function validateStatusTransition(
   originalTransactionId: string,
   platform: string,
   newStatus: string,
-  eventType: string
+  eventType: string,
 ): Promise<{ valid: boolean; currentStatus: string }> {
   return await withCircuitBreaker("subscription-db", async () => {
     const { data: currentStatus } = await supabase.rpc("billing_get_current_status", {
@@ -493,7 +510,7 @@ interface AtomicProcessResult {
 async function processWebhookAtomically(
   supabase: ReturnType<typeof getServiceRoleClient>,
   event: SubscriptionEvent,
-  userId: string | null
+  userId: string | null,
 ): Promise<AtomicProcessResult> {
   return await withCircuitBreaker("subscription-db", async () => {
     return await retryWithBackoff(async () => {
@@ -574,7 +591,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
     metrics.requestsError++;
     return buildErrorResponse(
       new AppError("Empty request body", "INVALID_REQUEST", 400),
-      corsHeaders
+      corsHeaders,
     );
   }
 
@@ -619,7 +636,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
     });
     return buildErrorResponse(
       new AppError("Unable to detect webhook platform", "UNKNOWN_PLATFORM", 400),
-      corsHeaders
+      corsHeaders,
     );
   }
 
@@ -636,7 +653,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
     isValid = await measureAsync(
       "webhook.verify",
       () => handler!.verifyWebhook(req, body),
-      { platform }
+      { platform },
     );
   } catch (error) {
     metrics.requestsError++;
@@ -647,7 +664,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
     logger.error(`${platform} webhook verification error`, err);
     return buildSuccessResponse(
       { received: true, error: "verification_error" },
-      corsHeaders
+      corsHeaders,
     );
   }
 
@@ -658,7 +675,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
     logger.warn(`${platform} webhook verification failed`, { requestId });
     return buildSuccessResponse(
       { received: true, error: "verification_failed" },
-      corsHeaders
+      corsHeaders,
     );
   }
 
@@ -668,7 +685,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
     event = await measureAsync(
       "webhook.parse",
       () => handler!.parseEvent(req, body),
-      { platform }
+      { platform },
     );
   } catch (error) {
     metrics.requestsError++;
@@ -679,7 +696,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
     logger.error(`Failed to parse ${platform} event`, err);
     return buildSuccessResponse(
       { received: true, error: "parse_failed" },
-      corsHeaders
+      corsHeaders,
     );
   }
 
@@ -693,7 +710,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
     });
     return buildSuccessResponse(
       { received: true, already_processed: true, source: "cache" },
-      corsHeaders
+      corsHeaders,
     );
   }
 
@@ -722,7 +739,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
     });
     return buildSuccessResponse(
       { received: true, error: "validation_failed", details: validation.errors },
-      corsHeaders
+      corsHeaders,
     );
   }
 
@@ -740,7 +757,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
         metrics.requestsDuplicate++;
         return buildSuccessResponse(
           { received: true, already_processed: true, source: "database" },
-          corsHeaders
+          corsHeaders,
         );
       }
     } catch (error) {
@@ -757,7 +774,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
 
     return buildSuccessResponse(
       { received: true, processed: true, action: "none" },
-      corsHeaders
+      corsHeaders,
     );
   }
 
@@ -765,7 +782,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
   const userId = await findUserForTransaction(
     supabase,
     event.subscription.appUserId,
-    event.subscription.originalTransactionId
+    event.subscription.originalTransactionId,
   );
 
   // Step 4: Validate state transition
@@ -776,7 +793,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
         event.subscription.originalTransactionId,
         event.platform,
         event.subscription.status,
-        event.eventType
+        event.eventType,
       );
 
       if (!transitionCheck.valid) {
@@ -815,7 +832,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
 
     return buildSuccessResponse(
       { received: true, error: "processing_failed", dlq: true },
-      corsHeaders
+      corsHeaders,
     );
   }
 
@@ -828,7 +845,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
     });
     return buildSuccessResponse(
       { received: true, already_processed: true, source: "database" },
-      corsHeaders
+      corsHeaders,
     );
   }
 
@@ -850,7 +867,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
 
     return buildSuccessResponse(
       { received: true, processed: true, user_found: false },
-      corsHeaders
+      corsHeaders,
     );
   }
 
@@ -889,7 +906,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
       status: event.subscription.status,
       subscription_id: result.subscriptionId,
     },
-    corsHeaders
+    corsHeaders,
   );
 }
 
@@ -897,7 +914,7 @@ export async function handleWebhook(req: Request): Promise<Response> {
 // Health & Metrics (exported)
 // =============================================================================
 
-export function getWebhookHealthData(req: Request): Record<string, unknown> {
+export function getWebhookHealthData(_req: Request): Record<string, unknown> {
   const circuitStatuses = getAllCircuitStatuses();
   const dbCircuitHealthy = isCircuitHealthy("subscription-db");
 
@@ -968,7 +985,9 @@ export function getWebhookMetricsData(): Record<string, unknown> {
     : "0.00";
 
   const graceRecoveryRate = metrics.revenueEvents.billingIssues > 0
-    ? ((metrics.revenueEvents.graceRecoveries / metrics.revenueEvents.billingIssues) * 100).toFixed(2)
+    ? ((metrics.revenueEvents.graceRecoveries / metrics.revenueEvents.billingIssues) * 100).toFixed(
+      2,
+    )
     : "0.00";
 
   return {

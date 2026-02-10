@@ -103,7 +103,8 @@ function isPrivateIp(ip: string): boolean {
   const ipNum = ipToNumber(ip);
   if (ipNum === -1) {
     // Invalid IPv4, check for IPv6 loopback
-    return ip === "::1" || ip === "[::1]" || ip.startsWith("fe80:") || ip.startsWith("fc00:") || ip.startsWith("fd00:");
+    return ip === "::1" || ip === "[::1]" || ip.startsWith("fe80:") || ip.startsWith("fc00:") ||
+      ip.startsWith("fd00:");
   }
 
   for (const range of PRIVATE_IP_RANGES) {
@@ -166,7 +167,7 @@ function isBlockedHostname(hostname: string, additionalBlocked: string[] = []): 
  */
 export function validateUrl(
   urlString: string,
-  options: UrlValidationOptions = {}
+  options: UrlValidationOptions = {},
 ): UrlValidationResult {
   const {
     allowHttp = true,
@@ -241,7 +242,7 @@ export function validateUrl(
  */
 export function validateImageUrl(
   urlString: string,
-  options: UrlValidationOptions = {}
+  options: UrlValidationOptions = {},
 ): UrlValidationResult {
   const baseResult = validateUrl(urlString, options);
   if (!baseResult.valid) {
@@ -324,7 +325,7 @@ export function sanitizeUrl(urlString: string): string | null {
  */
 export function isSafeToFetch(
   urlString: string,
-  options: UrlValidationOptions = {}
+  options: UrlValidationOptions = {},
 ): { safe: boolean; sanitizedUrl?: string; reason?: string } {
   const validation = validateUrl(urlString, options);
 

@@ -4,16 +4,14 @@
  * Tests Cross-Site Request Forgery prevention mechanisms.
  */
 
-import {
-  assertEquals,
-} from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 
 import {
-  validateCsrf,
-  generateCsrfToken,
-  validateCsrfToken,
-  shouldValidateCsrf,
   CsrfError,
+  generateCsrfToken,
+  shouldValidateCsrf,
+  validateCsrf,
+  validateCsrfToken,
 } from "../../_shared/csrf.ts";
 
 // ============================================================================
@@ -23,7 +21,7 @@ import {
 function createRequest(
   method: string,
   origin?: string | null,
-  referer?: string | null
+  referer?: string | null,
 ): Request {
   const headers: Record<string, string> = {};
 

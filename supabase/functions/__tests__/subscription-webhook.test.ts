@@ -4,22 +4,19 @@
  * Comprehensive tests for the cross-platform subscription webhook handler.
  */
 
-import {
-  assertEquals,
-  assertStringIncludes,
-} from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.208.0/assert/mod.ts";
 
 import {
-  shouldUpdateSubscription,
-  normalizeEnvironment,
-  hasPremiumAccess,
   getEventSeverity,
-  isPositiveEvent,
+  hasPremiumAccess,
   isNegativeEvent,
-  validateEvent,
+  isPositiveEvent,
+  normalizeEnvironment,
+  shouldUpdateSubscription,
   type SubscriptionEvent,
   type SubscriptionEventType,
   type SubscriptionStatus,
+  validateEvent,
 } from "../_shared/subscriptions/types.ts";
 
 // =============================================================================
@@ -48,7 +45,7 @@ Deno.test("shouldUpdateSubscription - returns true for status-changing events", 
     assertEquals(
       shouldUpdateSubscription(event),
       true,
-      `Expected shouldUpdateSubscription to return true for ${event}`
+      `Expected shouldUpdateSubscription to return true for ${event}`,
     );
   }
 });
@@ -64,7 +61,7 @@ Deno.test("shouldUpdateSubscription - returns false for non-status events", () =
     assertEquals(
       shouldUpdateSubscription(event),
       false,
-      `Expected shouldUpdateSubscription to return false for ${event}`
+      `Expected shouldUpdateSubscription to return false for ${event}`,
     );
   }
 });
@@ -123,7 +120,7 @@ Deno.test("hasPremiumAccess - returns false for inactive statuses", () => {
     assertEquals(
       hasPremiumAccess(status),
       false,
-      `Expected hasPremiumAccess to return false for ${status}`
+      `Expected hasPremiumAccess to return false for ${status}`,
     );
   }
 });
@@ -346,7 +343,7 @@ Deno.test("All SubscriptionEventType values are handled", () => {
     assertEquals(
       typeof result,
       "boolean",
-      `shouldUpdateSubscription should return boolean for ${type}`
+      `shouldUpdateSubscription should return boolean for ${type}`,
     );
   }
 
@@ -356,7 +353,7 @@ Deno.test("All SubscriptionEventType values are handled", () => {
     assertEquals(
       ["info", "warn", "error"].includes(result),
       true,
-      `getEventSeverity should return valid severity for ${type}`
+      `getEventSeverity should return valid severity for ${type}`,
     );
   }
 });
@@ -384,7 +381,7 @@ Deno.test("All SubscriptionStatus values are handled by hasPremiumAccess", () =>
     assertEquals(
       typeof result,
       "boolean",
-      `hasPremiumAccess should return boolean for ${status}`
+      `hasPremiumAccess should return boolean for ${status}`,
     );
   }
 });

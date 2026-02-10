@@ -14,6 +14,7 @@ supabase db pull --dry-run
 ```
 
 Expected tables:
+
 - `notification_delivery_log`
 - `notification_queue`
 - `notification_digest_queue`
@@ -184,7 +185,7 @@ Create cron configuration file if it doesn't exist:
 functions:
   # Hourly digest
   - name: hourly-digest
-    schedule: "0 * * * *"  # Every hour at :00
+    schedule: "0 * * * *" # Every hour at :00
     url: https://your-project.supabase.co/functions/v1/api-v1-notifications/digest/process
     method: POST
     headers:
@@ -194,7 +195,7 @@ functions:
 
   # Daily digest
   - name: daily-digest
-    schedule: "0 9 * * *"  # Every day at 9am UTC
+    schedule: "0 9 * * *" # Every day at 9am UTC
     url: https://your-project.supabase.co/functions/v1/api-v1-notifications/digest/process
     method: POST
     headers:
@@ -204,7 +205,7 @@ functions:
 
   # Weekly digest
   - name: weekly-digest
-    schedule: "0 9 * * 1"  # Every Monday at 9am UTC
+    schedule: "0 9 * * 1" # Every Monday at 9am UTC
     url: https://your-project.supabase.co/functions/v1/api-v1-notifications/digest/process
     method: POST
     headers:
@@ -214,7 +215,7 @@ functions:
 
   # Cleanup old notifications
   - name: cleanup-notifications
-    schedule: "0 2 * * *"  # Every day at 2am UTC
+    schedule: "0 2 * * *" # Every day at 2am UTC
     url: https://your-project.supabase.co/functions/v1/api-v1-notifications/admin/cleanup
     method: POST
     headers:

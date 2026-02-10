@@ -29,8 +29,7 @@ function getDisplayWidth(str: string): number {
     // - Misc Symbols: U+2600 to U+26FF
     // - Dingbats: U+2700 to U+27BF
     // - Various supplement blocks
-    const isEmoji =
-      (codePoint >= 0x1f300 && codePoint <= 0x1f9ff) || // Various emoji blocks
+    const isEmoji = (codePoint >= 0x1f300 && codePoint <= 0x1f9ff) || // Various emoji blocks
       (codePoint >= 0x2600 && codePoint <= 0x26ff) || // Misc symbols
       (codePoint >= 0x2700 && codePoint <= 0x27bf) || // Dingbats
       (codePoint >= 0x1fa00 && codePoint <= 0x1faff) || // Extended-A
@@ -199,7 +198,9 @@ export function foodCard(food: {
   msg += `\n`;
 
   if (food.description) {
-    msg += `${emoji.TEXT} ${food.description.substring(0, 100)}${food.description.length > 100 ? "..." : ""}\n`;
+    msg += `${emoji.TEXT} ${food.description.substring(0, 100)}${
+      food.description.length > 100 ? "..." : ""
+    }\n`;
   }
 
   if (food.address) {

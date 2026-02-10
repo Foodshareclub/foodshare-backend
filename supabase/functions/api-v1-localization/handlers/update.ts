@@ -33,14 +33,14 @@ const VERSION = "2.0.0";
  */
 function deepMerge(
   target: Record<string, unknown>,
-  source: Record<string, unknown>
+  source: Record<string, unknown>,
 ): Record<string, unknown> {
   const result = { ...target };
   for (const [key, value] of Object.entries(source)) {
     if (value !== null && typeof value === "object" && !Array.isArray(value)) {
       result[key] = deepMerge(
         (result[key] as Record<string, unknown>) || {},
-        value as Record<string, unknown>
+        value as Record<string, unknown>,
       );
     } else {
       result[key] = value;
@@ -64,15 +64,21 @@ function countKeys(obj: Record<string, unknown>): number {
   return count;
 }
 
-export default async function updateHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
+export default async function updateHandler(
+  req: Request,
+  corsHeaders: Record<string, string>,
+): Promise<Response> {
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({
-      success: false,
-      error: "Method not allowed. Use POST."
-    }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "Method not allowed. Use POST.",
+      }),
+      {
+        status: 405,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 
   const supabase = getSupabaseClient();
@@ -82,14 +88,17 @@ export default async function updateHandler(req: Request, corsHeaders: Record<st
     const { locale, updates } = body;
 
     if (!locale || !updates) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "missing_params",
-        message: "locale and updates are required"
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "missing_params",
+          message: "locale and updates are required",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Get current translations
@@ -100,20 +109,23 @@ export default async function updateHandler(req: Request, corsHeaders: Record<st
       .single();
 
     if (fetchError || !current) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "locale_not_found",
-        message: `Locale '${locale}' not found`
-      }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "locale_not_found",
+          message: `Locale '${locale}' not found`,
+        }),
+        {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Merge updates
     const mergedMessages = deepMerge(
       current.messages as Record<string, unknown>,
-      updates
+      updates,
     );
     const newVersion = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
 
@@ -128,35 +140,43 @@ export default async function updateHandler(req: Request, corsHeaders: Record<st
       .eq("id", current.id);
 
     if (updateError) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "update_failed",
-        message: updateError.message
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "update_failed",
+          message: updateError.message,
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
-    return new Response(JSON.stringify({
-      success: true,
-      version: VERSION,
-      locale,
-      previousVersion: current.version,
-      newVersion,
-      keysUpdated: countKeys(updates)
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
-
+    return new Response(
+      JSON.stringify({
+        success: true,
+        version: VERSION,
+        locale,
+        previousVersion: current.version,
+        newVersion,
+        keysUpdated: countKeys(updates),
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
-    return new Response(JSON.stringify({
-      success: false,
-      error: "server_error",
-      message: error instanceof Error ? error.message : String(error)
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "server_error",
+        message: error instanceof Error ? error.message : String(error),
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 }

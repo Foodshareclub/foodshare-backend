@@ -5,13 +5,13 @@
 import { logger } from "../../_shared/logger.ts";
 import { AppError } from "../../_shared/errors.ts";
 import {
-  type SearchResultItem,
-  type SearchFilters,
-  normalizeQuery,
   escapePostgresLike,
-  sanitizeInput,
-  transformPostsToResults,
   filterByDistance,
+  normalizeQuery,
+  sanitizeInput,
+  type SearchFilters,
+  type SearchResultItem,
+  transformPostsToResults,
 } from "./types.ts";
 
 // =============================================================================
@@ -108,9 +108,7 @@ export async function textSearch(
   }
 
   const results = transformPostsToResults(fallbackData || []);
-  const filteredResults = filters?.location
-    ? filterByDistance(results, filters.location)
-    : results;
+  const filteredResults = filters?.location ? filterByDistance(results, filters.location) : results;
   return { results: filteredResults, total: count || filteredResults.length };
 }
 

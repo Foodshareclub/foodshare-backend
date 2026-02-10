@@ -59,7 +59,7 @@ export class AppError extends Error {
       retryable?: boolean;
       details?: unknown;
       cause?: Error;
-    }
+    },
   ) {
     super(message, { cause: options?.cause });
     this.name = this.constructor.name;
@@ -156,7 +156,7 @@ export class CircuitOpenError extends AppError {
       `Service ${service} temporarily unavailable`,
       "CIRCUIT_OPEN",
       503,
-      { retryable: true, details: { service, retryAfterMs } }
+      { retryable: true, details: { service, retryAfterMs } },
     );
   }
 }
@@ -170,7 +170,7 @@ export class ExternalServiceError extends AppError {
       `External service error (${service}): ${message}`,
       "EXTERNAL_SERVICE_ERROR",
       502,
-      { retryable, details: { service } }
+      { retryable, details: { service } },
     );
   }
 }
@@ -184,7 +184,7 @@ export class TimeoutError extends AppError {
       `Operation '${operation}' timed out after ${timeoutMs}ms`,
       "TIMEOUT",
       504,
-      { retryable: true, details: { operation, timeoutMs } }
+      { retryable: true, details: { operation, timeoutMs } },
     );
   }
 }
@@ -278,7 +278,7 @@ export class UnprocessableEntityError extends AppError {
 export function assertValid(
   condition: unknown,
   message: string,
-  details?: unknown
+  details?: unknown,
 ): asserts condition {
   if (!condition) {
     throw new ValidationError(message, details);
@@ -291,7 +291,7 @@ export function assertValid(
 export function assertFound<T>(
   value: T | null | undefined,
   resource: string,
-  id?: string
+  id?: string,
 ): asserts value is T {
   if (value === null || value === undefined) {
     throw new NotFoundError(resource, id);
@@ -312,7 +312,7 @@ export function assertAuthenticated(userId?: string | null): asserts userId is s
  */
 export async function withExternalService<T>(
   serviceName: string,
-  operation: () => Promise<T>
+  operation: () => Promise<T>,
 ): Promise<T> {
   try {
     return await operation();
@@ -322,7 +322,7 @@ export async function withExternalService<T>(
     }
     throw new ExternalServiceError(
       serviceName,
-      error instanceof Error ? error.message : String(error)
+      error instanceof Error ? error.message : String(error),
     );
   }
 }

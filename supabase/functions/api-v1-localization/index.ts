@@ -61,7 +61,10 @@ function getSubPath(url: URL): string {
 }
 
 // Handler signature: all handlers receive request + pre-computed CORS headers
-type HandlerFn = (req: Request, corsHeaders: Record<string, string>) => Promise<Response> | Response;
+type HandlerFn = (
+  req: Request,
+  corsHeaders: Record<string, string>,
+) => Promise<Response> | Response;
 
 // Handler map for POST routes
 const postHandlers: Record<string, HandlerFn> = {
@@ -112,36 +115,122 @@ async function routeRequest(ctx: HandlerContext): Promise<Response> {
 
   // Root info for non-GET methods on /
   if (subPath === "" || subPath === "/") {
-    return new Response(JSON.stringify({
-      success: true,
-      service: SERVICE,
-      version: "3.0.0",
-      endpoints: [
-        { path: "/api-v1-localization", method: "GET", description: "UI string bundles (simple)" },
-        { path: "/api-v1-localization/translations", method: "GET", description: "UI strings with delta sync" },
-        { path: "/api-v1-localization/translate-content", method: "POST", description: "Dynamic content translation via LLM" },
-        { path: "/api-v1-localization/prewarm", method: "POST", description: "Prewarm translation cache" },
-        { path: "/api-v1-localization/translate-batch", method: "POST", description: "Batch translate content to all locales" },
-        { path: "/api-v1-localization/audit", method: "GET", description: "Audit untranslated UI strings" },
-        { path: "/api-v1-localization/ui-batch-translate", method: "POST", description: "Batch translate UI strings with LLM" },
-        { path: "/api-v1-localization/update", method: "POST", description: "Update UI string translations" },
-        { path: "/api-v1-localization/get-translations", method: "POST", description: "Get cached translations for content (BFF)" },
-        { path: "/api-v1-localization/backfill-posts", method: "POST", description: "Backfill translations for existing posts" },
-        { path: "/api-v1-localization/backfill-challenges", method: "POST", description: "Backfill translations for challenges" },
-        { path: "/api-v1-localization/backfill-forum-posts", method: "POST", description: "Backfill translations for forum posts" },
-        { path: "/api-v1-localization/process-queue", method: "POST", description: "Process pending translations from queue" },
-        { path: "/api-v1-localization/generate-infoplist-strings", method: "POST", description: "Generate localized InfoPlist.strings" },
-        { path: "/api-v1-localization/sync-to-redis", method: "POST", description: "Sync locale preference to Redis cache" },
-        { path: "/api-v1-localization/health", method: "GET", description: "Comprehensive health check" },
-      ],
-      supportedLocales: [
-        "en", "cs", "de", "es", "fr", "pt", "ru", "uk", "zh", "hi",
-        "ar", "it", "pl", "nl", "ja", "ko", "tr", "vi", "id", "th", "sv"
-      ],
-    }), {
-      status: 200,
-      headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        success: true,
+        service: SERVICE,
+        version: "3.0.0",
+        endpoints: [
+          {
+            path: "/api-v1-localization",
+            method: "GET",
+            description: "UI string bundles (simple)",
+          },
+          {
+            path: "/api-v1-localization/translations",
+            method: "GET",
+            description: "UI strings with delta sync",
+          },
+          {
+            path: "/api-v1-localization/translate-content",
+            method: "POST",
+            description: "Dynamic content translation via LLM",
+          },
+          {
+            path: "/api-v1-localization/prewarm",
+            method: "POST",
+            description: "Prewarm translation cache",
+          },
+          {
+            path: "/api-v1-localization/translate-batch",
+            method: "POST",
+            description: "Batch translate content to all locales",
+          },
+          {
+            path: "/api-v1-localization/audit",
+            method: "GET",
+            description: "Audit untranslated UI strings",
+          },
+          {
+            path: "/api-v1-localization/ui-batch-translate",
+            method: "POST",
+            description: "Batch translate UI strings with LLM",
+          },
+          {
+            path: "/api-v1-localization/update",
+            method: "POST",
+            description: "Update UI string translations",
+          },
+          {
+            path: "/api-v1-localization/get-translations",
+            method: "POST",
+            description: "Get cached translations for content (BFF)",
+          },
+          {
+            path: "/api-v1-localization/backfill-posts",
+            method: "POST",
+            description: "Backfill translations for existing posts",
+          },
+          {
+            path: "/api-v1-localization/backfill-challenges",
+            method: "POST",
+            description: "Backfill translations for challenges",
+          },
+          {
+            path: "/api-v1-localization/backfill-forum-posts",
+            method: "POST",
+            description: "Backfill translations for forum posts",
+          },
+          {
+            path: "/api-v1-localization/process-queue",
+            method: "POST",
+            description: "Process pending translations from queue",
+          },
+          {
+            path: "/api-v1-localization/generate-infoplist-strings",
+            method: "POST",
+            description: "Generate localized InfoPlist.strings",
+          },
+          {
+            path: "/api-v1-localization/sync-to-redis",
+            method: "POST",
+            description: "Sync locale preference to Redis cache",
+          },
+          {
+            path: "/api-v1-localization/health",
+            method: "GET",
+            description: "Comprehensive health check",
+          },
+        ],
+        supportedLocales: [
+          "en",
+          "cs",
+          "de",
+          "es",
+          "fr",
+          "pt",
+          "ru",
+          "uk",
+          "zh",
+          "hi",
+          "ar",
+          "it",
+          "pl",
+          "nl",
+          "ja",
+          "ko",
+          "tr",
+          "vi",
+          "id",
+          "th",
+          "sv",
+        ],
+      }),
+      {
+        status: 200,
+        headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 
   throw new AppError(`Endpoint not found: ${subPath}`, "NOT_FOUND", 404);

@@ -107,12 +107,18 @@ export function normalizeLimit(limit?: number | string): number {
  */
 export function applyCursorPagination<
   // deno-lint-ignore no-explicit-any
-  T extends { lt: (col: string, val: string) => T; gt: (col: string, val: string) => T; order: (col: string, opts?: { ascending?: boolean }) => T; limit: (n: number) => T; or: (filter: string) => T }
+  T extends {
+    lt: (col: string, val: string) => T;
+    gt: (col: string, val: string) => T;
+    order: (col: string, opts?: { ascending?: boolean }) => T;
+    limit: (n: number) => T;
+    or: (filter: string) => T;
+  },
 >(
   query: T,
   options: PaginationOptions,
   timestampColumn = "created_at",
-  idColumn = "id"
+  idColumn = "id",
 ): T {
   const limit = normalizeLimit(options.limit);
   const direction = options.direction ?? "desc";
@@ -134,11 +140,11 @@ export function applyCursorPagination<
         // For descending: (timestamp < cursor.timestamp) OR (timestamp = cursor.timestamp AND id < cursor.id)
         if (ascending) {
           query = query.or(
-            `${timestampColumn}.gt.${cursor.timestamp},and(${timestampColumn}.eq.${cursor.timestamp},${idColumn}.gt.${cursor.id})`
+            `${timestampColumn}.gt.${cursor.timestamp},and(${timestampColumn}.eq.${cursor.timestamp},${idColumn}.gt.${cursor.id})`,
           );
         } else {
           query = query.or(
-            `${timestampColumn}.lt.${cursor.timestamp},and(${timestampColumn}.eq.${cursor.timestamp},${idColumn}.lt.${cursor.id})`
+            `${timestampColumn}.lt.${cursor.timestamp},and(${timestampColumn}.eq.${cursor.timestamp},${idColumn}.lt.${cursor.id})`,
           );
         }
       } else {
@@ -168,7 +174,7 @@ export function processCursorResult<T extends Record<string, unknown>>(
   items: T[],
   limit: number,
   timestampColumn = "created_at",
-  idColumn = "id"
+  idColumn = "id",
 ): PaginationResult<T> {
   const normalizedLimit = normalizeLimit(limit);
   const hasMore = items.length > normalizedLimit;
@@ -204,7 +210,7 @@ export function processCursorResult<T extends Record<string, unknown>>(
 export function extractCursor<T extends Record<string, unknown>>(
   items: T[],
   timestampColumn = "created_at",
-  idColumn = "id"
+  idColumn = "id",
 ): CompositeCursor | null {
   if (items.length === 0) return null;
 
@@ -240,7 +246,7 @@ export function createPaginationHelper(options: PaginationOptions) {
      */
     getCursorWhere(
       timestampColumn = "created_at",
-      idColumn = "id"
+      idColumn = "id",
     ): string | null {
       if (!cursor) return null;
 
@@ -262,7 +268,7 @@ export function createPaginationHelper(options: PaginationOptions) {
     processResults<T extends Record<string, unknown>>(
       items: T[],
       timestampColumn = "created_at",
-      idColumn = "id"
+      idColumn = "id",
     ): PaginationResult<T> {
       return processCursorResult(items, limit, timestampColumn, idColumn);
     },
@@ -294,7 +300,7 @@ export interface OffsetPaginationResult<T> {
 export function createOffsetPagination<T>(
   items: T[],
   options: OffsetPaginationOptions,
-  total: number
+  total: number,
 ): OffsetPaginationResult<T> {
   const offset = Math.max(0, options.offset ?? 0);
   const limit = normalizeLimit(options.limit);
@@ -316,7 +322,7 @@ export function createOffsetPagination<T>(
  * Parse pagination params from query string
  */
 export function parsePaginationParams(
-  query: Record<string, string>
+  query: Record<string, string>,
 ): PaginationOptions {
   return {
     limit: query.limit ? parseInt(query.limit, 10) : undefined,

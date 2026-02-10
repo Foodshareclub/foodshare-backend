@@ -82,7 +82,7 @@ function isOriginAllowed(origin: string, allowedOrigins: string[]): boolean {
  */
 export function validateCsrf(
   request: Request,
-  options: CsrfOptions = {}
+  options: CsrfOptions = {},
 ): CsrfValidationResult {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const method = request.method.toUpperCase();
@@ -141,7 +141,7 @@ export function validateCsrf(
  * Returns a function that validates CSRF and throws if invalid
  */
 export function csrfMiddleware(
-  options: CsrfOptions = {}
+  options: CsrfOptions = {},
 ): (request: Request) => void {
   return (request: Request) => {
     const result = validateCsrf(request, options);
@@ -186,7 +186,7 @@ export function generateCsrfToken(): string {
  */
 export function validateCsrfToken(
   token: string | null,
-  expectedToken: string
+  expectedToken: string,
 ): boolean {
   if (!token || !expectedToken) {
     return false;

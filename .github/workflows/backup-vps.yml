@@ -1,0 +1,120 @@
+name: Backup VPS State
+
+on:
+  schedule:
+    # Twice daily: 03:00 and 15:00 UTC
+    - cron: "0 3,15 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-vps
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_DEPLOY_CHAT_ID: ${{ secrets.TELEGRAM_DEPLOY_CHAT_ID }}
+
+    steps:
+      - name: Backup via SSH
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
+        with:
+          host: vps.foodshare.club
+          username: organic
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 8m
+          script: |
+            set -eo pipefail
+            cd /home/organic/dev/foodshare-backend
+
+            BACKUP_DIR="/home/organic/backups"
+            DATE=$(date -u +%Y-%m-%d)
+            TIMESTAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
+
+            mkdir -p "$BACKUP_DIR/daily" "$BACKUP_DIR/db"
+
+            echo "=== VPS Backup: $TIMESTAMP ==="
+
+            # 1. Database dump (compressed, custom format for selective restore)
+            echo "--- Database dump ---"
+            DB_FILE="$BACKUP_DIR/db/foodshare-$DATE.sql.gz"
+            docker exec supabase-db pg_dump -U supabase_admin -d postgres \
+              --no-owner --no-privileges --clean --if-exists \
+              -N _analytics -N _realtime -N supabase_functions \
+              | gzip > "$DB_FILE"
+            echo "DB dump: $(du -h "$DB_FILE" | cut -f1)"
+
+            # 2. Secrets snapshot (env files that are gitignored)
+            echo "--- Secrets snapshot ---"
+            SECRETS_FILE="$BACKUP_DIR/daily/secrets-$DATE.tar.gz"
+            tar czf "$SECRETS_FILE" \
+              .env \
+              .env.functions \
+              docker-compose.override.yml \
+              2>/dev/null || tar czf "$SECRETS_FILE" .env .env.functions 2>/dev/null || true
+            echo "Secrets: $(du -h "$SECRETS_FILE" | cut -f1)"
+
+            # 3. Git state snapshot (push to backup/vps branch without switching)
+            echo "--- Git state snapshot ---"
+            CURRENT_BRANCH=$(git branch --show-current)
+            MAIN_HEAD=$(git rev-parse --short HEAD)
+
+            # Check if there are any local modifications to capture
+            if git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+              echo "Working tree clean — git backup skipped (main is the truth)"
+            else
+              # Capture full state as a tree object
+              git add -A
+              TREE=$(git write-tree)
+              git reset HEAD --quiet
+
+              # Compare to last backup
+              PARENT=$(git rev-parse --verify refs/heads/backup/vps 2>/dev/null || echo "")
+              SKIP=false
+              if [ -n "$PARENT" ]; then
+                PARENT_TREE=$(git rev-parse "$PARENT^{tree}")
+                [ "$TREE" = "$PARENT_TREE" ] && SKIP=true
+              fi
+
+              if [ "$SKIP" = true ]; then
+                echo "No changes since last git backup — skipped"
+              else
+                MSG="backup: $DATE ($TIMESTAMP)
+            main: $MAIN_HEAD
+            branch: $CURRENT_BRANCH
+            dirty: $(git status --porcelain | wc -l | tr -d ' ') files"
+
+                if [ -n "$PARENT" ]; then
+                  COMMIT=$(echo "$MSG" | git commit-tree "$TREE" -p "$PARENT")
+                else
+                  COMMIT=$(echo "$MSG" | git commit-tree "$TREE")
+                fi
+
+                git update-ref refs/heads/backup/vps "$COMMIT"
+                git push origin backup/vps --force --quiet
+                echo "Pushed backup/vps: $(git rev-parse --short "$COMMIT")"
+              fi
+            fi
+
+            # 4. Rotate old backups (keep 14 days)
+            echo "--- Cleanup ---"
+            find "$BACKUP_DIR/db" -name "*.sql.gz" -mtime +14 -delete 2>/dev/null || true
+            find "$BACKUP_DIR/daily" -name "*.tar.gz" -mtime +14 -delete 2>/dev/null || true
+            echo "Kept last 14 days of backups"
+
+            echo "=== Backup complete ==="
+
+      - name: Telegram — backup failed
+        if: failure() && env.TELEGRAM_BOT_TOKEN != ''
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_DEPLOY_CHAT_ID}" \
+            -d parse_mode=Markdown \
+            -d text="❌ *VPS backup failed*%0ACheck: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"

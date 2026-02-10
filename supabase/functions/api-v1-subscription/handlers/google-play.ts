@@ -20,9 +20,9 @@
 
 import {
   PlatformHandler,
+  SubscriptionData,
   SubscriptionEvent,
   SubscriptionEventType,
-  SubscriptionData,
   SubscriptionStatus,
 } from "../../_shared/subscriptions/types.ts";
 import { logger } from "../../_shared/logger.ts";
@@ -45,19 +45,19 @@ const VERIFY_JWT = Deno.env.get("GOOGLE_PLAY_VERIFY_JWT") === "true";
  * @see https://developer.android.com/google/play/billing/rtdn-reference#sub
  */
 export enum SubscriptionNotificationType {
-  SUBSCRIPTION_RECOVERED = 1,      // Subscription recovered from account hold
-  SUBSCRIPTION_RENEWED = 2,        // Active subscription renewed
-  SUBSCRIPTION_CANCELED = 3,       // Subscription canceled (user or system)
-  SUBSCRIPTION_PURCHASED = 4,      // New subscription purchased
-  SUBSCRIPTION_ON_HOLD = 5,        // Subscription on hold (payment issue)
+  SUBSCRIPTION_RECOVERED = 1, // Subscription recovered from account hold
+  SUBSCRIPTION_RENEWED = 2, // Active subscription renewed
+  SUBSCRIPTION_CANCELED = 3, // Subscription canceled (user or system)
+  SUBSCRIPTION_PURCHASED = 4, // New subscription purchased
+  SUBSCRIPTION_ON_HOLD = 5, // Subscription on hold (payment issue)
   SUBSCRIPTION_IN_GRACE_PERIOD = 6, // Subscription in grace period
-  SUBSCRIPTION_RESTARTED = 7,      // User restarted from Play > Account
+  SUBSCRIPTION_RESTARTED = 7, // User restarted from Play > Account
   SUBSCRIPTION_PRICE_CHANGE_CONFIRMED = 8, // User confirmed price change
-  SUBSCRIPTION_DEFERRED = 9,       // Subscription deferred
-  SUBSCRIPTION_PAUSED = 10,        // Subscription paused
+  SUBSCRIPTION_DEFERRED = 9, // Subscription deferred
+  SUBSCRIPTION_PAUSED = 10, // Subscription paused
   SUBSCRIPTION_PAUSE_SCHEDULE_CHANGED = 11, // Pause schedule changed
-  SUBSCRIPTION_REVOKED = 12,       // Subscription revoked
-  SUBSCRIPTION_EXPIRED = 13,       // Subscription expired
+  SUBSCRIPTION_REVOKED = 12, // Subscription revoked
+  SUBSCRIPTION_EXPIRED = 13, // Subscription expired
   SUBSCRIPTION_PENDING_PURCHASE_CANCELED = 20, // Pending purchase canceled
 }
 
@@ -131,7 +131,9 @@ const NOTIFICATION_TYPE_MAP: Record<SubscriptionNotificationType, SubscriptionEv
   [SubscriptionNotificationType.SUBSCRIPTION_PENDING_PURCHASE_CANCELED]: "subscription_canceled",
 };
 
-function mapGooglePlayEventType(notificationType: SubscriptionNotificationType): SubscriptionEventType {
+function mapGooglePlayEventType(
+  notificationType: SubscriptionNotificationType,
+): SubscriptionEventType {
   return NOTIFICATION_TYPE_MAP[notificationType] || "unknown";
 }
 
@@ -314,11 +316,11 @@ export const googlePlayHandler: PlatformHandler = {
 
       timer.end({ success: true, packageName: notification.packageName });
       return true;
-
     } catch (error) {
       timer.end({ success: false, error: error instanceof Error ? error.message : String(error) });
-      logger.error("Google Play webhook verification failed",
-        error instanceof Error ? error : new Error(String(error))
+      logger.error(
+        "Google Play webhook verification failed",
+        error instanceof Error ? error : new Error(String(error)),
       );
       return false;
     }
@@ -452,9 +454,10 @@ export const googlePlayHandler: PlatformHandler = {
     // Handle one-time product notifications
     if (notification.oneTimeProductNotification) {
       const otpNotif = notification.oneTimeProductNotification;
-      const eventType = otpNotif.notificationType === OneTimeProductNotificationType.ONE_TIME_PRODUCT_PURCHASED
-        ? "subscription_created"
-        : "subscription_canceled";
+      const eventType =
+        otpNotif.notificationType === OneTimeProductNotificationType.ONE_TIME_PRODUCT_PURCHASED
+          ? "subscription_created"
+          : "subscription_canceled";
 
       timer.end({ eventType, productType: "one_time" });
 
@@ -462,7 +465,9 @@ export const googlePlayHandler: PlatformHandler = {
         eventId: pubsubMessage.message.messageId,
         platform: "google_play",
         eventType,
-        rawEventType: `ONE_TIME_PRODUCT_${otpNotif.notificationType === 1 ? "PURCHASED" : "CANCELED"}`,
+        rawEventType: `ONE_TIME_PRODUCT_${
+          otpNotif.notificationType === 1 ? "PURCHASED" : "CANCELED"
+        }`,
         eventTime: new Date(parseInt(notification.eventTimeMillis)),
         subscription: {
           platformSubscriptionId: otpNotif.purchaseToken,

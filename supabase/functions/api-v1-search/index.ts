@@ -18,42 +18,39 @@
  * @version 2.0.0
  */
 
-import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
-import { ValidationError, AppError } from "../_shared/errors.ts";
-import {
-  getEmbeddingHealth,
-  getActiveProvider,
-} from "../_shared/embeddings.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
+import { AppError, ValidationError } from "../_shared/errors.ts";
+import { getActiveProvider, getEmbeddingHealth } from "../_shared/embeddings.ts";
 import { getVectorClient } from "../_shared/upstash-vector.ts";
 import { cache } from "../_shared/cache.ts";
 
 // Shared types, utilities, and transformers
 import {
-  VERSION,
-  DEFAULT_LIMIT,
-  MAX_LIMIT,
-  QUERY_CACHE_TTL_MS,
-  type SearchMode,
-  type SearchFilters,
-  type SearchResponse,
-  type WebhookPayload,
   type BatchIndexRequest,
-  parseSearchQuery,
-  parsePostRouteQuery,
+  buildFilters,
   deduplicateRequest,
+  DEFAULT_LIMIT,
+  getCacheKey,
+  MAX_LIMIT,
+  parsePostRouteQuery,
+  parseSearchQuery,
+  QUERY_CACHE_TTL_MS,
+  sanitizeInput,
+  type SearchFilters,
+  type SearchMode,
+  type SearchResponse,
   stats,
   updateStats,
-  sanitizeInput,
   validateUUID,
-  getCacheKey,
-  buildFilters,
+  VERSION,
+  type WebhookPayload,
 } from "./lib/types.ts";
 
 // Search handlers
 import {
   executeSearch,
-  handleWebhookIndex,
   handleBatchIndex,
+  handleWebhookIndex,
   verifyWebhookSignature,
 } from "./lib/vector-search.ts";
 
@@ -67,7 +64,9 @@ async function handleGet(
   const { supabase } = ctx;
   const url = new URL(ctx.request.url);
   const rawParams: Record<string, string> = {};
-  url.searchParams.forEach((v, k) => { rawParams[k] = v; });
+  url.searchParams.forEach((v, k) => {
+    rawParams[k] = v;
+  });
   const query = parseSearchQuery(rawParams);
   const { route } = query;
 
@@ -128,7 +127,9 @@ async function handlePost(
   const { supabase, request, body } = ctx;
   const url = new URL(request.url);
   const rawParams: Record<string, string> = {};
-  url.searchParams.forEach((v, k) => { rawParams[k] = v; });
+  url.searchParams.forEach((v, k) => {
+    rawParams[k] = v;
+  });
   const query = parsePostRouteQuery(rawParams);
   const { route } = query;
 
@@ -176,8 +177,8 @@ async function handlePost(
   const sanitizedQ = sanitizeInput(q);
   const mode = (
     ["semantic", "text", "hybrid", "fuzzy"].includes(
-      searchBody.mode as string,
-    )
+        searchBody.mode as string,
+      )
       ? searchBody.mode
       : "hybrid"
   ) as SearchMode;
@@ -190,12 +191,14 @@ async function handlePost(
   const bodyFilters = searchBody.filters as Record<string, unknown> | undefined;
   const filters: SearchFilters = {};
   if (bodyFilters) {
-    if (bodyFilters.category && typeof bodyFilters.category === "string")
+    if (bodyFilters.category && typeof bodyFilters.category === "string") {
       filters.category = sanitizeInput(bodyFilters.category);
-    if (Array.isArray(bodyFilters.dietary))
+    }
+    if (Array.isArray(bodyFilters.dietary)) {
       filters.dietary = bodyFilters.dietary
         .filter((d): d is string => typeof d === "string")
         .map(sanitizeInput);
+    }
     if (bodyFilters.location && typeof bodyFilters.location === "object") {
       const loc = bodyFilters.location as Record<string, unknown>;
       if (
@@ -213,17 +216,20 @@ async function handlePost(
     if (
       typeof bodyFilters.maxAgeHours === "number" &&
       bodyFilters.maxAgeHours > 0
-    )
+    ) {
       filters.maxAgeHours = bodyFilters.maxAgeHours;
+    }
     if (
       typeof bodyFilters.profileId === "string" &&
       validateUUID(bodyFilters.profileId)
-    )
+    ) {
       filters.profileId = bodyFilters.profileId;
-    if (Array.isArray(bodyFilters.categoryIds))
+    }
+    if (Array.isArray(bodyFilters.categoryIds)) {
       filters.categoryIds = bodyFilters.categoryIds.filter(
         (id): id is number => typeof id === "number" && Number.isInteger(id),
       );
+    }
   }
 
   const startTime = performance.now();

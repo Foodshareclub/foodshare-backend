@@ -51,7 +51,7 @@ function classifyError(error: { code?: string; message?: string }): DatabaseErro
 function logDatabaseError(
   operation: string,
   error: { code?: string; message?: string },
-  context: Record<string, unknown> = {}
+  context: Record<string, unknown> = {},
 ): void {
   const errorType = classifyError(error);
   const logContext = {
@@ -168,7 +168,7 @@ export async function createProfile(data: {
  */
 export async function updateProfile(
   profileId: string,
-  updates: Partial<Profile>
+  updates: Partial<Profile>,
 ): Promise<boolean> {
   const supabase = getSupabaseClient();
 
@@ -187,7 +187,7 @@ export async function updateProfile(
  */
 export async function linkWhatsAppToProfile(
   profileId: string,
-  whatsappPhone: string
+  whatsappPhone: string,
 ): Promise<boolean> {
   return updateProfile(profileId, { whatsapp_phone: whatsappPhone } as Partial<Profile>);
 }

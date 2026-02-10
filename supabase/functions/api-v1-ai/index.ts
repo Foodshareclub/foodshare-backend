@@ -15,9 +15,9 @@
 
 import { HfInference } from "https://esm.sh/@huggingface/inference@2.6.4";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
-import { ValidationError, ServerError } from "../_shared/errors.ts";
+import { ServerError, ValidationError } from "../_shared/errors.ts";
 
 // =============================================================================
 // Configuration
@@ -200,7 +200,7 @@ async function runHfInference(
   body: PostBody,
   // deno-lint-ignore no-explicit-any
   supabase: any,
-  requestId: string,
+  _requestId: string,
 ): Promise<{ result: unknown; contentType: string; cached: boolean; cacheSource?: string }> {
   const hfToken = Deno.env.get("HUGGINGFACE_ACCESS_TOKEN");
   if (!hfToken) throw new ServerError("Missing HUGGINGFACE_ACCESS_TOKEN");
@@ -210,7 +210,12 @@ async function runHfInference(
 
   const cached = await getCachedResult(cacheKey, supabase);
   if (cached) {
-    return { result: cached.result, contentType: "application/json", cached: true, cacheSource: cached.source };
+    return {
+      result: cached.result,
+      contentType: "application/json",
+      cached: true,
+      cacheSource: cached.source,
+    };
   }
 
   const hf = new HfInference(hfToken);
@@ -392,11 +397,31 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
         embeddings: [{ id: "text-embedding-3-small", provider: "z.ai" }],
         inference: [
           { task: "translation", defaultModel: "t5-base", provider: "huggingface" },
-          { task: "textToSpeech", defaultModel: "espnet/kan-bayashi_ljspeech_vits", provider: "huggingface" },
-          { task: "textToImage", defaultModel: "stabilityai/stable-diffusion-2", provider: "huggingface" },
-          { task: "imageToText", defaultModel: "nlpconnect/vit-gpt2-image-captioning", provider: "huggingface" },
-          { task: "summarization", defaultModel: "facebook/bart-large-cnn", provider: "huggingface" },
-          { task: "questionAnswering", defaultModel: "deepset/roberta-base-squad2", provider: "huggingface" },
+          {
+            task: "textToSpeech",
+            defaultModel: "espnet/kan-bayashi_ljspeech_vits",
+            provider: "huggingface",
+          },
+          {
+            task: "textToImage",
+            defaultModel: "stabilityai/stable-diffusion-2",
+            provider: "huggingface",
+          },
+          {
+            task: "imageToText",
+            defaultModel: "nlpconnect/vit-gpt2-image-captioning",
+            provider: "huggingface",
+          },
+          {
+            task: "summarization",
+            defaultModel: "facebook/bart-large-cnn",
+            provider: "huggingface",
+          },
+          {
+            task: "questionAnswering",
+            defaultModel: "deepset/roberta-base-squad2",
+            provider: "huggingface",
+          },
         ],
       },
       ctx,
@@ -411,7 +436,8 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
       endpoints: {
         "POST /chat": "LLM chat completion (Groq)",
         "POST /embeddings": "Text embeddings (z.ai)",
-        "POST /inference/:task": "HF inference (translation, textToSpeech, textToImage, imageToText, summarization, questionAnswering)",
+        "POST /inference/:task":
+          "HF inference (translation, textToSpeech, textToImage, imageToText, summarization, questionAnswering)",
         "GET /models": "List available models",
         "GET /health": "Provider health check",
       },

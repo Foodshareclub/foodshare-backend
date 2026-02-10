@@ -8,17 +8,8 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import {
-  ok,
-  created,
-  noContent,
-  type HandlerContext,
-} from "../../_shared/api-handler.ts";
-import {
-  ValidationError,
-  NotFoundError,
-  AuthorizationError,
-} from "../../_shared/errors.ts";
+import { created, type HandlerContext, noContent, ok } from "../../_shared/api-handler.ts";
+import { AuthorizationError, NotFoundError, ValidationError } from "../../_shared/errors.ts";
 import { logger } from "../../_shared/logger.ts";
 import type { ForumQuery } from "../index.ts";
 

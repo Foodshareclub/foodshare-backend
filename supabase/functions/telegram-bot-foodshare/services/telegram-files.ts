@@ -3,7 +3,6 @@
  */
 
 import { logger } from "../../_shared/logger.ts";
-import { getSupabaseClient } from "../../_shared/supabase.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
 
@@ -13,7 +12,7 @@ const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
 export async function downloadAndUploadTelegramFile(
   fileId: string,
   userId: number,
-  maxRetries = 3
+  maxRetries = 3,
 ): Promise<string | null> {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -25,7 +24,7 @@ export async function downloadAndUploadTelegramFile(
 
       const fileInfoResponse = await fetch(
         `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`,
-        { signal: fileInfoController.signal }
+        { signal: fileInfoController.signal },
       );
       clearTimeout(fileInfoTimeout);
 
@@ -78,7 +77,10 @@ export async function downloadAndUploadTelegramFile(
 
       // Validate downloaded size matches
       if (fileSize > 0 && fileBuffer.byteLength !== fileSize) {
-        logger.warn("Downloaded size mismatch", { downloadedSize: fileBuffer.byteLength, expectedSize: fileSize });
+        logger.warn("Downloaded size mismatch", {
+          downloadedSize: fileBuffer.byteLength,
+          expectedSize: fileSize,
+        });
       }
 
       // Step 3: Upload via api-v1-images for compression
@@ -113,7 +115,7 @@ export async function downloadAndUploadTelegramFile(
                 Authorization: `Bearer ${serviceKey}`,
               },
               body: formData,
-            }
+            },
           );
 
           if (uploadResponse.ok) {
@@ -123,7 +125,11 @@ export async function downloadAndUploadTelegramFile(
           }
 
           uploadError = await uploadResponse.text();
-          logger.error("Image API upload error", { uploadAttempt, maxAttempts: 2, error: String(uploadError) });
+          logger.error("Image API upload error", {
+            uploadAttempt,
+            maxAttempts: 2,
+            error: String(uploadError),
+          });
         } catch (error) {
           uploadError = error;
           logger.error("Upload exception", { uploadAttempt, maxAttempts: 2, error: String(error) });
@@ -136,7 +142,10 @@ export async function downloadAndUploadTelegramFile(
 
       // If we got here, upload failed after retries
       if (attempt < maxRetries) {
-        logger.info("Retrying entire download/upload process", { nextAttempt: attempt + 1, maxRetries });
+        logger.info("Retrying entire download/upload process", {
+          nextAttempt: attempt + 1,
+          maxRetries,
+        });
         await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
         continue;
       }
@@ -144,7 +153,11 @@ export async function downloadAndUploadTelegramFile(
       logger.error("All upload attempts failed", { error: String(uploadError) });
       return null;
     } catch (error) {
-      logger.error("Error downloading/uploading file", { attempt, maxRetries, error: String(error) });
+      logger.error("Error downloading/uploading file", {
+        attempt,
+        maxRetries,
+        error: String(error),
+      });
 
       if (error instanceof Error && error.name === "AbortError") {
         logger.error("Request timeout");
@@ -167,7 +180,7 @@ export async function downloadAndUploadTelegramFile(
  */
 export async function downloadAndUploadMultipleFiles(
   fileIds: string[],
-  userId: number
+  userId: number,
 ): Promise<string[]> {
   const uploadedUrls: string[] = [];
 

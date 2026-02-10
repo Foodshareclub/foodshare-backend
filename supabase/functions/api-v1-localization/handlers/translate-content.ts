@@ -28,8 +28,26 @@ const MAX_MEMORY_SIZE = 10000;
 
 // Supported locales (21 languages)
 const SUPPORTED_LOCALES = [
-  "cs", "de", "es", "fr", "pt", "ru", "uk", "zh", "hi", "ar",
-  "it", "pl", "nl", "ja", "ko", "tr", "sv", "vi", "id", "th"
+  "cs",
+  "de",
+  "es",
+  "fr",
+  "pt",
+  "ru",
+  "uk",
+  "zh",
+  "hi",
+  "ar",
+  "it",
+  "pl",
+  "nl",
+  "ja",
+  "ko",
+  "tr",
+  "sv",
+  "vi",
+  "id",
+  "th",
 ];
 
 interface TranslateRequest {
@@ -49,17 +67,23 @@ interface TranslateResponse {
   responseTimeMs: number;
 }
 
-export default async function translateContentHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
+export default async function translateContentHandler(
+  req: Request,
+  corsHeaders: Record<string, string>,
+): Promise<Response> {
   const startTime = performance.now();
 
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({
-      success: false,
-      error: "Method not allowed"
-    }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "Method not allowed",
+      }),
+      {
+        status: 405,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 
   try {
@@ -68,39 +92,48 @@ export default async function translateContentHandler(req: Request, corsHeaders:
 
     // Validate locale
     if (!SUPPORTED_LOCALES.includes(targetLocale)) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: `Unsupported locale: ${targetLocale}`,
-        supportedLocales: SUPPORTED_LOCALES
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Unsupported locale: ${targetLocale}`,
+          supportedLocales: SUPPORTED_LOCALES,
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Handle batch translation
     if (batch?.texts && batch.texts.length > 0) {
       const translations = await translateBatch(batch.texts, targetLocale, contentType);
-      return new Response(JSON.stringify({
-        success: true,
-        translations,
-        cached: false,
-        quality: 0.95,
-        responseTimeMs: Math.round(performance.now() - startTime)
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          translations,
+          cached: false,
+          quality: 0.95,
+          responseTimeMs: Math.round(performance.now() - startTime),
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Validate single text
     if (!text || text.trim().length === 0) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "Text is required"
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Text is required",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // L1: Check memory cache
@@ -108,16 +141,19 @@ export default async function translateContentHandler(req: Request, corsHeaders:
     const memoryCached = memoryCache.get(cacheKey);
     if (memoryCached && Date.now() - memoryCached.timestamp < MEMORY_TTL) {
       logger.debug("Translation cache hit (memory)", { locale: targetLocale });
-      return new Response(JSON.stringify({
-        success: true,
-        translatedText: memoryCached.text,
-        cached: true,
-        cacheLayer: "memory",
-        quality: memoryCached.quality,
-        responseTimeMs: Math.round(performance.now() - startTime)
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          translatedText: memoryCached.text,
+          cached: true,
+          cacheLayer: "memory",
+          quality: memoryCached.quality,
+          responseTimeMs: Math.round(performance.now() - startTime),
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // L2: Check database cache
@@ -126,7 +162,7 @@ export default async function translateContentHandler(req: Request, corsHeaders:
     const { data: dbResult, error: dbError } = await supabase.rpc("get_or_translate", {
       p_source_text: text,
       p_target_locale: targetLocale,
-      p_content_type: contentType
+      p_content_type: contentType,
     });
 
     if (dbError) {
@@ -142,16 +178,19 @@ export default async function translateContentHandler(req: Request, corsHeaders:
       updateMemoryCache(cacheKey, translatedText, quality);
 
       logger.debug("Translation cache hit (database)", { locale: targetLocale });
-      return new Response(JSON.stringify({
-        success: true,
-        translatedText,
-        cached: true,
-        cacheLayer: "database",
-        quality,
-        responseTimeMs: Math.round(performance.now() - startTime)
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          translatedText,
+          cached: true,
+          cacheLayer: "database",
+          quality,
+          responseTimeMs: Math.round(performance.now() - startTime),
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // L3: Call LLM (with fallback chain: LLM → DeepL → Google → Microsoft → Amazon)
@@ -159,9 +198,11 @@ export default async function translateContentHandler(req: Request, corsHeaders:
     const llmResult = await llmTranslationService.translate(text, "en", targetLocale, contentType);
 
     // Determine cache layer from service used
-    const cacheLayer = llmResult.service === 'llm' ? 'llm' :
-                       llmResult.service === 'none' ? 'failed' :
-                       llmResult.service || 'llm';
+    const cacheLayer = llmResult.service === "llm"
+      ? "llm"
+      : llmResult.service === "none"
+      ? "failed"
+      : llmResult.service || "llm";
 
     // Only cache high-quality translations (quality > 0.5)
     // This prevents cache poisoning from failed/low-quality translations
@@ -174,7 +215,7 @@ export default async function translateContentHandler(req: Request, corsHeaders:
             p_translated_text: llmResult.text,
             p_target_locale: targetLocale,
             p_content_type: contentType,
-            p_quality_score: llmResult.quality
+            p_quality_score: llmResult.quality,
           });
           logger.debug("Translation stored in database cache", { service: llmResult.service });
         } catch (err) {
@@ -185,7 +226,10 @@ export default async function translateContentHandler(req: Request, corsHeaders:
       // Store in memory cache
       updateMemoryCache(cacheKey, llmResult.text, llmResult.quality);
     } else {
-      logger.warn("Translation quality too low, not caching", { quality: llmResult.quality.toFixed(2), service: llmResult.service });
+      logger.warn("Translation quality too low, not caching", {
+        quality: llmResult.quality.toFixed(2),
+        service: llmResult.service,
+      });
     }
 
     // Track analytics (fire and forget)
@@ -196,7 +240,7 @@ export default async function translateContentHandler(req: Request, corsHeaders:
           content_type: contentType,
           cache_hit: false,
           response_time_ms: Math.round(performance.now() - startTime),
-          tokens_used: llmResult.tokensUsed
+          tokens_used: llmResult.tokensUsed,
         });
       } catch (err) {
         logger.warn("Failed to track analytics", { error: (err as Error).message });
@@ -206,28 +250,33 @@ export default async function translateContentHandler(req: Request, corsHeaders:
     // Return actual success status from LLM service
     const success = llmResult.success !== false && llmResult.quality > 0;
 
-    return new Response(JSON.stringify({
-      success,
-      translatedText: llmResult.text,
-      cached: false,
-      cacheLayer,
-      quality: llmResult.quality,
-      service: llmResult.service,
-      responseTimeMs: Math.round(performance.now() - startTime),
-      ...(llmResult.error && { error: llmResult.error.message || 'Translation failed' })
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
-
+    return new Response(
+      JSON.stringify({
+        success,
+        translatedText: llmResult.text,
+        cached: false,
+        cacheLayer,
+        quality: llmResult.quality,
+        service: llmResult.service,
+        responseTimeMs: Math.round(performance.now() - startTime),
+        ...(llmResult.error && { error: llmResult.error.message || "Translation failed" }),
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
     logger.error("Translation error", { error: (error as Error).message });
-    return new Response(JSON.stringify({
-      success: false,
-      error: (error as Error).message
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: (error as Error).message,
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 }
 
@@ -261,7 +310,7 @@ function updateMemoryCache(key: string, text: string, quality: number): void {
 async function translateBatch(
   texts: string[],
   targetLocale: string,
-  contentType: string
+  contentType: string,
 ): Promise<string[]> {
   return llmTranslationService.batchTranslate(texts, "en", targetLocale, contentType);
 }

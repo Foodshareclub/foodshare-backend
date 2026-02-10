@@ -146,8 +146,8 @@ export const updatePreferencesSchema = z.object({
         z.object({
           enabled: z.boolean().optional(),
           frequency: notificationFrequencyEnum.optional(),
-        })
-      )
+        }),
+      ),
     )
     .optional(),
 });

@@ -20,8 +20,26 @@ import { getSupabaseClient } from "../../_shared/supabase.ts";
 
 const VERSION = "2.0.0";
 const SUPPORTED_LOCALES = [
-  "cs", "de", "es", "fr", "pt", "ru", "uk", "zh", "hi", "ar",
-  "it", "pl", "nl", "ja", "ko", "tr", "sv", "vi", "id", "th"
+  "cs",
+  "de",
+  "es",
+  "fr",
+  "pt",
+  "ru",
+  "uk",
+  "zh",
+  "hi",
+  "ar",
+  "it",
+  "pl",
+  "nl",
+  "ja",
+  "ko",
+  "tr",
+  "sv",
+  "vi",
+  "id",
+  "th",
 ];
 
 /**
@@ -48,7 +66,7 @@ function flattenObject(obj: Record<string, unknown>, prefix = ""): Record<string
  */
 function findUntranslatedKeys(
   englishFlat: Record<string, string>,
-  localeFlat: Record<string, string>
+  localeFlat: Record<string, string>,
 ): { key: string; value: string }[] {
   const untranslated: { key: string; value: string }[] = [];
 
@@ -80,15 +98,21 @@ function findUntranslatedKeys(
   return untranslated;
 }
 
-export default async function auditHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
+export default async function auditHandler(
+  req: Request,
+  corsHeaders: Record<string, string>,
+): Promise<Response> {
   if (req.method !== "GET") {
-    return new Response(JSON.stringify({
-      success: false,
-      error: "Method not allowed. Use GET."
-    }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "Method not allowed. Use GET.",
+      }),
+      {
+        status: 405,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 
   const url = new URL(req.url);
@@ -108,14 +132,17 @@ export default async function auditHandler(req: Request, corsHeaders: Record<str
     .single();
 
   if (englishError || !englishData) {
-    return new Response(JSON.stringify({
-      success: false,
-      error: "english_not_found",
-      message: "Could not fetch English reference translations"
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "english_not_found",
+        message: "Could not fetch English reference translations",
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 
   const englishFlat = flattenObject(englishData.messages as Record<string, unknown>);
@@ -123,14 +150,17 @@ export default async function auditHandler(req: Request, corsHeaders: Record<str
   // Single locale audit
   if (locale && !all) {
     if (!SUPPORTED_LOCALES.includes(locale)) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "unsupported_locale",
-        message: `Locale '${locale}' not supported. Supported: ${SUPPORTED_LOCALES.join(", ")}`
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "unsupported_locale",
+          message: `Locale '${locale}' not supported. Supported: ${SUPPORTED_LOCALES.join(", ")}`,
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     const { data: localeData, error: localeError } = await supabase
@@ -140,14 +170,17 @@ export default async function auditHandler(req: Request, corsHeaders: Record<str
       .single();
 
     if (localeError || !localeData) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "locale_not_found",
-        message: `Could not fetch translations for locale '${locale}'`
-      }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "locale_not_found",
+          message: `Could not fetch translations for locale '${locale}'`,
+        }),
+        {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     const localeFlat = flattenObject(localeData.messages as Record<string, unknown>);
@@ -155,7 +188,7 @@ export default async function auditHandler(req: Request, corsHeaders: Record<str
 
     // Filter by category if specified
     if (category) {
-      untranslated = untranslated.filter(item => item.key.startsWith(`${category}.`));
+      untranslated = untranslated.filter((item) => item.key.startsWith(`${category}.`));
     }
 
     // Apply limit
@@ -168,22 +201,25 @@ export default async function auditHandler(req: Request, corsHeaders: Record<str
       byCategory[cat] = (byCategory[cat] || 0) + 1;
     }
 
-    return new Response(JSON.stringify({
-      success: true,
-      version: VERSION,
-      locale,
-      localeVersion: localeData.version,
-      totalKeys: Object.keys(localeFlat).length,
-      untranslatedCount: untranslated.length,
-      returnedCount: limited.length,
-      byCategory,
-      untranslated: limited.map(item => ({
-        key: item.key,
-        englishValue: item.value
-      }))
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({
+        success: true,
+        version: VERSION,
+        locale,
+        localeVersion: localeData.version,
+        totalKeys: Object.keys(localeFlat).length,
+        untranslatedCount: untranslated.length,
+        returnedCount: limited.length,
+        byCategory,
+        untranslated: limited.map((item) => ({
+          key: item.key,
+          englishValue: item.value,
+        })),
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 
   // All locales summary
@@ -194,14 +230,17 @@ export default async function auditHandler(req: Request, corsHeaders: Record<str
       .neq("locale", "en");
 
     if (allError || !allLocales) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "fetch_failed",
-        message: "Could not fetch all locale translations"
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "fetch_failed",
+          message: "Could not fetch all locale translations",
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     const summary: Record<string, {
@@ -227,37 +266,43 @@ export default async function auditHandler(req: Request, corsHeaders: Record<str
         version: localeData.version,
         totalKeys: Object.keys(localeFlat).length,
         untranslatedCount: untranslated.length,
-        byCategory
+        byCategory,
       };
     }
 
     // Sort by untranslated count
     const sorted = Object.values(summary).sort((a, b) => b.untranslatedCount - a.untranslatedCount);
 
-    return new Response(JSON.stringify({
-      success: true,
-      version: VERSION,
-      englishKeyCount: Object.keys(englishFlat).length,
-      localeCount: sorted.length,
-      totalUntranslated: sorted.reduce((sum, l) => sum + l.untranslatedCount, 0),
-      locales: sorted
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({
+        success: true,
+        version: VERSION,
+        englishKeyCount: Object.keys(englishFlat).length,
+        localeCount: sorted.length,
+        totalUntranslated: sorted.reduce((sum, l) => sum + l.untranslatedCount, 0),
+        locales: sorted,
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 
   // Default: show usage
-  return new Response(JSON.stringify({
-    success: true,
-    version: VERSION,
-    usage: {
-      singleLocale: "GET /localization/audit?locale=de",
-      singleLocaleWithCategory: "GET /localization/audit?locale=de&category=challenge",
-      singleLocaleWithLimit: "GET /localization/audit?locale=de&limit=100",
-      allLocales: "GET /localization/audit?all=true"
+  return new Response(
+    JSON.stringify({
+      success: true,
+      version: VERSION,
+      usage: {
+        singleLocale: "GET /localization/audit?locale=de",
+        singleLocaleWithCategory: "GET /localization/audit?locale=de&category=challenge",
+        singleLocaleWithLimit: "GET /localization/audit?locale=de&limit=100",
+        allLocales: "GET /localization/audit?all=true",
+      },
+      supportedLocales: SUPPORTED_LOCALES,
+    }),
+    {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     },
-    supportedLocales: SUPPORTED_LOCALES
-  }), {
-    headers: { ...corsHeaders, "Content-Type": "application/json" }
-  });
+  );
 }

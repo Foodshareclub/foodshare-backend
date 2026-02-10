@@ -16,12 +16,12 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { createAPIHandler, ok, created, type HandlerContext } from "../_shared/api-handler.ts";
+import { createAPIHandler, created, type HandlerContext, ok } from "../_shared/api-handler.ts";
 import { getSupabaseClient } from "../_shared/supabase.ts";
-import { ValidationError, AppError, ForbiddenError } from "../_shared/errors.ts";
+import { AppError, ForbiddenError, ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
 import { sendDLQAlert, sendTelegramAlert } from "../_shared/telegram-alerts.ts";
-import { handleWebhook, getWebhookHealthData, getWebhookMetricsData } from "./webhook.ts";
+import { getWebhookHealthData, getWebhookMetricsData, handleWebhook } from "./webhook.ts";
 
 // =============================================================================
 // Configuration
@@ -252,7 +252,10 @@ async function processDLQ(
     logger.info("DLQ processed", result);
     return result;
   } catch (error) {
-    logger.error("DLQ processing failed", error instanceof Error ? error : new Error(String(error)));
+    logger.error(
+      "DLQ processing failed",
+      error instanceof Error ? error : new Error(String(error)),
+    );
     return { processed: 0, expired: 0, pending: 0 };
   }
 }
@@ -281,7 +284,10 @@ async function updateDailyMetrics(
     logger.info("Daily metrics updated", { date, data });
     return { updated: true, date };
   } catch (error) {
-    logger.error("Metrics update failed", error instanceof Error ? error : new Error(String(error)));
+    logger.error(
+      "Metrics update failed",
+      error instanceof Error ? error : new Error(String(error)),
+    );
     return { updated: false, date };
   }
 }
@@ -355,24 +361,20 @@ async function sendHealthReport(
       "Daily Subscription Health Report",
       {
         Date: yesterday,
-        "Active Subscriptions":
-          health?.reduce(
-            (sum: number, h: { active_count: number }) => sum + h.active_count,
-            0,
-          ) || 0,
-        "New Yesterday":
-          metrics?.reduce(
-            (sum: number, m: { new_subscriptions: number }) => sum + m.new_subscriptions,
-            0,
-          ) || 0,
-        "Churned Yesterday":
-          metrics?.reduce(
-            (sum: number, m: { churned_subscriptions: number }) =>
-              sum + m.churned_subscriptions,
-            0,
-          ) || 0,
-        "DLQ Pending":
-          dlq?.reduce((sum: number, d: { pending: number }) => sum + d.pending, 0) || 0,
+        "Active Subscriptions": health?.reduce(
+          (sum: number, h: { active_count: number }) => sum + h.active_count,
+          0,
+        ) || 0,
+        "New Yesterday": metrics?.reduce(
+          (sum: number, m: { new_subscriptions: number }) => sum + m.new_subscriptions,
+          0,
+        ) || 0,
+        "Churned Yesterday": metrics?.reduce(
+          (sum: number, m: { churned_subscriptions: number }) => sum + m.churned_subscriptions,
+          0,
+        ) || 0,
+        "DLQ Pending": dlq?.reduce((sum: number, d: { pending: number }) => sum + d.pending, 0) ||
+          0,
       },
       { throttleKey: "health-report:daily" },
     );
@@ -406,7 +408,12 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
     if (!verifyCronAuth(ctx.request)) {
       throw new ForbiddenError("Service authentication required");
     }
-    return ok({ service: "api-v1-subscription", version: VERSION, timestamp: new Date().toISOString(), ...getWebhookMetricsData() }, ctx);
+    return ok({
+      service: "api-v1-subscription",
+      version: VERSION,
+      timestamp: new Date().toISOString(),
+      ...getWebhookMetricsData(),
+    }, ctx);
   }
 
   // GET /cron — trigger cron tasks (for cron triggers)

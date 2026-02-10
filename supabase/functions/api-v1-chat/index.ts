@@ -28,35 +28,31 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import {
-  createAPIHandler,
-  ok,
-  type HandlerContext,
-} from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
 
 // Generic chat handlers
 import {
-  listRooms,
-  getRoom,
   createRoom,
-  sendMessage,
-  updateRoom,
-  leaveRoom,
   type CreateRoomBody,
+  getRoom,
+  leaveRoom,
+  listRooms,
+  sendMessage,
   type SendMessageBody,
+  updateRoom,
   type UpdateRoomBody,
 } from "./lib/generic.ts";
 
 // Food chat handlers
 import {
-  foodListRooms,
-  foodGetRoom,
-  foodCreateRoom,
-  foodSendMessage,
-  foodUpdateRoom,
   foodArchiveRoom,
+  foodCreateRoom,
   type FoodCreateRoomBody,
+  foodGetRoom,
+  foodListRooms,
+  foodSendMessage,
   type FoodSendMessageBody,
+  foodUpdateRoom,
   type FoodUpdateRoomBody,
 } from "./lib/food-chat.ts";
 
@@ -85,7 +81,12 @@ function handleGet(ctx: HandlerContext<unknown, ListQuery>): Promise<Response> {
   // Health check
   const url = new URL(ctx.request.url);
   if (url.pathname.endsWith("/health")) {
-    return ok({ status: "healthy", service: "api-v1-chat", version: VERSION, timestamp: new Date().toISOString() }, ctx);
+    return ok({
+      status: "healthy",
+      service: "api-v1-chat",
+      version: VERSION,
+      timestamp: new Date().toISOString(),
+    }, ctx);
   }
 
   if (ctx.query.mode === "food") {

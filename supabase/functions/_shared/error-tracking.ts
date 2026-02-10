@@ -1,6 +1,6 @@
 /**
  * Error Tracking and Alerting System
- * 
+ *
  * Centralized error tracking with severity levels, alerting, and aggregation
  */
 
@@ -49,7 +49,8 @@ const ALERT_THRESHOLDS = {
   high: 10,
   critical: 1,
 };
-const AGGREGATION_WINDOW_MS = 60000; // 1 minute
+// @ts-ignore Kept for future aggregation window support
+const _AGGREGATION_WINDOW_MS = 60000; // 1 minute
 
 // =============================================================================
 // Error Storage
@@ -69,7 +70,7 @@ function generateErrorFingerprint(error: Error | AppError): string {
   const message = error.message.replace(/\d+/g, "N"); // Normalize numbers
   const code = "code" in error ? error.code : "UNKNOWN";
   const stackLine = error.stack?.split("\n")[1]?.trim() || "";
-  
+
   return `${code}:${message}:${stackLine}`;
 }
 
@@ -83,7 +84,7 @@ function generateErrorFingerprint(error: Error | AppError): string {
 function classifyErrorSeverity(error: Error | AppError): ErrorSeverity {
   if ("statusCode" in error) {
     const statusCode = error.statusCode;
-    
+
     if (statusCode >= 500) return "critical";
     if (statusCode === 429) return "medium";
     if (statusCode >= 400) return "low";
@@ -92,7 +93,7 @@ function classifyErrorSeverity(error: Error | AppError): ErrorSeverity {
   // Check error code
   if ("code" in error) {
     const code = error.code;
-    
+
     if (code.includes("DATABASE") || code.includes("FATAL")) return "critical";
     if (code.includes("AUTH") || code.includes("PERMISSION")) return "high";
     if (code.includes("VALIDATION")) return "low";
@@ -116,7 +117,7 @@ function classifyErrorSeverity(error: Error | AppError): ErrorSeverity {
  */
 export function trackError(
   error: Error | AppError,
-  context: Record<string, unknown> = {}
+  context: Record<string, unknown> = {},
 ): void {
   const fingerprint = generateErrorFingerprint(error);
   const severity = classifyErrorSeverity(error);
@@ -234,7 +235,8 @@ async function sendAlert(alert: ErrorAlert): Promise<void> {
  * Send alert to Slack webhook
  */
 async function sendSlackAlert(alert: ErrorAlert): Promise<void> {
-  const webhookUrl = Deno.env.get("SLACK_ALERT_WEBHOOK_URL") || Deno.env.get("ERROR_ALERT_WEBHOOK_URL");
+  const webhookUrl = Deno.env.get("SLACK_ALERT_WEBHOOK_URL") ||
+    Deno.env.get("ERROR_ALERT_WEBHOOK_URL");
   if (!webhookUrl) return;
 
   const severityEmoji: Record<ErrorSeverity, string> = {
@@ -296,7 +298,9 @@ async function sendSlackAlert(alert: ErrorAlert): Promise<void> {
                 elements: [
                   {
                     type: "mrkdwn",
-                    text: `Error ID: \`${alert.errorId.substring(0, 50)}\` | Time: ${alert.timestamp}`,
+                    text: `Error ID: \`${
+                      alert.errorId.substring(0, 50)
+                    }\` | Time: ${alert.timestamp}`,
                   },
                 ],
               },

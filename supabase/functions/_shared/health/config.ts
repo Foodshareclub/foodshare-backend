@@ -48,7 +48,13 @@ export const API_FUNCTIONS: FunctionConfig[] = [
   { name: "api-v1-reviews", critical: false, requiresAuth: true, expectedStatus: [200, 401] },
 
   // Unified Admin API (consolidates listings, users, email)
-  { name: "api-v1-admin", critical: false, requiresAuth: false, expectedStatus: [200, 401, 403], skipInQuickCheck: true },
+  {
+    name: "api-v1-admin",
+    critical: false,
+    requiresAuth: false,
+    expectedStatus: [200, 401, 403],
+    skipInQuickCheck: true,
+  },
 
   // Unified Validation API (consolidates validate-listing, validate-profile, validate-review)
   { name: "api-v1-validation", critical: false, requiresAuth: false },
@@ -82,7 +88,12 @@ export const DATA_FUNCTIONS: FunctionConfig[] = [
  */
 export const UTILITY_FUNCTIONS: FunctionConfig[] = [
   // Cache & Performance
-  { name: "api-v1-cache", critical: false, requiresAuth: false, testPayload: { operation: "exists", key: "health_ping" } },
+  {
+    name: "api-v1-cache",
+    critical: false,
+    requiresAuth: false,
+    testPayload: { operation: "exists", key: "health_ping" },
+  },
   { name: "check-upstash-services", critical: false, requiresAuth: false },
 
   // Localization

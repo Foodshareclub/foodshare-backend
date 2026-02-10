@@ -35,20 +35,20 @@ import { AppError } from "../_shared/errors.ts";
 import { parseRoute } from "../_shared/routing.ts";
 import { authenticate, getServiceClient } from "./lib/auth.ts";
 import {
+  handleAdminRoute,
+  handleDashboard,
+  handleDigestProcess,
+  handleDisableDnd,
+  handleEnableDnd,
+  handleGetPreferences,
+  handleHealth,
   handleSend,
   handleSendBatch,
   handleSendTemplate,
-  handleHealth,
   handleStats,
-  handleGetPreferences,
-  handleUpdatePreferences,
-  handleEnableDnd,
-  handleDisableDnd,
-  handleWebhook,
-  handleDigestProcess,
-  handleDashboard,
   handleTrigger,
-  handleAdminRoute,
+  handleUpdatePreferences,
+  handleWebhook,
 } from "./lib/handlers/index.ts";
 import type { AuthMode, NotificationContext } from "./lib/types.ts";
 
@@ -102,9 +102,7 @@ async function routeRequest(ctx: HandlerContext): Promise<Response> {
     authMode = "admin";
   }
 
-  const corsHeaders = usePermissiveCors
-    ? getPermissiveCorsHeaders()
-    : ctx.corsHeaders;
+  const corsHeaders = usePermissiveCors ? getPermissiveCorsHeaders() : ctx.corsHeaders;
 
   const requestId = ctx.ctx.requestId;
 
@@ -118,10 +116,13 @@ async function routeRequest(ctx: HandlerContext): Promise<Response> {
       authMode,
       error: auth.error,
     });
-    return new Response(JSON.stringify({ success: false, error: auth.error || "Authentication failed" }), {
-      status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ success: false, error: auth.error || "Authentication failed" }),
+      {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 
   // Create context

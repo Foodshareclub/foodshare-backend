@@ -23,7 +23,7 @@ const translations: Record<Language, Translations> = {
 export function t(
   lang: Language,
   key: string,
-  replacements?: Record<string, string | number>
+  replacements?: Record<string, string | number>,
 ): string {
   const keys = key.split(".");
   let value: unknown = translations[lang] || translations.en;
@@ -109,7 +109,10 @@ export async function saveUserLanguage(phoneNumber: string, language: Language):
 
     await supabase.from("profiles").update({ language }).eq("whatsapp_phone", phoneNumber);
 
-    logger.info("Saved language preference", { language, phone: phoneNumber.substring(0, 4) + "***" });
+    logger.info("Saved language preference", {
+      language,
+      phone: phoneNumber.substring(0, 4) + "***",
+    });
   } catch (error) {
     logger.error("Error saving user language preference", { error: String(error) });
   }

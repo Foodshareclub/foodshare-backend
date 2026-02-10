@@ -175,9 +175,13 @@ export async function parseJsonResponse<T = unknown>(response: Response): Promis
  */
 export async function assertResponseStatus<T = unknown>(
   response: Response,
-  expectedStatus: number
+  expectedStatus: number,
 ): Promise<T> {
-  assertEquals(response.status, expectedStatus, `Expected status ${expectedStatus}, got ${response.status}`);
+  assertEquals(
+    response.status,
+    expectedStatus,
+    `Expected status ${expectedStatus}, got ${response.status}`,
+  );
   return parseJsonResponse<T>(response);
 }
 
@@ -196,11 +200,11 @@ export async function assertSuccessResponse<T = unknown>(response: Response): Pr
 export async function assertErrorResponse(
   response: Response,
   expectedStatus: number,
-  expectedCode?: string
+  expectedCode?: string,
 ): Promise<{ error: { code: string; message: string } }> {
   const body = await assertResponseStatus<{ error: { code: string; message: string } }>(
     response,
-    expectedStatus
+    expectedStatus,
   );
   assertExists(body.error, "Response should have error property");
   if (expectedCode) {
@@ -216,7 +220,9 @@ export async function assertErrorResponse(
 /**
  * Generate a mock product
  */
-export function createMockProduct(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+export function createMockProduct(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     id: Math.floor(Math.random() * 10000),
     title: "Test Product",
@@ -238,7 +244,9 @@ export function createMockProduct(overrides: Record<string, unknown> = {}): Reco
 /**
  * Generate a mock profile
  */
-export function createMockProfile(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+export function createMockProfile(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     id: "test-user-id-12345",
     first_name: "Test",
@@ -295,11 +303,11 @@ export const XSS_PAYLOADS = {
   /** Input with onfocus */
   inputOnfocus: '<input onfocus="alert(1)" autofocus>',
   /** Encoded script */
-  encodedScript: '&lt;script&gt;alert(1)&lt;/script&gt;',
+  encodedScript: "&lt;script&gt;alert(1)&lt;/script&gt;",
   /** Nested quotes */
   nestedQuotes: `"><script>alert("XSS")</script><"`,
   /** Unicode escape */
-  unicodeEscape: '\\u003cscript\\u003ealert(1)\\u003c/script\\u003e',
+  unicodeEscape: "\\u003cscript\\u003ealert(1)\\u003c/script\\u003e",
   /** Data URL */
   dataUrl: '<a href="data:text/html,<script>alert(1)</script>">',
   /** CSS expression */
@@ -322,8 +330,8 @@ export function generateXssVariations(basePayload: string): string[] {
   return [
     basePayload,
     basePayload.toUpperCase(),
-    basePayload.replace(/<(\w)/g, '< $1'), // Space after <
-    basePayload.replace(/=/g, ' = '), // Spaces around =
+    basePayload.replace(/<(\w)/g, "< $1"), // Space after <
+    basePayload.replace(/=/g, " = "), // Spaces around =
     `test ${basePayload} test`, // Surrounded by text
     `${basePayload}${basePayload}`, // Doubled
   ];
@@ -355,7 +363,7 @@ export async function computeTestHmac(payload: string, secret: string): Promise<
     encoder.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["sign"],
   );
   const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
   const hashArray = Array.from(new Uint8Array(signatureBuffer));
@@ -368,13 +376,11 @@ export async function computeTestHmac(payload: string, secret: string): Promise<
 export async function createMetaWebhookRequest(
   payload: unknown,
   secret: string,
-  options: { valid?: boolean; path?: string } = {}
+  options: { valid?: boolean; path?: string } = {},
 ): Promise<Request> {
   const { valid = true, path = "/whatsapp-bot-foodshare" } = options;
   const body = JSON.stringify(payload);
-  const signature = valid
-    ? await computeTestHmac(body, secret)
-    : "invalid_signature_12345";
+  const signature = valid ? await computeTestHmac(body, secret) : "invalid_signature_12345";
 
   return new Request(`http://localhost${path}`, {
     method: "POST",
@@ -392,7 +398,7 @@ export async function createMetaWebhookRequest(
 export function createTelegramWebhookRequest(
   payload: unknown,
   secret: string,
-  options: { valid?: boolean; path?: string } = {}
+  options: { valid?: boolean; path?: string } = {},
 ): Request {
   const { valid = true, path = "/telegram-bot-foodshare" } = options;
   const body = JSON.stringify(payload);
@@ -413,16 +419,14 @@ export function createTelegramWebhookRequest(
 export async function createStripeWebhookRequest(
   payload: unknown,
   secret: string,
-  options: { valid?: boolean; timestamp?: number; path?: string } = {}
+  options: { valid?: boolean; timestamp?: number; path?: string } = {},
 ): Promise<Request> {
   const { valid = true, path = "/stripe-webhook" } = options;
   const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
   const body = JSON.stringify(payload);
 
   const signedPayload = `${timestamp}.${body}`;
-  const signature = valid
-    ? await computeTestHmac(signedPayload, secret)
-    : "invalid_signature";
+  const signature = valid ? await computeTestHmac(signedPayload, secret) : "invalid_signature";
 
   return new Request(`http://localhost${path}`, {
     method: "POST",
@@ -440,13 +444,11 @@ export async function createStripeWebhookRequest(
 export async function createGitHubWebhookRequest(
   payload: unknown,
   secret: string,
-  options: { valid?: boolean; event?: string; path?: string } = {}
+  options: { valid?: boolean; event?: string; path?: string } = {},
 ): Promise<Request> {
   const { valid = true, event = "push", path = "/github-webhook" } = options;
   const body = JSON.stringify(payload);
-  const signature = valid
-    ? await computeTestHmac(body, secret)
-    : "invalid_signature";
+  const signature = valid ? await computeTestHmac(body, secret) : "invalid_signature";
 
   return new Request(`http://localhost${path}`, {
     method: "POST",
@@ -528,7 +530,7 @@ export const MOCK_WEBHOOK_PAYLOADS = {
  */
 export function createRequestWithOrigin(
   origin: string | null,
-  options: { method?: string; path?: string; referer?: string } = {}
+  options: { method?: string; path?: string; referer?: string } = {},
 ): Request {
   const { method = "POST", path = "/api/test", referer } = options;
   const headers: Record<string, string> = {
@@ -571,7 +573,7 @@ export const MALICIOUS_ORIGINS = [
  * Measure async operation execution time
  */
 export async function measureExecutionTime<T>(
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
 ): Promise<{ result: T; durationMs: number }> {
   const start = performance.now();
   const result = await fn();
@@ -583,7 +585,7 @@ export async function measureExecutionTime<T>(
  * Measure sync operation execution time
  */
 export function measureSyncExecutionTime<T>(
-  fn: () => T
+  fn: () => T,
 ): { result: T; durationMs: number } {
   const start = performance.now();
   const result = fn();
@@ -596,7 +598,7 @@ export function measureSyncExecutionTime<T>(
  */
 export async function benchmark(
   fn: () => Promise<void>,
-  iterations: number = 100
+  iterations: number = 100,
 ): Promise<{
   min: number;
   max: number;
@@ -628,13 +630,13 @@ export async function benchmark(
 export async function assertExecutionTime<T>(
   fn: () => Promise<T>,
   maxMs: number,
-  description?: string
+  description?: string,
 ): Promise<T> {
   const { result, durationMs } = await measureExecutionTime(fn);
   if (durationMs > maxMs) {
     throw new Error(
       `${description || "Operation"} took ${durationMs.toFixed(2)}ms, ` +
-      `exceeding limit of ${maxMs}ms`
+        `exceeding limit of ${maxMs}ms`,
     );
   }
   return result;

@@ -21,7 +21,7 @@ export class SmsChannelAdapter implements ChannelAdapter {
 
   async send(
     payload: SmsPayload,
-    context: NotificationContext
+    context: NotificationContext,
   ): Promise<ChannelDeliveryResult> {
     try {
       logger.info("Sending SMS notification", {
@@ -75,14 +75,14 @@ export class SmsChannelAdapter implements ChannelAdapter {
  */
 export async function getUserPhoneNumber(
   context: NotificationContext,
-  userId: string
+  userId: string,
 ): Promise<string | null> {
   try {
     const { data, error } = await context.supabase.rpc(
       "get_notification_preferences",
       {
         p_user_id: userId,
-      }
+      },
     );
 
     if (error || !data?.settings?.phone_number) {

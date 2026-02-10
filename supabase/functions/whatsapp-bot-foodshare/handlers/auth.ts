@@ -4,16 +4,16 @@
  */
 
 import {
-  getProfileByWhatsAppPhone,
-  getProfileByEmail,
   createProfile,
-  updateProfile,
   generateVerificationCode,
+  getProfileByEmail,
+  getProfileByWhatsAppPhone,
+  updateProfile,
 } from "../services/profile.ts";
 import { sendVerificationEmail } from "../services/email.ts";
-import { setUserState, getUserState } from "../services/user-state.ts";
-import { sendTextMessage, sendButtonMessage } from "../services/whatsapp-api.ts";
-import { t, getUserLanguage } from "../lib/i18n.ts";
+import { getUserState, setUserState } from "../services/user-state.ts";
+import { sendButtonMessage, sendTextMessage } from "../services/whatsapp-api.ts";
+import { getUserLanguage, t } from "../lib/i18n.ts";
 import { getAuthButtons, getMainMenuButtons, getWelcomeMessage } from "../lib/interactive.ts";
 import { isValidEmail, isValidVerificationCode } from "../utils/validation.ts";
 import * as emoji from "../lib/emojis.ts";
@@ -33,7 +33,7 @@ export async function handleStart(phoneNumber: string, contactName?: string): Pr
       phoneNumber,
       message,
       getMainMenuButtons(lang),
-      t(lang, "welcome.welcomeBack")
+      t(lang, "welcome.welcomeBack"),
     );
     return;
   }
@@ -42,14 +42,16 @@ export async function handleStart(phoneNumber: string, contactName?: string): Pr
     // Unverified user - prompt for verification
     await sendTextMessage(
       phoneNumber,
-      `${emoji.EMAIL} ${t(lang, "auth.verifyEmailTitle")}\n\n${t(lang, "auth.sendEmailToSignIn")}`
+      `${emoji.EMAIL} ${t(lang, "auth.verifyEmailTitle")}\n\n${t(lang, "auth.sendEmailToSignIn")}`,
     );
     await setUserState(phoneNumber, { action: "awaiting_email", data: {} });
     return;
   }
 
   // New user - ask for email
-  const welcomeMsg = `${emoji.WAVE} *${t(lang, "welcome.title")}*\n\n${t(lang, "welcome.subtitle")}\n\n${emoji.EMAIL} ${t(lang, "auth.sendEmailToRegister")}`;
+  const welcomeMsg = `${emoji.WAVE} *${t(lang, "welcome.title")}*\n\n${
+    t(lang, "welcome.subtitle")
+  }\n\n${emoji.EMAIL} ${t(lang, "auth.sendEmailToRegister")}`;
   await sendTextMessage(phoneNumber, welcomeMsg);
   await setUserState(phoneNumber, { action: "awaiting_email", data: {} });
 }
@@ -60,7 +62,7 @@ export async function handleStart(phoneNumber: string, contactName?: string): Pr
 export async function handleEmailInput(
   phoneNumber: string,
   email: string,
-  contactName?: string
+  contactName?: string,
 ): Promise<void> {
   const lang = await getUserLanguage(phoneNumber);
   const normalizedEmail = email.toLowerCase().trim();
@@ -69,7 +71,9 @@ export async function handleEmailInput(
   if (!isValidEmail(normalizedEmail)) {
     await sendTextMessage(
       phoneNumber,
-      `${emoji.ERROR} *${t(lang, "auth.invalidEmailTitle")}*\n\n${t(lang, "auth.invalidEmailMessage")}`
+      `${emoji.ERROR} *${t(lang, "auth.invalidEmailTitle")}*\n\n${
+        t(lang, "auth.invalidEmailMessage")
+      }`,
     );
     return;
   }
@@ -82,7 +86,9 @@ export async function handleEmailInput(
     if (existingProfile.whatsapp_phone && existingProfile.whatsapp_phone !== phoneNumber) {
       await sendTextMessage(
         phoneNumber,
-        `${emoji.ERROR} *${t(lang, "auth.emailAlreadyLinkedTitle")}*\n\n${t(lang, "auth.emailAlreadyLinkedMessage")}`
+        `${emoji.ERROR} *${t(lang, "auth.emailAlreadyLinkedTitle")}*\n\n${
+          t(lang, "auth.emailAlreadyLinkedMessage")
+        }`,
       );
       await setUserState(phoneNumber, null);
       return;
@@ -102,16 +108,22 @@ export async function handleEmailInput(
     if (!emailSent) {
       await sendTextMessage(
         phoneNumber,
-        `${emoji.ERROR} *${t(lang, "auth.emailDeliveryFailedTitle")}*\n\n${t(lang, "auth.emailDeliveryFailedMessage")}`
+        `${emoji.ERROR} *${t(lang, "auth.emailDeliveryFailedTitle")}*\n\n${
+          t(lang, "auth.emailDeliveryFailedMessage")
+        }`,
       );
       return;
     }
 
     await sendButtonMessage(
       phoneNumber,
-      `${emoji.SUCCESS} *${t(lang, "auth.accountFound")}*\n\n${t(lang, "auth.codeEmailSent")}\n\n${emoji.EMAIL} ${normalizedEmail}\n\n${t(lang, "auth.enterCodeToSignIn")}\n\n${emoji.CLOCK} ${t(lang, "auth.codeExpires")}`,
+      `${emoji.SUCCESS} *${t(lang, "auth.accountFound")}*\n\n${
+        t(lang, "auth.codeEmailSent")
+      }\n\n${emoji.EMAIL} ${normalizedEmail}\n\n${
+        t(lang, "auth.enterCodeToSignIn")
+      }\n\n${emoji.CLOCK} ${t(lang, "auth.codeExpires")}`,
       getAuthButtons(lang),
-      t(lang, "auth.checkInbox")
+      t(lang, "auth.checkInbox"),
     );
 
     await setUserState(phoneNumber, {
@@ -141,7 +153,9 @@ export async function handleEmailInput(
   if (!newProfile) {
     await sendTextMessage(
       phoneNumber,
-      `${emoji.ERROR} *${t(lang, "auth.registrationFailedTitle")}*\n\n${t(lang, "auth.registrationFailedMessage")}`
+      `${emoji.ERROR} *${t(lang, "auth.registrationFailedTitle")}*\n\n${
+        t(lang, "auth.registrationFailedMessage")
+      }`,
     );
     return;
   }
@@ -151,16 +165,20 @@ export async function handleEmailInput(
   if (!emailSent) {
     await sendTextMessage(
       phoneNumber,
-      `${emoji.ERROR} *${t(lang, "auth.emailDeliveryFailedTitle")}*\n\n${t(lang, "auth.emailDeliveryFailedMessage")}`
+      `${emoji.ERROR} *${t(lang, "auth.emailDeliveryFailedTitle")}*\n\n${
+        t(lang, "auth.emailDeliveryFailedMessage")
+      }`,
     );
     return;
   }
 
   await sendButtonMessage(
     phoneNumber,
-    `${emoji.SUCCESS} *${t(lang, "auth.accountCreated")}*\n\n${t(lang, "auth.codeSentTo")}\n${emoji.EMAIL} ${normalizedEmail}\n\n${emoji.CLOCK} ${t(lang, "auth.codeExpires")}`,
+    `${emoji.SUCCESS} *${t(lang, "auth.accountCreated")}*\n\n${
+      t(lang, "auth.codeSentTo")
+    }\n${emoji.EMAIL} ${normalizedEmail}\n\n${emoji.CLOCK} ${t(lang, "auth.codeExpires")}`,
     getAuthButtons(lang),
-    t(lang, "auth.verifyEmailTitle")
+    t(lang, "auth.verifyEmailTitle"),
   );
 
   await setUserState(phoneNumber, {
@@ -235,7 +253,7 @@ export async function handleVerificationCode(phoneNumber: string, code: string):
     phoneNumber,
     `${emoji.CELEBRATE} *${t(lang, "auth.verificationSuccess")}*\n\n${welcomeMsg}`,
     getMainMenuButtons(lang),
-    t(lang, "welcome.accountReady")
+    t(lang, "welcome.accountReady"),
   );
 
   return true;
@@ -251,7 +269,7 @@ export async function handleResendCode(phoneNumber: string): Promise<void> {
   if (!state || state.action !== "awaiting_verification" || !state.data.email) {
     await sendTextMessage(
       phoneNumber,
-      `${emoji.INFO} No pending verification. Send your email to start.`
+      `${emoji.INFO} No pending verification. Send your email to start.`,
     );
     return;
   }
@@ -278,12 +296,14 @@ export async function handleResendCode(phoneNumber: string): Promise<void> {
   if (emailSent) {
     await sendTextMessage(
       phoneNumber,
-      `${emoji.SUCCESS} New code sent to ${state.data.email}\n\n${emoji.CLOCK} ${t(lang, "auth.codeExpires")}`
+      `${emoji.SUCCESS} New code sent to ${state.data.email}\n\n${emoji.CLOCK} ${
+        t(lang, "auth.codeExpires")
+      }`,
     );
   } else {
     await sendTextMessage(
       phoneNumber,
-      `${emoji.ERROR} ${t(lang, "auth.emailDeliveryFailedMessage")}`
+      `${emoji.ERROR} ${t(lang, "auth.emailDeliveryFailedMessage")}`,
     );
   }
 }
@@ -298,7 +318,9 @@ export async function requireAuth(phoneNumber: string): Promise<boolean> {
     const lang = await getUserLanguage(phoneNumber);
     await sendTextMessage(
       phoneNumber,
-      `${emoji.LOCK} ${t(lang, "share.linkAccountFirst")}\n\n${emoji.EMAIL} ${t(lang, "auth.sendEmailToRegister")}`
+      `${emoji.LOCK} ${t(lang, "share.linkAccountFirst")}\n\n${emoji.EMAIL} ${
+        t(lang, "auth.sendEmailToRegister")
+      }`,
     );
     await setUserState(phoneNumber, { action: "awaiting_email", data: {} });
     return false;

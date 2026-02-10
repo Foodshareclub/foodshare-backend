@@ -5,15 +5,15 @@
  * Use the consolidated version for all retry logic.
  */
 
-import { TimeoutError, withRetry as withRetryBase, type RetryOptions } from "./errors.ts";
+import { type RetryOptions, TimeoutError, withRetry as withRetryBase } from "./errors.ts";
 
 // Re-export the consolidated retry function
-export { withRetryBase as withRetry, type RetryOptions };
+export { type RetryOptions, withRetryBase as withRetry };
 
 export async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
-  errorMessage: string = "Operation timed out"
+  errorMessage: string = "Operation timed out",
 ): Promise<T> {
   const timeout = new Promise<never>((_, reject) =>
     setTimeout(() => reject(new TimeoutError(errorMessage, errorMessage)), timeoutMs)
@@ -27,7 +27,7 @@ export async function withTimeout<T>(
 export async function withBatchTimeout<T>(
   promises: Promise<T>[],
   timeoutMs: number,
-  errorMessage: string = "Batch operation timed out"
+  errorMessage: string = "Batch operation timed out",
 ): Promise<PromiseSettledResult<T>[]> {
   const timeout = new Promise<never>((_, reject) =>
     setTimeout(() => reject(new TimeoutError(errorMessage, errorMessage)), timeoutMs)

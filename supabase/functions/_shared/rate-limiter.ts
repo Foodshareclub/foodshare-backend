@@ -81,7 +81,7 @@ function startCleanup() {
  */
 export function checkMemoryRateLimit(
   key: string,
-  config: RateLimitConfig
+  config: RateLimitConfig,
 ): RateLimitResult {
   startCleanup();
 
@@ -182,7 +182,7 @@ export function checkMemoryRateLimit(
  */
 export async function checkDistributedRateLimit(
   key: string,
-  config: RateLimitConfig
+  config: RateLimitConfig,
 ): Promise<RateLimitResult> {
   const fullKey = config.keyPrefix ? `${config.keyPrefix}:${key}` : key;
 
@@ -232,7 +232,7 @@ export async function checkDistributedRateLimit(
  */
 export async function checkRateLimit(
   key: string,
-  config: RateLimitConfig
+  config: RateLimitConfig,
 ): Promise<RateLimitResult> {
   if (config.distributed) {
     return checkDistributedRateLimit(key, config);
@@ -245,7 +245,7 @@ export async function checkRateLimit(
  */
 export async function enforceRateLimit(
   key: string,
-  config: RateLimitConfig
+  config: RateLimitConfig,
 ): Promise<RateLimitInfo> {
   const result = await checkRateLimit(key, config);
 
@@ -283,8 +283,7 @@ export function keyByUser(userId: string, prefix?: string): string {
  * Generate rate limit key from device ID
  */
 export function keyByDevice(request: Request, prefix?: string): string {
-  const deviceId =
-    request.headers.get("x-device-id") ||
+  const deviceId = request.headers.get("x-device-id") ||
     request.headers.get("x-client-id") ||
     getClientIp(request);
   return prefix ? `${prefix}:device:${deviceId}` : `device:${deviceId}`;
@@ -316,7 +315,7 @@ function getClientIp(request: Request): string {
  */
 export function addRateLimitHeaders(
   headers: Record<string, string>,
-  info: RateLimitInfo
+  info: RateLimitInfo,
 ): Record<string, string> {
   return {
     ...headers,
@@ -332,7 +331,7 @@ export function addRateLimitHeaders(
 export function rateLimitResponse(
   result: RateLimitResult,
   config: RateLimitConfig,
-  corsHeaders: Record<string, string>
+  corsHeaders: Record<string, string>,
 ): Response {
   const retryAfterSec = Math.ceil(result.retryAfterMs / 1000);
 
@@ -363,7 +362,7 @@ export function rateLimitResponse(
         "X-RateLimit-Remaining": "0",
         "X-RateLimit-Reset": String(Math.ceil(result.resetAt / 1000)),
       },
-    }
+    },
   );
 }
 

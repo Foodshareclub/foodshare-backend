@@ -13,7 +13,7 @@
  */
 
 import { createAPIHandler } from "../_shared/api-handler.ts";
-import { CONFIG, cacheOperationSchema } from "./lib/types.ts";
+import { cacheOperationSchema, CONFIG } from "./lib/types.ts";
 import { handleGetRequest } from "./lib/health.ts";
 import { handleCacheOperation } from "./lib/operations.ts";
 

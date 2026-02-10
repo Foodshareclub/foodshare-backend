@@ -27,13 +27,13 @@
  * @version 2.0.0
  */
 
-import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
 import { AppError } from "../_shared/errors.ts";
 import { parseRoute } from "../_shared/routing.ts";
 import { isR2Configured } from "../_shared/r2-storage.ts";
 
 // Import handlers from lib/
-import { handleUpload, handleBatchUpload } from "./lib/upload.ts";
+import { handleBatchUpload, handleUpload } from "./lib/upload.ts";
 import { handleProxy, handleUploadFromUrl } from "./lib/proxy.ts";
 import { handleCleanup, handleRecompress } from "./lib/maintenance.ts";
 

@@ -32,8 +32,26 @@ const VERSION = "2.0.0";
 const MAX_KEYS_PER_BATCH = 50;
 
 const SUPPORTED_LOCALES = [
-  "cs", "de", "es", "fr", "pt", "ru", "uk", "zh", "hi", "ar",
-  "it", "pl", "nl", "ja", "ko", "tr", "sv", "vi", "id", "th"
+  "cs",
+  "de",
+  "es",
+  "fr",
+  "pt",
+  "ru",
+  "uk",
+  "zh",
+  "hi",
+  "ar",
+  "it",
+  "pl",
+  "nl",
+  "ja",
+  "ko",
+  "tr",
+  "sv",
+  "vi",
+  "id",
+  "th",
 ];
 
 /**
@@ -41,7 +59,7 @@ const SUPPORTED_LOCALES = [
  */
 async function translateWithLLM(
   keys: Record<string, string>,
-  targetLocale: string
+  targetLocale: string,
 ): Promise<Record<string, string>> {
   const translations: Record<string, string> = {};
 
@@ -52,7 +70,7 @@ async function translateWithLLM(
         englishValue,
         "en",
         targetLocale,
-        `UI string for key: ${key}`
+        `UI string for key: ${key}`,
       );
 
       // Only use translation if quality > 0 (successful)
@@ -101,7 +119,7 @@ function unflattenObject(flat: Record<string, string>): Record<string, unknown> 
  */
 function deepMerge(
   target: Record<string, unknown>,
-  source: Record<string, unknown>
+  source: Record<string, unknown>,
 ): Record<string, unknown> {
   const result = { ...target };
 
@@ -109,7 +127,7 @@ function deepMerge(
     if (value !== null && typeof value === "object" && !Array.isArray(value)) {
       result[key] = deepMerge(
         (result[key] as Record<string, unknown>) || {},
-        value as Record<string, unknown>
+        value as Record<string, unknown>,
       );
     } else {
       result[key] = value;
@@ -127,7 +145,7 @@ async function fetchUntranslatedKeys(
   supabase: any,
   locale: string,
   category?: string,
-  limit: number = MAX_KEYS_PER_BATCH
+  limit: number = MAX_KEYS_PER_BATCH,
 ): Promise<Record<string, string>> {
   // Fetch English translations as reference
   const { data: englishData, error: englishError } = await supabase
@@ -208,15 +226,21 @@ async function fetchUntranslatedKeys(
   return untranslated;
 }
 
-export default async function uiBatchTranslateHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
+export default async function uiBatchTranslateHandler(
+  req: Request,
+  corsHeaders: Record<string, string>,
+): Promise<Response> {
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({
-      success: false,
-      error: "Method not allowed. Use POST."
-    }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "Method not allowed. Use POST.",
+      }),
+      {
+        status: 405,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 
   const supabase = getSupabaseClient();
@@ -226,25 +250,31 @@ export default async function uiBatchTranslateHandler(req: Request, corsHeaders:
     const { locale, keys, apply = false, category } = body;
 
     if (!locale) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "missing_locale",
-        message: "locale is required"
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "missing_locale",
+          message: "locale is required",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     if (!SUPPORTED_LOCALES.includes(locale)) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "unsupported_locale",
-        message: `Locale '${locale}' not supported. Supported: ${SUPPORTED_LOCALES.join(", ")}`
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "unsupported_locale",
+          message: `Locale '${locale}' not supported. Supported: ${SUPPORTED_LOCALES.join(", ")}`,
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // If keys not provided, fetch untranslated from audit
@@ -257,14 +287,17 @@ export default async function uiBatchTranslateHandler(req: Request, corsHeaders:
     const keyCount = Object.keys(keysToTranslate).length;
 
     if (keyCount === 0) {
-      return new Response(JSON.stringify({
-        success: true,
-        locale,
-        message: "No keys to translate",
-        translated: 0
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          locale,
+          message: "No keys to translate",
+          translated: 0,
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Limit batch size
@@ -291,15 +324,18 @@ export default async function uiBatchTranslateHandler(req: Request, corsHeaders:
         .single();
 
       if (fetchError || !current) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: "locale_not_found",
-          message: `Could not fetch current translations for locale '${locale}'`,
-          translations
-        }), {
-          status: 404,
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
-        });
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "locale_not_found",
+            message: `Could not fetch current translations for locale '${locale}'`,
+            translations,
+          }),
+          {
+            status: 404,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
 
       // Convert flat translations to nested and merge
@@ -307,7 +343,7 @@ export default async function uiBatchTranslateHandler(req: Request, corsHeaders:
       const mergedMessages = deepMerge(
         // deno-lint-ignore no-explicit-any
         (current as any).messages as Record<string, unknown>,
-        nestedTranslations
+        nestedTranslations,
       );
       const version = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
 
@@ -323,50 +359,61 @@ export default async function uiBatchTranslateHandler(req: Request, corsHeaders:
         .eq("id", (current as any).id);
 
       if (updateError) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: "update_failed",
-          message: updateError.message,
-          translations
-        }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
-        });
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "update_failed",
+            message: updateError.message,
+            translations,
+          }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
 
-      return new Response(JSON.stringify({
+      return new Response(
+        JSON.stringify({
+          success: true,
+          version: VERSION,
+          locale,
+          translated: Object.keys(translations).length,
+          applied: true,
+          newVersion: version,
+          translations,
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    // Return translations without applying
+    return new Response(
+      JSON.stringify({
         success: true,
         version: VERSION,
         locale,
         translated: Object.keys(translations).length,
-        applied: true,
-        newVersion: version,
-        translations
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    }
-
-    // Return translations without applying
-    return new Response(JSON.stringify({
-      success: true,
-      version: VERSION,
-      locale,
-      translated: Object.keys(translations).length,
-      applied: false,
-      translations
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
-
+        applied: false,
+        translations,
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
-    return new Response(JSON.stringify({
-      success: false,
-      error: "translation_failed",
-      message: error instanceof Error ? error.message : String(error)
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "translation_failed",
+        message: error instanceof Error ? error.message : String(error),
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 }

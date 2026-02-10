@@ -38,6 +38,8 @@ export interface Pagination {
   total: number;
   hasMore: boolean;
   nextOffset?: number;
+  /** Next cursor for cursor-based pagination */
+  nextCursor?: string;
 }
 
 export interface UIHints {
@@ -117,10 +119,10 @@ export interface TransitionalResponse<T = unknown> {
   uiHints?: UIHints;
 
   // Legacy format fields (for backward compatibility during transition)
-  requestId?: string;        // Duplicate of meta.requestId
-  timestamp?: string;        // Duplicate of meta.timestamp
-  durationMs?: number;       // Duplicate of meta.responseTime
-  correlationId?: string;    // Legacy field
+  requestId?: string; // Duplicate of meta.requestId
+  timestamp?: string; // Duplicate of meta.timestamp
+  durationMs?: number; // Duplicate of meta.responseTime
+  correlationId?: string; // Legacy field
 }
 
 // =============================================================================
@@ -196,7 +198,7 @@ export function createTransitionalResponse<T>(
     cacheTTL?: number;
     version?: string;
     correlationId?: string;
-  }
+  },
 ): TransitionalResponse<T> {
   const ctx = getContext();
   const now = new Date().toISOString();
@@ -235,7 +237,7 @@ export function createTransitionalErrorResponse(
     correlationId?: string;
     retryable?: boolean;
     retryAfterMs?: number;
-  }
+  },
 ): TransitionalResponse<never> {
   const ctx = getContext();
   const now = new Date().toISOString();
@@ -292,7 +294,7 @@ export function buildSuccessResponse<T>(
     cacheTTL?: number;
     version?: string;
     includeTransitional?: boolean;
-  }
+  },
 ): Response {
   const ctx = getContext();
   const useUnified = isUnifiedResponseEnabled();
@@ -361,7 +363,7 @@ export function buildErrorResponse(
     version?: string;
     includeTransitional?: boolean;
     retryAfterMs?: number;
-  }
+  },
 ): Response {
   const ctx = getContext();
   const useUnified = isUnifiedResponseEnabled();
@@ -568,7 +570,7 @@ export function detectPlatform(request: Request): Platform {
  */
 export function getPlatformUIHints(
   platform: Platform,
-  customHints?: Partial<UIHints>
+  customHints?: Partial<UIHints>,
 ): UIHints {
   const baseHints = PLATFORM_UI_HINTS[platform] || PLATFORM_UI_HINTS.unknown;
   return {
@@ -602,7 +604,7 @@ export interface PlatformOptimizationOptions {
 export function applyPlatformOptimizations<T extends Record<string, unknown>>(
   data: T,
   platform: Platform,
-  options?: PlatformOptimizationOptions
+  options?: PlatformOptimizationOptions,
 ): T & { _platformHints?: Record<string, unknown> } {
   const result = { ...data } as T & { _platformHints?: Record<string, unknown> };
 
@@ -652,8 +654,7 @@ export function applyPlatformOptimizations<T extends Record<string, unknown>>(
 
         // Add canonical URL if data has an ID
         if ("id" in data && typeof data.id === "string") {
-          (result as Record<string, unknown>).canonicalUrl =
-            `${options.baseUrl}/${data.id}`;
+          (result as Record<string, unknown>).canonicalUrl = `${options.baseUrl}/${data.id}`;
         }
       }
       break;
@@ -677,10 +678,13 @@ export function buildPlatformOptimizedResponse<T>(
     version?: string;
     includeTransitional?: boolean;
     platformOptions?: PlatformOptimizationOptions;
-  }
+  },
 ): Response {
   const platform = detectPlatform(request);
-  const platformUIHints = getPlatformUIHints(platform, options?.pagination ? { showEmptyState: true } : undefined);
+  const platformUIHints = getPlatformUIHints(
+    platform,
+    options?.pagination ? { showEmptyState: true } : undefined,
+  );
 
   // Apply platform-specific data transformations if data is an object
   let optimizedData = data;
@@ -694,7 +698,7 @@ export function buildPlatformOptimizedResponse<T>(
         includeCanonicalUrls: platform === "web",
         baseUrl: "https://foodshare.app",
         ...options?.platformOptions,
-      }
+      },
     ) as unknown as T;
   }
 
@@ -714,7 +718,7 @@ export function buildPlatformOptimizedResponse<T>(
 export function createDeepLinks(
   entityType: "listing" | "profile" | "chat" | "notification",
   entityId: string,
-  baseWebUrl: string = "https://foodshare.app"
+  baseWebUrl: string = "https://foodshare.app",
 ): Record<Platform, string> {
   const paths: Record<typeof entityType, string> = {
     listing: "listing",

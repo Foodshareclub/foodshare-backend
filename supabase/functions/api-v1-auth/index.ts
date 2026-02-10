@@ -17,21 +17,21 @@
  * @version 1.0.0
  */
 
-import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
 import { getSupabaseClient } from "../_shared/supabase.ts";
 import { logger } from "../_shared/logger.ts";
-import { ValidationError, AppError } from "../_shared/errors.ts";
+import { AppError, ValidationError } from "../_shared/errors.ts";
 import { parseRoute } from "../_shared/routing.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import {
   rateCheckSchema,
   rateRecordSchema,
-  verifySendSchema,
   verifyConfirmSchema,
   verifyResendSchema,
+  verifySendSchema,
 } from "./lib/schemas.ts";
 import { handleRateCheck, handleRateRecord } from "./lib/rate.ts";
-import { handleVerifySend, handleVerifyConfirm, handleVerifyResend } from "./lib/verify.ts";
+import { handleVerifyConfirm, handleVerifyResend, handleVerifySend } from "./lib/verify.ts";
 import type { AuthContext } from "./lib/types.ts";
 
 const VERSION = "1.0.0";
@@ -61,8 +61,7 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
   const route = parseRoute(url, ctx.request.method, SERVICE);
 
   // Extract client IP
-  const clientIp =
-    ctx.request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+  const clientIp = ctx.request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     ctx.request.headers.get("x-real-ip") ||
     null;
 
@@ -135,7 +134,7 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
         error.errors.map((e) => ({
           field: e.path.join("."),
           message: e.message,
-        }))
+        })),
       );
     }
     throw error;

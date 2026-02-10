@@ -24,7 +24,7 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { ForbiddenError, ServerError } from "../_shared/errors.ts";
 
@@ -93,7 +93,7 @@ type BatchEventsRequest = z.infer<typeof batchEventsSchema>;
 
 async function getErrorRate(
   supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
-  minutes: number
+  minutes: number,
 ): Promise<number> {
   try {
     const { data, error } = await supabase.rpc("get_error_rate", { p_minutes: minutes });
@@ -106,7 +106,7 @@ async function getErrorRate(
 
 async function getActiveUsers(
   supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
-  minutes: number
+  minutes: number,
 ): Promise<number> {
   try {
     const { count, error } = await supabase
@@ -123,7 +123,7 @@ async function getActiveUsers(
 
 async function getRequestCount(
   supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
-  minutes: number
+  minutes: number,
 ): Promise<number> {
   try {
     const since = new Date(Date.now() - minutes * 60 * 1000).toISOString();
@@ -160,7 +160,7 @@ function generatePrometheusMetrics(
     requestCount5m: number;
     requestCount1h: number;
     requestCount24h: number;
-  }
+  },
 ): string {
   const lines: string[] = [];
   const timestamp = Date.now();
@@ -169,42 +169,60 @@ function generatePrometheusMetrics(
   lines.push("# HELP foodshare_web_vitals_p50 Web Vitals 50th percentile");
   lines.push("# TYPE foodshare_web_vitals_p50 gauge");
   for (const vital of webVitals) {
-    lines.push(`foodshare_web_vitals_p50{metric="${vital.metric_name}"} ${vital.p50 || 0} ${timestamp}`);
+    lines.push(
+      `foodshare_web_vitals_p50{metric="${vital.metric_name}"} ${vital.p50 || 0} ${timestamp}`,
+    );
   }
 
   lines.push("");
   lines.push("# HELP foodshare_web_vitals_p75 Web Vitals 75th percentile");
   lines.push("# TYPE foodshare_web_vitals_p75 gauge");
   for (const vital of webVitals) {
-    lines.push(`foodshare_web_vitals_p75{metric="${vital.metric_name}"} ${vital.p75 || 0} ${timestamp}`);
+    lines.push(
+      `foodshare_web_vitals_p75{metric="${vital.metric_name}"} ${vital.p75 || 0} ${timestamp}`,
+    );
   }
 
   lines.push("");
   lines.push("# HELP foodshare_web_vitals_p95 Web Vitals 95th percentile");
   lines.push("# TYPE foodshare_web_vitals_p95 gauge");
   for (const vital of webVitals) {
-    lines.push(`foodshare_web_vitals_p95{metric="${vital.metric_name}"} ${vital.p95 || 0} ${timestamp}`);
+    lines.push(
+      `foodshare_web_vitals_p95{metric="${vital.metric_name}"} ${vital.p95 || 0} ${timestamp}`,
+    );
   }
 
   lines.push("");
   lines.push("# HELP foodshare_web_vitals_sample_count Number of samples per metric");
   lines.push("# TYPE foodshare_web_vitals_sample_count gauge");
   for (const vital of webVitals) {
-    lines.push(`foodshare_web_vitals_sample_count{metric="${vital.metric_name}"} ${vital.sample_count || 0} ${timestamp}`);
+    lines.push(
+      `foodshare_web_vitals_sample_count{metric="${vital.metric_name}"} ${
+        vital.sample_count || 0
+      } ${timestamp}`,
+    );
   }
 
   lines.push("");
   lines.push("# HELP foodshare_web_vitals_good_pct Percentage of good ratings");
   lines.push("# TYPE foodshare_web_vitals_good_pct gauge");
   for (const vital of webVitals) {
-    lines.push(`foodshare_web_vitals_good_pct{metric="${vital.metric_name}"} ${vital.good_pct || 0} ${timestamp}`);
+    lines.push(
+      `foodshare_web_vitals_good_pct{metric="${vital.metric_name}"} ${
+        vital.good_pct || 0
+      } ${timestamp}`,
+    );
   }
 
   lines.push("");
   lines.push("# HELP foodshare_web_vitals_poor_pct Percentage of poor ratings");
   lines.push("# TYPE foodshare_web_vitals_poor_pct gauge");
   for (const vital of webVitals) {
-    lines.push(`foodshare_web_vitals_poor_pct{metric="${vital.metric_name}"} ${vital.poor_pct || 0} ${timestamp}`);
+    lines.push(
+      `foodshare_web_vitals_poor_pct{metric="${vital.metric_name}"} ${
+        vital.poor_pct || 0
+      } ${timestamp}`,
+    );
   }
 
   // Error rates
@@ -235,7 +253,11 @@ function generatePrometheusMetrics(
   lines.push("");
   lines.push("# HELP foodshare_info Service information");
   lines.push("# TYPE foodshare_info gauge");
-  lines.push(`foodshare_info{version="${Deno.env.get("SUPABASE_FUNCTION_VERSION") || "2.0.0"}"} 1 ${timestamp}`);
+  lines.push(
+    `foodshare_info{version="${
+      Deno.env.get("SUPABASE_FUNCTION_VERSION") || "2.0.0"
+    }"} 1 ${timestamp}`,
+  );
 
   return lines.join("\n");
 }
@@ -248,7 +270,12 @@ async function handleGetMetrics(ctx: HandlerContext<unknown, MetricsQuery>): Pro
   // Health check
   const url = new URL(ctx.request.url);
   if (url.pathname.endsWith("/health")) {
-    return ok({ status: "healthy", service: "api-v1-metrics", version: VERSION, timestamp: new Date().toISOString() }, ctx);
+    return ok({
+      status: "healthy",
+      service: "api-v1-metrics",
+      version: VERSION,
+      timestamp: new Date().toISOString(),
+    }, ctx);
   }
 
   const { supabase, userId, query, ctx: requestCtx } = ctx;
@@ -354,17 +381,32 @@ async function handleGetMetrics(ctx: HandlerContext<unknown, MetricsQuery>): Pro
 // =============================================================================
 
 const VALID_EVENT_TYPES = [
-  "listing_view", "search", "share_complete", "message_sent", "feed_scroll",
-  "save", "profile_view", "category_browse", "notification_opened",
-  "app_open", "app_background",
+  "listing_view",
+  "search",
+  "share_complete",
+  "message_sent",
+  "feed_scroll",
+  "save",
+  "profile_view",
+  "category_browse",
+  "notification_opened",
+  "app_open",
+  "app_background",
 ] as const;
 
 function mapEventToActivityType(eventType: string): string {
   const mapping: Record<string, string> = {
-    listing_view: "view", search: "search", share_complete: "share_complete",
-    message_sent: "message", feed_scroll: "view", save: "save",
-    profile_view: "view", category_browse: "view", notification_opened: "view",
-    app_open: "view", app_background: "view",
+    listing_view: "view",
+    search: "search",
+    share_complete: "share_complete",
+    message_sent: "message",
+    feed_scroll: "view",
+    save: "save",
+    profile_view: "view",
+    category_browse: "view",
+    notification_opened: "view",
+    app_open: "view",
+    app_background: "view",
   };
   return mapping[eventType] || "view";
 }
@@ -410,7 +452,7 @@ async function handleTrackBatchEvents(ctx: HandlerContext<BatchEventsRequest>): 
     return ok({ tracked: 0, total: 0, reason: "auth_required" }, ctx);
   }
 
-  const validEvents = body.events.filter(event =>
+  const validEvents = body.events.filter((event) =>
     VALID_EVENT_TYPES.includes(event.eventType as typeof VALID_EVENT_TYPES[number])
   );
 
@@ -444,10 +486,10 @@ async function handleTrackBatchEvents(ctx: HandlerContext<BatchEventsRequest>): 
       } catch {
         return false;
       }
-    })
+    }),
   );
 
-  const trackedCount = results.filter(success => success).length;
+  const trackedCount = results.filter((success) => success).length;
 
   return ok({
     tracked: trackedCount,
@@ -460,7 +502,9 @@ async function handleTrackBatchEvents(ctx: HandlerContext<BatchEventsRequest>): 
 // Route Handler
 // =============================================================================
 
-async function handlePost(ctx: HandlerContext<EventRequest | BatchEventsRequest>): Promise<Response> {
+async function handlePost(
+  ctx: HandlerContext<EventRequest | BatchEventsRequest>,
+): Promise<Response> {
   const url = new URL(ctx.request.url);
   const path = url.pathname;
 

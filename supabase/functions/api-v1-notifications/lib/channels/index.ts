@@ -67,11 +67,11 @@ export async function getAllChannelHealth(): Promise<
       } else {
         health[name] = { healthy: true };
       }
-    })
+    }),
   );
 
   return health;
 }
 
 // Export individual adapters for direct use
-export { EmailChannelAdapter, PushChannelAdapter, SmsChannelAdapter, InAppChannelAdapter };
+export { EmailChannelAdapter, InAppChannelAdapter, PushChannelAdapter, SmsChannelAdapter };

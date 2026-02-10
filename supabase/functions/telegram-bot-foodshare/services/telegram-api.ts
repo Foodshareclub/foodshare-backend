@@ -5,9 +5,9 @@
 import { logger } from "../../_shared/logger.ts";
 import { TELEGRAM_API } from "../config/index.ts";
 import {
-  withCircuitBreaker,
   CircuitBreakerError,
   getCircuitStatus,
+  withCircuitBreaker,
 } from "../../_shared/circuit-breaker.ts";
 
 const CIRCUIT_CONFIG = {
@@ -38,7 +38,7 @@ export function disableGroupAutoDelete(): void {
 async function fetchWithTimeout(
   url: string,
   options: RequestInit,
-  timeoutMs = FETCH_TIMEOUT
+  timeoutMs = FETCH_TIMEOUT,
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -68,7 +68,7 @@ export function getTelegramApiStatus(): { status: string; failures: number } {
 export async function sendMessage(
   chatId: number,
   text: string,
-  options: Record<string, unknown> = {}
+  options: Record<string, unknown> = {},
 ): Promise<number | null> {
   try {
     return await withCircuitBreaker(
@@ -105,7 +105,7 @@ export async function sendMessage(
 
         return messageId;
       },
-      CIRCUIT_CONFIG
+      CIRCUIT_CONFIG,
     );
   } catch (error) {
     if (error instanceof CircuitBreakerError) {
@@ -121,7 +121,7 @@ export async function sendPhoto(
   chatId: number,
   photo: string,
   caption?: string,
-  options: Record<string, unknown> = {}
+  options: Record<string, unknown> = {},
 ): Promise<boolean> {
   try {
     return await withCircuitBreaker(
@@ -147,7 +147,7 @@ export async function sendPhoto(
 
         return result.ok;
       },
-      CIRCUIT_CONFIG
+      CIRCUIT_CONFIG,
     );
   } catch (error) {
     if (error instanceof CircuitBreakerError) {
@@ -162,7 +162,7 @@ export async function sendPhoto(
 export async function sendLocation(
   chatId: number,
   latitude: number,
-  longitude: number
+  longitude: number,
 ): Promise<boolean> {
   try {
     return await withCircuitBreaker(
@@ -186,7 +186,7 @@ export async function sendLocation(
 
         return result.ok;
       },
-      CIRCUIT_CONFIG
+      CIRCUIT_CONFIG,
     );
   } catch (error) {
     if (error instanceof CircuitBreakerError) {
@@ -254,7 +254,7 @@ export async function deleteMessage(chatId: number, messageId: number): Promise<
 
         return result.ok;
       },
-      CIRCUIT_CONFIG
+      CIRCUIT_CONFIG,
     );
   } catch (error) {
     if (error instanceof CircuitBreakerError) {
@@ -283,7 +283,7 @@ export function scheduleGroupMessageDeletion(chatId: number, messageId: number):
 
 export async function answerCallbackQuery(
   callbackQueryId: string,
-  text?: string
+  text?: string,
 ): Promise<boolean> {
   try {
     return await withCircuitBreaker(
@@ -306,7 +306,7 @@ export async function answerCallbackQuery(
 
         return result.ok;
       },
-      CIRCUIT_CONFIG
+      CIRCUIT_CONFIG,
     );
   } catch (error) {
     if (error instanceof CircuitBreakerError) {

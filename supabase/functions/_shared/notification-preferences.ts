@@ -92,7 +92,7 @@ export interface NotificationCheckOptions {
 export async function shouldSendNotification(
   supabase: SupabaseClient,
   userId: string,
-  options: NotificationCheckOptions
+  options: NotificationCheckOptions,
 ): Promise<ShouldSendResult> {
   const { category, channel, bypassPreferences } = options;
 
@@ -156,7 +156,7 @@ export async function shouldSendNotification(
 export async function checkNotificationPreferences(
   supabase: SupabaseClient,
   userIds: string[],
-  options: NotificationCheckOptions
+  options: NotificationCheckOptions,
 ): Promise<{
   sendNow: string[];
   deferred: Array<{ userId: string; scheduleFor?: string; reason?: string }>;
@@ -175,7 +175,7 @@ export async function checkNotificationPreferences(
     userIds.map(async (userId) => {
       const result = await shouldSendNotification(supabase, userId, options);
       return { userId, ...result };
-    })
+    }),
   );
 
   for (const result of results) {
@@ -292,7 +292,7 @@ export function shouldBypassPreferences(type: string): boolean {
  * Get default channel for a notification category.
  */
 export function getDefaultChannel(
-  category: NotificationCategory
+  category: NotificationCategory,
 ): NotificationChannel {
   const defaults: Record<NotificationCategory, NotificationChannel> = {
     posts: "push",

@@ -39,52 +39,43 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import {
-  createAPIHandler,
-  ok,
-  type HandlerContext,
-} from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
 import { ValidationError } from "../_shared/errors.ts";
 
 // Thread handlers
 import {
+  createPost,
+  deletePost,
+  featurePost,
+  getCategories,
   getFeed,
   getPostDetail,
-  getCategories,
-  searchPosts,
-  getUnread,
   getSeries,
-  createPost,
+  getUnread,
   recordView,
-  togglePin,
-  toggleLock,
   removePost,
-  featurePost,
+  searchPosts,
+  toggleLock,
+  togglePin,
   updatePost,
-  deletePost,
 } from "./lib/threads.ts";
 
 // Comment handlers
-import {
-  createComment,
-  markBestAnswer,
-  updateComment,
-  deleteComment,
-} from "./lib/comments.ts";
+import { createComment, deleteComment, markBestAnswer, updateComment } from "./lib/comments.ts";
 
 // Reaction/engagement handlers
 import {
-  getDrafts,
+  createPoll,
+  deleteDraft,
   getBookmarks,
-  toggleLike,
+  getDrafts,
+  saveDraft,
+  submitReport,
   toggleBookmark,
+  toggleLike,
   toggleReaction,
   toggleSubscription,
-  submitReport,
-  saveDraft,
-  createPoll,
   votePoll,
-  deleteDraft,
 } from "./lib/reactions.ts";
 
 const VERSION = "1.0.0";
@@ -95,10 +86,28 @@ const VERSION = "1.0.0";
 
 const forumQuerySchema = z.object({
   action: z.enum([
-    "categories", "search", "drafts", "bookmarks", "unread", "series",
-    "create", "comment", "like", "bookmark", "react", "subscribe",
-    "report", "draft", "poll", "vote", "view", "pin", "lock",
-    "remove", "feature", "best-answer",
+    "categories",
+    "search",
+    "drafts",
+    "bookmarks",
+    "unread",
+    "series",
+    "create",
+    "comment",
+    "like",
+    "bookmark",
+    "react",
+    "subscribe",
+    "report",
+    "draft",
+    "poll",
+    "vote",
+    "view",
+    "pin",
+    "lock",
+    "remove",
+    "feature",
+    "best-answer",
   ]).optional(),
   id: z.string().optional(),
   q: z.string().optional(),
@@ -194,7 +203,7 @@ async function handlePost(ctx: HandlerContext<unknown, ForumQuery>): Promise<Res
       return markBestAnswer(ctx);
     default:
       throw new ValidationError(
-        "action query param required (create, comment, like, bookmark, react, subscribe, report, draft, poll, vote, view, pin, lock, remove, feature, best-answer)"
+        "action query param required (create, comment, like, bookmark, react, subscribe, report, draft, poll, vote, view, pin, lock, remove, feature, best-answer)",
       );
   }
 }

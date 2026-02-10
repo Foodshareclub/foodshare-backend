@@ -3,9 +3,9 @@
  */
 
 import * as jose from "https://deno.land/x/jose@v5.2.0/index.ts";
-import { withCircuitBreaker, CircuitBreakerError } from "../../../_shared/circuit-breaker.ts";
+import { CircuitBreakerError, withCircuitBreaker } from "../../../_shared/circuit-breaker.ts";
 import { withOperationTimeout } from "../../../_shared/timeout.ts";
-import type { DeviceToken, PushPayload, SendResult, Platform } from "./types.ts";
+import type { DeviceToken, Platform, PushPayload, SendResult } from "./types.ts";
 import { generateDeepLink } from "./types.ts";
 
 const env = {
@@ -111,7 +111,9 @@ export async function sendFcm(device: DeviceToken, payload: PushPayload): Promis
                 visibility: androidOptions.visibility
                   ? visibilityMap[androidOptions.visibility]
                   : undefined,
-                notification_priority: channelConfig.importance === "HIGH" ? "PRIORITY_HIGH" : "PRIORITY_DEFAULT",
+                notification_priority: channelConfig.importance === "HIGH"
+                  ? "PRIORITY_HIGH"
+                  : "PRIORITY_DEFAULT",
                 default_sound: true,
                 default_vibrate_timings: !androidOptions.vibrationPattern,
                 default_light_settings: !androidOptions.lightColor,
@@ -134,12 +136,13 @@ export async function sendFcm(device: DeviceToken, payload: PushPayload): Promis
         };
 
         if (androidOptions.largeIcon) {
-          (fcmPayload.message.android.notification as Record<string, unknown>).image = androidOptions.largeIcon;
+          (fcmPayload.message.android.notification as Record<string, unknown>).image =
+            androidOptions.largeIcon;
         }
 
         if (androidOptions.vibrationPattern) {
           (fcmPayload.message.android.notification as Record<string, unknown>).vibrate_timings =
-            androidOptions.vibrationPattern.map(ms => `${ms / 1000}s`);
+            androidOptions.vibrationPattern.map((ms) => `${ms / 1000}s`);
         }
 
         if (androidOptions.lightColor) {
@@ -160,9 +163,9 @@ export async function sendFcm(device: DeviceToken, payload: PushPayload): Promis
                 "Content-Type": "application/json",
               },
               body: JSON.stringify(fcmPayload),
-            }
+            },
           ),
-          "push"
+          "push",
         );
 
         if (response.ok) {
@@ -189,7 +192,7 @@ export async function sendFcm(device: DeviceToken, payload: PushPayload): Promis
 
         throw new Error(errorBody.error?.message || `HTTP ${response.status}`);
       },
-      { failureThreshold: 5, resetTimeout: 60000, halfOpenRequests: 3 }
+      { failureThreshold: 5, resetTimeout: 60000, halfOpenRequests: 3 },
     );
   } catch (e) {
     if (e instanceof CircuitBreakerError) {
@@ -199,7 +202,7 @@ export async function sendFcm(device: DeviceToken, payload: PushPayload): Promis
       success: false,
       platform: "android",
       error: (e as Error).message,
-      retryable: true
+      retryable: true,
     };
   }
 }

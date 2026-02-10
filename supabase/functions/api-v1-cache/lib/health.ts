@@ -2,20 +2,16 @@
  * Health check and monitoring handlers for api-v1-cache.
  */
 
-import { ok, type HandlerContext } from "../../_shared/api-handler.ts";
+import { type HandlerContext, ok } from "../../_shared/api-handler.ts";
 import { logger } from "../../_shared/logger.ts";
 import {
-  CONFIG,
-  circuitBreaker,
-  metrics,
   type CheckResult,
+  circuitBreaker,
+  CONFIG,
+  metrics,
   type ServiceCheckResult,
 } from "./types.ts";
-import {
-  isCircuitBreakerOpen,
-  executeRedisCommand,
-  parseRedisInfo,
-} from "./redis.ts";
+import { executeRedisCommand, isCircuitBreakerOpen, parseRedisInfo } from "./redis.ts";
 
 // =============================================================================
 // Detailed Health Check
@@ -23,7 +19,7 @@ import {
 
 async function performDetailedHealthCheck(
   redisUrl: string,
-  redisToken: string
+  redisToken: string,
 ): Promise<{
   status: "healthy" | "degraded" | "unhealthy" | "critical";
   checks: Record<string, CheckResult>;
@@ -55,7 +51,11 @@ async function performDetailedHealthCheck(
       value: "N/A",
       message: `Connection failed: ${error instanceof Error ? error.message : "Unknown"}`,
     };
-    alerts.push({ severity: "critical", component: "connectivity", message: "Redis connection failure" });
+    alerts.push({
+      severity: "critical",
+      component: "connectivity",
+      message: "Redis connection failure",
+    });
   }
 
   // 2. Get Redis INFO
@@ -94,58 +94,133 @@ async function performDetailedHealthCheck(
   let latencyCheck: CheckResult;
 
   if (latencyMs < CONFIG.healthThresholds.latencyWarningMs) {
-    latencyCheck = { status: "pass", value: Math.round(latencyMs), threshold: `<${CONFIG.healthThresholds.latencyWarningMs}ms`, message: "Latency is excellent" };
+    latencyCheck = {
+      status: "pass",
+      value: Math.round(latencyMs),
+      threshold: `<${CONFIG.healthThresholds.latencyWarningMs}ms`,
+      message: "Latency is excellent",
+    };
   } else if (latencyMs < CONFIG.healthThresholds.latencyCriticalMs) {
-    latencyCheck = { status: "warn", value: Math.round(latencyMs), threshold: `<${CONFIG.healthThresholds.latencyCriticalMs}ms`, message: "Latency is elevated" };
-    alerts.push({ severity: "warning", component: "latency", message: `High latency: ${Math.round(latencyMs)}ms` });
+    latencyCheck = {
+      status: "warn",
+      value: Math.round(latencyMs),
+      threshold: `<${CONFIG.healthThresholds.latencyCriticalMs}ms`,
+      message: "Latency is elevated",
+    };
+    alerts.push({
+      severity: "warning",
+      component: "latency",
+      message: `High latency: ${Math.round(latencyMs)}ms`,
+    });
     recommendations.push("Consider using a closer Redis region");
   } else {
-    latencyCheck = { status: "fail", value: Math.round(latencyMs), threshold: `<${CONFIG.healthThresholds.latencyCriticalMs}ms`, message: "Latency is critical" };
-    alerts.push({ severity: "critical", component: "latency", message: `Critical latency: ${Math.round(latencyMs)}ms` });
+    latencyCheck = {
+      status: "fail",
+      value: Math.round(latencyMs),
+      threshold: `<${CONFIG.healthThresholds.latencyCriticalMs}ms`,
+      message: "Latency is critical",
+    };
+    alerts.push({
+      severity: "critical",
+      component: "latency",
+      message: `Critical latency: ${Math.round(latencyMs)}ms`,
+    });
   }
 
   // 5. Memory Check
   let memoryCheck: CheckResult;
   if (memoryPercent < CONFIG.healthThresholds.memoryWarningPercent) {
-    memoryCheck = { status: "pass", value: `${Math.round(memoryPercent)}%`, message: `Memory healthy (${infoMemory.used_memory_human || "unknown"})` };
+    memoryCheck = {
+      status: "pass",
+      value: `${Math.round(memoryPercent)}%`,
+      message: `Memory healthy (${infoMemory.used_memory_human || "unknown"})`,
+    };
   } else if (memoryPercent < CONFIG.healthThresholds.memoryCriticalPercent) {
-    memoryCheck = { status: "warn", value: `${Math.round(memoryPercent)}%`, message: `Memory elevated (${infoMemory.used_memory_human || "unknown"})` };
-    alerts.push({ severity: "warning", component: "memory", message: `High memory: ${Math.round(memoryPercent)}%` });
+    memoryCheck = {
+      status: "warn",
+      value: `${Math.round(memoryPercent)}%`,
+      message: `Memory elevated (${infoMemory.used_memory_human || "unknown"})`,
+    };
+    alerts.push({
+      severity: "warning",
+      component: "memory",
+      message: `High memory: ${Math.round(memoryPercent)}%`,
+    });
     recommendations.push("Consider increasing memory or implementing eviction");
   } else {
-    memoryCheck = { status: "fail", value: `${Math.round(memoryPercent)}%`, message: `Memory critical (${infoMemory.used_memory_human || "unknown"})` };
-    alerts.push({ severity: "critical", component: "memory", message: `Critical memory: ${Math.round(memoryPercent)}%` });
+    memoryCheck = {
+      status: "fail",
+      value: `${Math.round(memoryPercent)}%`,
+      message: `Memory critical (${infoMemory.used_memory_human || "unknown"})`,
+    };
+    alerts.push({
+      severity: "critical",
+      component: "memory",
+      message: `Critical memory: ${Math.round(memoryPercent)}%`,
+    });
   }
 
   // 6. Hit Rate Check
   let hitRateCheck: CheckResult;
   if (hitRate >= CONFIG.healthThresholds.hitRateWarning) {
-    hitRateCheck = { status: "pass", value: `${Math.round(hitRate * 100)}%`, message: "Hit rate excellent" };
+    hitRateCheck = {
+      status: "pass",
+      value: `${Math.round(hitRate * 100)}%`,
+      message: "Hit rate excellent",
+    };
   } else if (hitRate >= CONFIG.healthThresholds.hitRateCritical || totalOps <= 100) {
-    hitRateCheck = { status: "warn", value: `${Math.round(hitRate * 100)}%`, message: "Hit rate below optimal" };
+    hitRateCheck = {
+      status: "warn",
+      value: `${Math.round(hitRate * 100)}%`,
+      message: "Hit rate below optimal",
+    };
     if (totalOps > 100) {
-      alerts.push({ severity: "warning", component: "hit_rate", message: `Low hit rate: ${Math.round(hitRate * 100)}%` });
+      alerts.push({
+        severity: "warning",
+        component: "hit_rate",
+        message: `Low hit rate: ${Math.round(hitRate * 100)}%`,
+      });
       recommendations.push("Review TTL settings and cache patterns");
     }
   } else {
-    hitRateCheck = { status: "fail", value: `${Math.round(hitRate * 100)}%`, message: "Hit rate critically low" };
-    alerts.push({ severity: "error", component: "hit_rate", message: `Critical hit rate: ${Math.round(hitRate * 100)}%` });
+    hitRateCheck = {
+      status: "fail",
+      value: `${Math.round(hitRate * 100)}%`,
+      message: "Hit rate critically low",
+    };
+    alerts.push({
+      severity: "error",
+      component: "hit_rate",
+      message: `Critical hit rate: ${Math.round(hitRate * 100)}%`,
+    });
   }
 
   // 7. Circuit Breaker Check
   const circuitBreakerCheck: CheckResult = {
-    status: circuitBreaker.state === "closed" ? "pass" : circuitBreaker.state === "half-open" ? "warn" : "fail",
+    status: circuitBreaker.state === "closed"
+      ? "pass"
+      : circuitBreaker.state === "half-open"
+      ? "warn"
+      : "fail",
     value: circuitBreaker.state,
     message: `Circuit breaker is ${circuitBreaker.state}`,
   };
 
   // Determine overall status
-  const checks = { connectivity: connectivityCheck, latency: latencyCheck, memory: memoryCheck, hitRate: hitRateCheck, circuitBreaker: circuitBreakerCheck };
+  const checks = {
+    connectivity: connectivityCheck,
+    latency: latencyCheck,
+    memory: memoryCheck,
+    hitRate: hitRateCheck,
+    circuitBreaker: circuitBreakerCheck,
+  };
   const checkStatuses = Object.values(checks).map((c) => c.status);
   let overallStatus: "healthy" | "degraded" | "unhealthy" | "critical";
 
   if (checkStatuses.includes("fail")) {
-    overallStatus = checkStatuses.filter((s) => s === "fail").length >= 2 ? "critical" : "unhealthy";
+    overallStatus = checkStatuses.filter((s) => s === "fail").length >= 2
+      ? "critical"
+      : "unhealthy";
   } else if (checkStatuses.includes("warn")) {
     overallStatus = "degraded";
   } else {
@@ -186,16 +261,26 @@ async function performDetailedHealthCheck(
 
 async function checkUpstashServices(supabase: any): Promise<{
   success: boolean;
-  summary: { total: number; healthy: number; unhealthy: number; skipped: number; avgResponseTime: number };
+  summary: {
+    total: number;
+    healthy: number;
+    unhealthy: number;
+    skipped: number;
+    avgResponseTime: number;
+  };
   results: ServiceCheckResult[];
 }> {
   // All Upstash services for cross-platform FoodShare apps (iOS, Android, Web)
   const { data: secrets, error: secretsError } = await supabase.rpc("get_secrets", {
     secret_names: [
-      "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN",
-      "UPSTASH_VECTOR_REST_URL", "UPSTASH_VECTOR_REST_TOKEN",
-      "QSTASH_URL", "QSTASH_TOKEN",
-      "UPSTASH_SEARCH_REST_URL", "UPSTASH_SEARCH_REST_TOKEN",
+      "UPSTASH_REDIS_REST_URL",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "UPSTASH_VECTOR_REST_URL",
+      "UPSTASH_VECTOR_REST_TOKEN",
+      "QSTASH_URL",
+      "QSTASH_TOKEN",
+      "UPSTASH_SEARCH_REST_URL",
+      "UPSTASH_SEARCH_REST_TOKEN",
     ],
   });
 
@@ -216,7 +301,7 @@ async function checkUpstashServices(supabase: any): Promise<{
     url: string,
     token: string,
     endpoint: string,
-    validateFn: (data: any, response: Response) => { ok: boolean; message: string }
+    validateFn: (data: any, response: Response) => { ok: boolean; message: string },
   ): Promise<ServiceCheckResult & { skipped?: boolean }> => {
     if (!url || !token) {
       return { service, status: "ok", message: "Not configured (skipped)", skipped: true };
@@ -237,19 +322,55 @@ async function checkUpstashServices(supabase: any): Promise<{
         responseTime,
       };
     } catch (error) {
-      return { service, status: "error", message: error instanceof Error ? error.message : "Unknown error" };
+      return {
+        service,
+        status: "error",
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
     }
   };
 
   const results = await Promise.all([
-    checkService("Redis", getSecret("UPSTASH_REDIS_REST_URL"), getSecret("UPSTASH_REDIS_REST_TOKEN"), "/ping",
-      (data) => ({ ok: data.result === "PONG", message: data.result === "PONG" ? "PING successful" : "Unexpected response" })),
-    checkService("Vector", getSecret("UPSTASH_VECTOR_REST_URL"), getSecret("UPSTASH_VECTOR_REST_TOKEN"), "/info",
-      (data, res) => ({ ok: res.ok && data.result, message: res.ok ? `Vector DB ready (${data.result?.vectorCount || 0} vectors)` : "Failed" })),
-    checkService("QStash", getSecret("QSTASH_URL"), getSecret("QSTASH_TOKEN"), "/v2/schedules",
-      (data, res) => ({ ok: res.ok, message: res.ok ? `QStash accessible (${data.length || 0} schedules)` : "Failed" })),
-    checkService("Search", getSecret("UPSTASH_SEARCH_REST_URL"), getSecret("UPSTASH_SEARCH_REST_TOKEN"), "/info",
-      (data, res) => ({ ok: res.ok && data.result, message: res.ok ? `Search ready (${data.result?.vectorCount || 0} vectors)` : "Failed" })),
+    checkService(
+      "Redis",
+      getSecret("UPSTASH_REDIS_REST_URL"),
+      getSecret("UPSTASH_REDIS_REST_TOKEN"),
+      "/ping",
+      (data) => ({
+        ok: data.result === "PONG",
+        message: data.result === "PONG" ? "PING successful" : "Unexpected response",
+      }),
+    ),
+    checkService(
+      "Vector",
+      getSecret("UPSTASH_VECTOR_REST_URL"),
+      getSecret("UPSTASH_VECTOR_REST_TOKEN"),
+      "/info",
+      (data, res) => ({
+        ok: res.ok && data.result,
+        message: res.ok ? `Vector DB ready (${data.result?.vectorCount || 0} vectors)` : "Failed",
+      }),
+    ),
+    checkService(
+      "QStash",
+      getSecret("QSTASH_URL"),
+      getSecret("QSTASH_TOKEN"),
+      "/v2/schedules",
+      (data, res) => ({
+        ok: res.ok,
+        message: res.ok ? `QStash accessible (${data.length || 0} schedules)` : "Failed",
+      }),
+    ),
+    checkService(
+      "Search",
+      getSecret("UPSTASH_SEARCH_REST_URL"),
+      getSecret("UPSTASH_SEARCH_REST_TOKEN"),
+      "/info",
+      (data, res) => ({
+        ok: res.ok && data.result,
+        message: res.ok ? `Search ready (${data.result?.vectorCount || 0} vectors)` : "Failed",
+      }),
+    ),
   ]);
 
   const configured = results.filter((r) => !(r as any).skipped);

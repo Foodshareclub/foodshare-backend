@@ -3,9 +3,9 @@
  */
 
 import * as jose from "https://deno.land/x/jose@v5.2.0/index.ts";
-import { withCircuitBreaker, CircuitBreakerError } from "../../../_shared/circuit-breaker.ts";
+import { CircuitBreakerError, withCircuitBreaker } from "../../../_shared/circuit-breaker.ts";
 import { withOperationTimeout } from "../../../_shared/timeout.ts";
-import type { DeviceToken, PushPayload, SendResult, Platform } from "./types.ts";
+import type { DeviceToken, Platform, PushPayload, SendResult } from "./types.ts";
 import { generateDeepLink } from "./types.ts";
 
 const env = {
@@ -45,8 +45,8 @@ export async function sendApns(device: DeviceToken, payload: PushPayload): Promi
       "push-ios",
       async () => {
         const jwt = await getApnsToken();
-        const host = env.apnsEnvironment === "production" 
-          ? "api.push.apple.com" 
+        const host = env.apnsEnvironment === "production"
+          ? "api.push.apple.com"
           : "api.sandbox.push.apple.com";
 
         const iosOptions = payload.ios || {};
@@ -61,7 +61,9 @@ export async function sendApns(device: DeviceToken, payload: PushPayload): Promi
               subtitle: iosOptions.subtitle,
               body: payload.body,
             },
-            sound: iosOptions.interruptionLevel === "passive" ? undefined : (payload.sound || "default"),
+            sound: iosOptions.interruptionLevel === "passive"
+              ? undefined
+              : (payload.sound || "default"),
             badge: typeof payload.badge === "number" ? payload.badge : undefined,
             "mutable-content": 1,
             "content-available": 1,
@@ -85,7 +87,9 @@ export async function sendApns(device: DeviceToken, payload: PushPayload): Promi
           Authorization: `Bearer ${jwt}`,
           "apns-topic": env.apnsBundleId,
           "apns-push-type": "alert",
-          "apns-priority": iosOptions.interruptionLevel === "passive" ? "5" : (payload.priority === "normal" ? "5" : "10"),
+          "apns-priority": iosOptions.interruptionLevel === "passive"
+            ? "5"
+            : (payload.priority === "normal" ? "5" : "10"),
           "apns-expiration": String(Math.floor(Date.now() / 1000) + (payload.ttl || 86400)),
           "Content-Type": "application/json",
         };
@@ -100,7 +104,7 @@ export async function sendApns(device: DeviceToken, payload: PushPayload): Promi
             headers,
             body: JSON.stringify(apnsPayload),
           }),
-          "push"
+          "push",
         );
 
         if (response.status === 200) {
@@ -127,7 +131,7 @@ export async function sendApns(device: DeviceToken, payload: PushPayload): Promi
 
         throw new Error(reason);
       },
-      { failureThreshold: 5, resetTimeout: 60000, halfOpenRequests: 3 }
+      { failureThreshold: 5, resetTimeout: 60000, halfOpenRequests: 3 },
     );
   } catch (e) {
     if (e instanceof CircuitBreakerError) {
@@ -137,7 +141,7 @@ export async function sendApns(device: DeviceToken, payload: PushPayload): Promi
       success: false,
       platform: "ios",
       error: (e as Error).message,
-      retryable: true
+      retryable: true,
     };
   }
 }

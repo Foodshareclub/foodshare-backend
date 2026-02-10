@@ -8,17 +8,8 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import {
-  ok,
-  created,
-  noContent,
-  type HandlerContext,
-} from "../../_shared/api-handler.ts";
-import {
-  ValidationError,
-  NotFoundError,
-  AuthorizationError,
-} from "../../_shared/errors.ts";
+import { created, type HandlerContext, noContent, ok } from "../../_shared/api-handler.ts";
+import { AuthorizationError, NotFoundError, ValidationError } from "../../_shared/errors.ts";
 import { logger } from "../../_shared/logger.ts";
 import { cache, CACHE_TTLS } from "../../_shared/cache.ts";
 import type { ForumQuery } from "../index.ts";
@@ -162,7 +153,9 @@ export async function searchPosts(ctx: HandlerContext<unknown, ForumQuery>): Pro
   const hasFilters = query.tags || query.authorId || query.dateFrom || query.dateTo;
 
   if (hasFilters) {
-    const tags = query.tags ? query.tags.split(",").map((t) => parseInt(t.trim())).filter((t) => !isNaN(t)) : null;
+    const tags = query.tags
+      ? query.tags.split(",").map((t) => parseInt(t.trim())).filter((t) => !isNaN(t))
+      : null;
 
     const { data, error } = await supabase.rpc("search_forum", {
       p_query: query.q.trim(),
@@ -271,8 +264,8 @@ export async function createPost(ctx: HandlerContext): Promise<Response> {
     .replace(/[^a-z0-9\s-]/g, "")
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
-    .substring(0, 100)
-    + "-" + Date.now().toString(36);
+    .substring(0, 100) +
+    "-" + Date.now().toString(36);
 
   const insertData: Record<string, unknown> = {
     forum_post_name: body.title,

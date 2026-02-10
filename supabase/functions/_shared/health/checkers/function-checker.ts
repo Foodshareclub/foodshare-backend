@@ -9,13 +9,13 @@
 
 import { logger } from "../../logger.ts";
 import {
+  COLD_START_RETRY_DELAY_MS,
+  FUNCTION_DEGRADED_THRESHOLD_MS,
   FunctionConfig,
   FunctionHealthResult,
-  HealthStatus,
   HEALTH_CHECK_TIMEOUT_MS,
-  COLD_START_RETRY_DELAY_MS,
+  HealthStatus,
   MAX_CONCURRENT_CHECKS,
-  FUNCTION_DEGRADED_THRESHOLD_MS,
 } from "../types.ts";
 
 // =============================================================================
@@ -136,7 +136,7 @@ export class FunctionChecker {
    */
   async checkFunctionWithRetry(config: FunctionConfig): Promise<FunctionHealthResult> {
     // First attempt
-    let result = await this.checkFunction(config, false);
+    const result = await this.checkFunction(config, false);
 
     // If timeout or unhealthy, retry once (cold start protection)
     if (result.status === "timeout" || result.status === "unhealthy") {
@@ -176,7 +176,7 @@ export class FunctionChecker {
     // Process batches
     for (const batch of batches) {
       const batchResults = await Promise.all(
-        batch.map((config) => this.checkFunctionWithRetry(config))
+        batch.map((config) => this.checkFunctionWithRetry(config)),
       );
       results.push(...batchResults);
     }

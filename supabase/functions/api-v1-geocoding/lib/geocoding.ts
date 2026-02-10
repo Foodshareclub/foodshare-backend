@@ -15,7 +15,7 @@
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { Webhook } from "https://esm.sh/standardwebhooks@1.0.0";
 import { logger } from "../../_shared/logger.ts";
-import { geocodeAddress, type Coordinates } from "../../_shared/geocoding.ts";
+import { type Coordinates, geocodeAddress } from "../../_shared/geocoding.ts";
 import { getSupabaseClient } from "../../_shared/supabase.ts";
 
 // =============================================================================
@@ -271,9 +271,12 @@ export function verifySignupWebhook(
   requestId: string,
 ): WebhookVerificationResult {
   if (!SIGNUP_LOCATION_CONFIG.hookSecret) {
-    logger.warn("Running without webhook verification — configure BEFORE_USER_CREATED_HOOK_SECRET for production", {
-      requestId,
-    });
+    logger.warn(
+      "Running without webhook verification — configure BEFORE_USER_CREATED_HOOK_SECRET for production",
+      {
+        requestId,
+      },
+    );
 
     try {
       const payload = JSON.parse(rawPayload) as HookPayload;
@@ -371,7 +374,7 @@ export async function getAuthenticatedUser(
 export function jsonResponse(
   data: unknown,
   corsHeaders: Record<string, string>,
-  status = 200
+  status = 200,
 ): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -383,7 +386,7 @@ export function errorResponse(
   error: string,
   corsHeaders: Record<string, string>,
   status = 400,
-  requestId?: string
+  requestId?: string,
 ): Response {
   return jsonResponse({ success: false, error, requestId }, corsHeaders, status);
 }
@@ -544,7 +547,7 @@ export interface QueueStats {
 
 export async function processQueueItem(
   supabase: ReturnType<typeof getSupabaseClient>,
-  queueItem: QueueItem
+  queueItem: QueueItem,
 ): Promise<ProcessResult> {
   logger.info("Processing queue item", {
     queueId: queueItem.id,

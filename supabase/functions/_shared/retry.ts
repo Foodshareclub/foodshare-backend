@@ -166,7 +166,7 @@ function sleep(ms: number): Promise<void> {
  */
 export async function withRetry<T>(
   operation: () => Promise<T>,
-  config?: Partial<RetryConfig>
+  config?: Partial<RetryConfig>,
 ): Promise<T> {
   const effectiveConfig = { ...DEFAULT_CONFIG, ...config };
   let lastError: Error | null = null;
@@ -218,7 +218,7 @@ export async function withRetry<T>(
  */
 export async function tryWithRetry<T>(
   operation: () => Promise<T>,
-  config?: Partial<RetryConfig>
+  config?: Partial<RetryConfig>,
 ): Promise<[T | null, Error | null]> {
   try {
     const result = await withRetry(operation, config);
@@ -243,7 +243,7 @@ export async function tryWithRetry<T>(
  */
 export function createRetryable<T extends (...args: any[]) => Promise<any>>(
   fn: T,
-  config?: Partial<RetryConfig>
+  config?: Partial<RetryConfig>,
 ): T {
   return ((...args: Parameters<T>) => withRetry(() => fn(...args), config)) as T;
 }
@@ -263,7 +263,7 @@ export function createRetryable<T extends (...args: any[]) => Promise<any>>(
 export async function withRetryOn<T>(
   operation: () => Promise<T>,
   retryOnCodes: string[],
-  config?: Partial<Omit<RetryConfig, "shouldRetry">>
+  config?: Partial<Omit<RetryConfig, "shouldRetry">>,
 ): Promise<T> {
   return withRetry(operation, {
     ...config,

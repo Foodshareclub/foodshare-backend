@@ -18,11 +18,11 @@ export function transformRoom(data: Record<string, unknown>) {
     roomType: data.room_type,
     lastMessage: data.last_message_content
       ? {
-          content: data.last_message_content,
-          senderId: data.last_message_sender_id,
-          senderName: data.last_message_sender_name,
-          sentAt: data.last_message_at,
-        }
+        content: data.last_message_content,
+        senderId: data.last_message_sender_id,
+        senderName: data.last_message_sender_name,
+        sentAt: data.last_message_at,
+      }
       : null,
     unreadCount: data.unread_count || 0,
     isMuted: data.is_muted || false,
@@ -57,10 +57,10 @@ export function transformMessage(data: Record<string, unknown>) {
     sender: transformProfileSummary(sender),
     replyTo: replyTo
       ? {
-          id: replyTo.id,
-          content: replyTo.content,
-          senderId: replyTo.profile_id,
-        }
+        id: replyTo.id,
+        content: replyTo.content,
+        senderId: replyTo.profile_id,
+      }
       : null,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
@@ -82,17 +82,19 @@ export function transformFoodRoom(data: Record<string, unknown>, currentUserId: 
   return {
     id: data.id,
     postId: data.post_id,
-    post: post ? {
-      id: post.id,
-      name: post.post_name,
-      type: post.post_type,
-      image: Array.isArray(post.images) ? post.images[0] : null,
-    } : null,
+    post: post
+      ? {
+        id: post.id,
+        name: post.post_name,
+        type: post.post_type,
+        image: Array.isArray(post.images) ? post.images[0] : null,
+      }
+      : null,
     otherParticipant: transformProfileWithName(otherProfile),
     lastMessage: data.last_message,
     lastMessageTime: data.last_message_time,
     hasUnread: data.last_message_sent_by !== currentUserId &&
-               data.last_message_seen_by !== currentUserId,
+      data.last_message_seen_by !== currentUserId,
     isArranged: !!data.post_arranged_to,
     arrangedAt: data.post_arranged_at,
     isSharer,
@@ -106,14 +108,16 @@ export function transformFoodRoomDetail(data: Record<string, unknown>, currentUs
 
   return {
     ...base,
-    post: post ? {
-      id: post.id,
-      name: post.post_name,
-      type: post.post_type,
-      address: post.post_address,
-      images: post.images,
-      ownerId: post.profile_id,
-    } : null,
+    post: post
+      ? {
+        id: post.id,
+        name: post.post_name,
+        type: post.post_type,
+        address: post.post_address,
+        images: post.images,
+        ownerId: post.profile_id,
+      }
+      : null,
   };
 }
 

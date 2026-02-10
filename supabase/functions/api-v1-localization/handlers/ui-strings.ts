@@ -39,8 +39,27 @@ interface CacheEntry {
 // ============================================================================
 
 const SUPPORTED_LOCALES = [
-  "en", "cs", "de", "es", "fr", "pt", "ru", "uk", "zh", "hi",
-  "ar", "it", "pl", "nl", "ja", "ko", "tr", "vi", "id", "th", "sv"
+  "en",
+  "cs",
+  "de",
+  "es",
+  "fr",
+  "pt",
+  "ru",
+  "uk",
+  "zh",
+  "hi",
+  "ar",
+  "it",
+  "pl",
+  "nl",
+  "ja",
+  "ko",
+  "tr",
+  "vi",
+  "id",
+  "th",
+  "sv",
 ];
 
 const DEFAULT_LOCALE = "en";
@@ -121,7 +140,7 @@ function cleanExpiredCache(): void {
 
 async function checkRateLimit(
   supabase: SupabaseClient,
-  identifier: string
+  identifier: string,
 ): Promise<boolean> {
   try {
     const { data, error } = await supabase
@@ -167,8 +186,11 @@ async function checkRateLimit(
 // Handler
 // ============================================================================
 
-export default async function uiStringsHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
-  const startTime = Date.now();
+export default async function uiStringsHandler(
+  req: Request,
+  corsHeaders: Record<string, string>,
+): Promise<Response> {
+  const _startTime = Date.now();
 
   try {
     const supabase = getSupabaseClient();
@@ -338,7 +360,7 @@ export default async function uiStringsHandler(req: Request, corsHeaders: Record
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      },
     );
   }
 }

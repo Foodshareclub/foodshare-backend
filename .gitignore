@@ -45,6 +45,9 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
+# Backups
+backups/
+
 # Misc
 migrations_backup/
 .vercel

@@ -1,0 +1,495 @@
+name: CI / Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Lint ──────────────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    container: denoland/deno:2.1.9
+    timeout-minutes: 3
+    defaults:
+      run:
+        working-directory: supabase/functions
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: deno lint
+        run: deno lint
+
+      - name: deno fmt --check
+        run: deno fmt --check
+
+      - name: Check for problematic JSR imports
+        run: |
+          if grep -r "jsr:@supabase/functions-js" .; then
+            echo "::error::Problematic JSR import detected! This import causes cold start timeouts."
+            echo "::error::Remove: import \"jsr:@supabase/functions-js/edge-runtime.d.ts\";"
+            exit 1
+          fi
+          echo "No problematic JSR imports found."
+
+  # ── Type-check ────────────────────────────────────────────────────────
+  typecheck:
+    name: Type-check
+    runs-on: ubuntu-latest
+    container: denoland/deno:2.1.9
+    timeout-minutes: 5
+    continue-on-error: true # 324 pre-existing TS errors — report but don't block deploy
+    defaults:
+      run:
+        working-directory: supabase/functions
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: deno check
+        run: deno check '**/*.ts'
+
+  # ── Test ──────────────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    container: denoland/deno:2.1.9
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: supabase/functions
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: deno test
+        run: deno test --allow-all
+
+  # ── Security ─────────────────────────────────────────────────────────
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for leaked secrets
+        uses: trufflesecurity/trufflehog@7635b24fd512a2e817dd3e9dd661caaf035a079d # v3.93.1
+        with:
+          extra_args: --only-verified --results=verified
+
+  # ── Validate migrations ──────────────────────────────────────────────
+  validate-migrations:
+    name: Validate migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: supabase_admin
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U supabase_admin"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Create schema_migrations table
+        run: |
+          psql -h localhost -U supabase_admin -d postgres -c "
+            CREATE SCHEMA IF NOT EXISTS supabase_migrations;
+            CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
+              version text PRIMARY KEY,
+              statements text,
+              name text
+            );
+          "
+        env:
+          PGPASSWORD: postgres
+
+      - name: Apply baseline (best-effort)
+        run: |
+          echo "Applying baseline migration (best-effort — warnings expected)..."
+          psql -h localhost -U supabase_admin -d postgres \
+            -f supabase/migrations/20260128195318_baseline.sql \
+            2>&1 || true
+          echo "Baseline applied (errors from \\restrict, pg_cron, pg_net are expected)"
+        env:
+          PGPASSWORD: postgres
+
+      - name: Apply incremental migrations (strict)
+        run: |
+          FAILED=0
+          for f in supabase/migrations/*.sql; do
+            [ -f "$f" ] || continue
+            BASENAME=$(basename "$f")
+
+            # Skip baseline — it's a pg_dump artifact, already validated above
+            if [ "$BASENAME" = "20260128195318_baseline.sql" ]; then
+              continue
+            fi
+
+            # Skip migrations that require pg_cron or pg_net (not available in CI)
+            if grep -qE '(cron\.(schedule|unschedule)|net\.http_(post|get))' "$f"; then
+              echo "--- Skipping: $BASENAME (requires pg_cron/pg_net) ---"
+              continue
+            fi
+
+            # Skip migrations that depend on baseline tables/extensions which may
+            # not exist in the bare Postgres 17 CI container (the baseline is
+            # applied best-effort and many CREATE TABLE statements fail because
+            # they depend on Supabase-specific extensions).
+            if grep -qE '(ALTER TABLE|CREATE INDEX|COMMENT ON|INSERT INTO|FROM)\s+(public\.)?(posts|profiles|community_fridges|blocked_users)|extensions\.(st_|geometry)|auth\.(uid|jwt|users)' "$f"; then
+              echo "--- Skipping: $BASENAME (depends on baseline tables/extensions) ---"
+              continue
+            fi
+
+            VERSION=$(echo "$BASENAME" | grep -oE '^[0-9]+')
+            echo "--- Applying: $BASENAME ---"
+
+            if ! psql -h localhost -U supabase_admin -d postgres \
+              -v ON_ERROR_STOP=1 -f "$f"; then
+              echo "::error::Migration failed: $BASENAME"
+              FAILED=1
+              break
+            fi
+
+            # Record in schema_migrations
+            psql -h localhost -U supabase_admin -d postgres -c \
+              "INSERT INTO supabase_migrations.schema_migrations (version) VALUES ('$VERSION') ON CONFLICT DO NOTHING;"
+          done
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::Migration validation failed — deploy blocked"
+            exit 1
+          fi
+          echo "All incremental migrations applied successfully."
+        env:
+          PGPASSWORD: postgres
+
+  # ── Deploy ───────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [lint, typecheck, test, validate-migrations, security]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_DEPLOY_CHAT_ID: ${{ secrets.TELEGRAM_DEPLOY_CHAT_ID }}
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 1
+
+      - name: Telegram — deploy started
+        if: env.TELEGRAM_BOT_TOKEN != ''
+        run: |
+          SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+          COMMIT_MSG=$(git log -1 --pretty=%s | sed 's/[][*_`()~>#+.!=|{}-]/\\&/g' | head -c 100)
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_DEPLOY_CHAT_ID}" \
+            -d parse_mode=Markdown \
+            -d text="⏳ *Deploying foodshare-backend* — \`${SHORT_SHA}\` ${COMMIT_MSG}
+          by ${GITHUB_ACTOR}"
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
+        with:
+          host: vps.foodshare.club
+          username: organic
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 8m
+          script: |
+            set -eo pipefail
+            cd /home/organic/dev/foodshare-backend
+
+            # ── Rollback helper (called on migration or smoke test failure) ──
+            rollback() {
+              echo "=== ROLLING BACK ==="
+              set +e  # Don't abort rollback on intermediate failures
+
+              git checkout "$PREV_HEAD" --force
+              echo "Rolled back code to $PREV_HEAD"
+
+              if [ "$MIGRATIONS_APPLIED" = "true" ] && [ -f /tmp/pre-deploy-db.sql.gz ]; then
+                echo "Restoring pre-deploy database..."
+                gunzip -c /tmp/pre-deploy-db.sql.gz \
+                  | docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=0
+                if [ $? -eq 0 ]; then
+                  echo "Database restored"
+                else
+                  echo "WARNING: Database restore had errors — manual check needed"
+                fi
+              fi
+
+              docker compose up -d
+              echo "Services restarted with rolled-back code"
+
+              # Verify rollback health
+              sleep 10
+              RB_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:54321/rest/v1/ -H "apikey: $ANON_KEY")
+              if [ "$RB_CODE" -ge 200 ] && [ "$RB_CODE" -lt 500 ]; then
+                echo "Rollback verified — Kong responding (HTTP $RB_CODE)"
+              else
+                echo "WARNING: Rollback may have failed — Kong returned HTTP $RB_CODE"
+              fi
+
+              echo "=== ROLLBACK COMPLETE — deploy failed ==="
+              exit 1
+            }
+
+            echo "=== Pre-deploy backup ==="
+            TIMESTAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
+            mkdir -p backups
+
+            # Database dump
+            echo "--- Database dump ---"
+            docker exec supabase-db pg_dump -U supabase_admin -d postgres \
+              --no-owner --no-privileges --clean --if-exists \
+              -N _analytics -N _realtime -N supabase_functions \
+              | gzip > backups/db.sql.gz
+            echo "DB dump: $(du -h backups/db.sql.gz | cut -f1)"
+
+            # Save copy for fast rollback
+            cp backups/db.sql.gz /tmp/pre-deploy-db.sql.gz
+
+            # Secrets snapshot
+            echo "--- Secrets snapshot ---"
+            cp .env backups/.env 2>/dev/null || true
+            cp .env.functions backups/.env.functions 2>/dev/null || true
+            cp docker-compose.override.yml backups/docker-compose.override.yml 2>/dev/null || true
+
+            # Snapshot everything (force-add backups/ in case it's gitignored)
+            git add -A
+            git add -f backups/
+            TREE=$(git write-tree)
+            git reset HEAD --quiet
+            PARENT=$(git rev-parse --verify refs/heads/backup/pre-deploy 2>/dev/null || echo "")
+            SKIP=false
+            if [ -n "$PARENT" ]; then
+              [ "$TREE" = "$(git rev-parse "$PARENT^{tree}")" ] && SKIP=true
+            fi
+            if [ "$SKIP" = true ]; then
+              echo "No changes since last pre-deploy backup — skipped"
+            else
+              MSG="pre-deploy: $TIMESTAMP ($(git rev-parse --short HEAD))"
+              if [ -n "$PARENT" ]; then
+                COMMIT=$(echo "$MSG" | git commit-tree "$TREE" -p "$PARENT")
+              else
+                COMMIT=$(echo "$MSG" | git commit-tree "$TREE")
+              fi
+              git update-ref refs/heads/backup/pre-deploy "$COMMIT"
+              git push origin backup/pre-deploy --force --quiet
+              echo "Pushed backup/pre-deploy: $(git rev-parse --short "$COMMIT")"
+            fi
+
+            # Clean up backup files from working tree
+            rm -rf backups/
+
+            echo "=== Pulling latest code ==="
+            PREV_HEAD=$(git rev-parse HEAD)
+            git pull --ff-only
+            NEW_HEAD=$(git rev-parse HEAD)
+
+            if [ "$PREV_HEAD" = "$NEW_HEAD" ]; then
+              echo "=== Already up to date ==="
+              CHANGED=""
+            else
+              CHANGED=$(git diff --name-only "$PREV_HEAD" "$NEW_HEAD")
+              echo "=== Changed files ($PREV_HEAD..$NEW_HEAD) ==="
+              echo "$CHANGED"
+            fi
+
+            # Apply new database migrations (idempotent — tracks applied versions)
+            MIGRATIONS_APPLIED=false
+            ANON_KEY=$(grep '^ANON_KEY=' .env | cut -d= -f2)
+
+            if [ -n "$CHANGED" ] && echo "$CHANGED" | grep -qE "^supabase/migrations/"; then
+              echo "=== New migrations detected — applying ==="
+              LATEST_APPLIED=$(docker exec supabase-db psql -U supabase_admin -d postgres -t -c \
+                "SELECT COALESCE(MAX(version), '0') FROM supabase_migrations.schema_migrations;" 2>/dev/null | tr -d ' ' || echo "0")
+              echo "Latest applied: $LATEST_APPLIED"
+              APPLIED=0
+              FAILED=0
+              for f in supabase/migrations/*.sql; do
+                [ -f "$f" ] || continue
+                VERSION=$(basename "$f" | grep -oE '^[0-9]+')
+                if [ "$VERSION" -gt "$LATEST_APPLIED" ] 2>/dev/null; then
+                  echo "Applying: $(basename "$f")"
+
+                  # Check if migration uses CONCURRENTLY (can't be wrapped in transaction)
+                  if grep -qi "CONCURRENTLY" "$f"; then
+                    # Apply directly — CONCURRENTLY can't run inside a transaction
+                    if ! docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < "$f"; then
+                      echo "ERROR: Migration FAILED: $(basename "$f")"
+                      FAILED=1
+                      break
+                    fi
+                  else
+                    # Wrap in transaction for atomicity
+                    if ! (echo "BEGIN;" && cat "$f" && echo "COMMIT;") | docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1; then
+                      echo "ERROR: Migration FAILED (rolled back): $(basename "$f")"
+                      FAILED=1
+                      break
+                    fi
+                  fi
+
+                  docker exec supabase-db psql -U supabase_admin -d postgres -c \
+                    "INSERT INTO supabase_migrations.schema_migrations (version) VALUES ('$VERSION');"
+                  APPLIED=$((APPLIED + 1))
+                  MIGRATIONS_APPLIED=true
+                fi
+              done
+
+              if [ "$FAILED" -ne 0 ]; then
+                echo "=== MIGRATION FAILED — triggering rollback ==="
+                rollback
+              fi
+              echo "Applied $APPLIED migration(s)"
+            fi
+
+            # Restart only what changed
+            if [ -n "$CHANGED" ] && echo "$CHANGED" | grep -qE "^(docker-compose\.yml|\.env\.example|volumes/)"; then
+              echo "=== Infrastructure changed — recreating services ==="
+              docker compose up -d
+            elif [ -n "$CHANGED" ] && echo "$CHANGED" | grep -qE "^supabase/functions/"; then
+              echo "=== Edge functions changed — restarting functions ==="
+              docker compose restart functions
+            else
+              echo "=== Config/docs only — no restart needed ==="
+            fi
+
+            echo "=== Verifying services ==="
+            docker compose ps --format "table {{.Name}}\t{{.Status}}" | head -20
+
+            # ── Multi-service smoke tests ──────────────────────────────────
+            SERVICE_KEY=$(grep '^SERVICE_ROLE_KEY=' .env | cut -d= -f2)
+            SMOKE_PASS=true
+
+            # 1. Kong REST API (retry loop — services need startup time)
+            echo "=== Smoke test: Kong REST API ==="
+            HEALTHY=false
+            for i in 1 2 3 4 5; do
+              sleep 5
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:54321/rest/v1/ -H "apikey: $ANON_KEY")
+              echo "  attempt $i: HTTP $HTTP_CODE"
+              if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 500 ]; then
+                HEALTHY=true
+                break
+              fi
+            done
+            if [ "$HEALTHY" != "true" ]; then
+              echo "FAIL: Kong not responding"
+              SMOKE_PASS=false
+            else
+              echo "PASS: Kong REST API (HTTP $HTTP_CODE)"
+            fi
+
+            # 2. Auth service health
+            echo "=== Smoke test: Auth service ==="
+            AUTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:54321/auth/v1/health -H "apikey: $ANON_KEY")
+            echo "  Auth health: HTTP $AUTH_CODE"
+            if [ "$AUTH_CODE" -ge 200 ] && [ "$AUTH_CODE" -lt 400 ]; then
+              echo "PASS: Auth service (HTTP $AUTH_CODE)"
+            else
+              echo "FAIL: Auth service (HTTP $AUTH_CODE)"
+              SMOKE_PASS=false
+            fi
+
+            # 3. Edge function health
+            echo "=== Smoke test: Edge functions ==="
+            sleep 3
+            FN_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              http://localhost:54321/functions/v1/api-v1-health \
+              -H "apikey: $ANON_KEY")
+            echo "  Edge function health: HTTP $FN_CODE"
+            if [ "$FN_CODE" -ge 200 ] && [ "$FN_CODE" -lt 400 ]; then
+              echo "PASS: Edge functions (HTTP $FN_CODE)"
+            else
+              echo "FAIL: Edge functions (HTTP $FN_CODE)"
+              SMOKE_PASS=false
+            fi
+
+            # 4. DB connectivity via PostgREST
+            echo "=== Smoke test: DB connectivity ==="
+            DB_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              "http://localhost:54321/rest/v1/" \
+              -H "apikey: $SERVICE_KEY" \
+              -H "Authorization: Bearer $SERVICE_KEY")
+            echo "  DB query: HTTP $DB_CODE"
+            if [ "$DB_CODE" -ge 200 ] && [ "$DB_CODE" -lt 400 ]; then
+              echo "PASS: DB connectivity (HTTP $DB_CODE)"
+            else
+              echo "FAIL: DB connectivity (HTTP $DB_CODE)"
+              SMOKE_PASS=false
+            fi
+
+            # ── Auto-rollback on failure ───────────────────────────────────
+            if [ "$SMOKE_PASS" != "true" ]; then
+              echo "=== SMOKE TESTS FAILED ==="
+              rollback
+            fi
+
+            echo "=== All smoke tests passed ==="
+            echo "=== Deploy complete ==="
+
+      - name: Deploy summary
+        if: always()
+        run: |
+          SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          {
+            echo "## Deploy: \`${SHORT_SHA}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Commit** | \`${SHORT_SHA}\` — ${COMMIT_MSG} |"
+            echo "| **Actor** | ${GITHUB_ACTOR} |"
+            echo "| **Ref** | \`${GITHUB_REF_NAME}\` |"
+            echo "| **Status** | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Telegram — deploy succeeded
+        if: success() && env.TELEGRAM_BOT_TOKEN != ''
+        run: |
+          SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_DEPLOY_CHAT_ID}" \
+            -d parse_mode=Markdown \
+            -d text="✅ *Deploy succeeded* — \`${SHORT_SHA}\`"
+
+      - name: Telegram — deploy failed
+        if: failure() && env.TELEGRAM_BOT_TOKEN != ''
+        run: |
+          SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_DEPLOY_CHAT_ID}" \
+            -d parse_mode=Markdown \
+            -d text="❌ *DEPLOY FAILED* — \`${SHORT_SHA}\`%0ACheck: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"

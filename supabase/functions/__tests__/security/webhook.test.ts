@@ -4,9 +4,7 @@
  * Tests webhook signature verification for WhatsApp and Telegram bots.
  */
 
-import {
-  assertEquals,
-} from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { timingSafeEqual } from "../../_shared/utils.ts";
 
 // ============================================================================
@@ -23,13 +21,13 @@ async function computeHmacSha256(payload: string, secret: string): Promise<strin
     encoder.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["sign"],
   );
 
   const signatureBuffer = await crypto.subtle.sign(
     "HMAC",
     key,
-    encoder.encode(payload)
+    encoder.encode(payload),
   );
 
   const hashArray = Array.from(new Uint8Array(signatureBuffer));
@@ -64,7 +62,10 @@ Deno.test("WhatsApp - rejects wrong signature", async () => {
 
 Deno.test("WhatsApp - rejects modified payload", async () => {
   const originalPayload = JSON.stringify({ object: "whatsapp_business_account", entry: [] });
-  const modifiedPayload = JSON.stringify({ object: "whatsapp_business_account", entry: [{ malicious: true }] });
+  const modifiedPayload = JSON.stringify({
+    object: "whatsapp_business_account",
+    entry: [{ malicious: true }],
+  });
   const secret = "test_app_secret_123";
 
   const originalHash = await computeHmacSha256(originalPayload, secret);
@@ -165,7 +166,7 @@ Deno.test("timingSafeEqual - compares all characters regardless of match", () =>
 
 Deno.test("Webhook - handles Unicode in payload", async () => {
   const payload = JSON.stringify({
-    message: "Hello! Emoji test"
+    message: "Hello! Emoji test",
   });
   const secret = "test_secret";
 
@@ -175,7 +176,7 @@ Deno.test("Webhook - handles Unicode in payload", async () => {
 
 Deno.test("Webhook - handles large payload", async () => {
   const largePayload = JSON.stringify({
-    data: "x".repeat(100000) // 100KB
+    data: "x".repeat(100000), // 100KB
   });
   const secret = "test_secret";
 

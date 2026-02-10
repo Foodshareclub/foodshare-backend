@@ -11,20 +11,20 @@
  */
 
 import {
+  CircuitState,
+  DEFAULT_EMAIL_CONFIG,
   EmailProvider,
   EmailProviderName,
+  EmailServiceConfig,
   EmailType,
+  ProviderHealth,
   SendEmailParams,
   SendEmailResult,
-  ProviderHealth,
-  EmailServiceConfig,
-  DEFAULT_EMAIL_CONFIG,
-  CircuitState,
 } from "./types.ts";
-import { ResendProvider, createResendProvider } from "./resend-provider.ts";
+import { createResendProvider, ResendProvider } from "./resend-provider.ts";
 import { BrevoProvider, createBrevoProvider } from "./brevo-provider.ts";
 import { AWSSESProvider, createAWSSESProvider } from "./aws-ses-provider.ts";
-import { MailerSendProvider, createMailerSendProvider } from "./mailersend-provider.ts";
+import { createMailerSendProvider, MailerSendProvider } from "./mailersend-provider.ts";
 import { cache } from "../cache.ts";
 import { logger } from "../logger.ts";
 
@@ -110,7 +110,7 @@ function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
 
 function buildFinalVariables(
   templateVars: TemplateVariable[],
-  inputVars: Record<string, unknown>
+  inputVars: Record<string, unknown>,
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
@@ -224,7 +224,7 @@ export class EmailService {
     this.config = { ...DEFAULT_EMAIL_CONFIG, ...config };
     this.circuitBreaker = new CircuitBreaker(
       this.config.circuitBreakerThreshold,
-      this.config.circuitBreakerResetMs
+      this.config.circuitBreakerResetMs,
     );
 
     // Initialize providers
@@ -265,9 +265,10 @@ export class EmailService {
    */
   async sendEmail(
     params: SendEmailParams,
-    emailType: EmailType = "notification"
+    emailType: EmailType = "notification",
   ): Promise<SendEmailResult> {
-    const priority = this.config.providerPriority[emailType] || ["resend", "brevo", "mailersend", "aws_ses"];
+    const priority = this.config.providerPriority[emailType] ||
+      ["resend", "brevo", "mailersend", "aws_ses"];
 
     // Apply defaults
     const emailParams: SendEmailParams = {
@@ -310,7 +311,7 @@ export class EmailService {
    */
   async sendEmailWithProvider(
     params: SendEmailParams,
-    providerName: EmailProviderName
+    providerName: EmailProviderName,
   ): Promise<SendEmailResult> {
     const provider = this.providers.get(providerName);
 
@@ -360,7 +361,7 @@ export class EmailService {
    */
   private async recordSendMetrics(
     providerName: EmailProviderName,
-    result: SendEmailResult
+    result: SendEmailResult,
   ): Promise<void> {
     try {
       // Dynamic import to avoid circular dependency
@@ -393,7 +394,7 @@ export class EmailService {
         const health = await provider.checkHealth();
         this.healthCache.set(name, health);
         return health;
-      })
+      }),
     );
 
     this.healthCacheExpiry = Date.now() + this.HEALTH_CACHE_TTL;
@@ -405,7 +406,8 @@ export class EmailService {
    */
   async getBestProvider(emailType: EmailType = "notification"): Promise<EmailProviderName | null> {
     const health = await this.checkAllHealth();
-    const priority = this.config.providerPriority[emailType] || ["resend", "brevo", "mailersend", "aws_ses"];
+    const priority = this.config.providerPriority[emailType] ||
+      ["resend", "brevo", "mailersend", "aws_ses"];
 
     // Sort by priority, then by health score
     const available = health
@@ -485,7 +487,9 @@ export class EmailService {
 
       const { data, error } = await supabase
         .from("email_templates")
-        .select("id, slug, name, category, subject, html_content, text_content, variables, metadata, version")
+        .select(
+          "id, slug, name, category, subject, html_content, text_content, variables, metadata, version",
+        )
         .eq("slug", slug)
         .eq("is_active", true)
         .single();
@@ -501,7 +505,10 @@ export class EmailService {
 
       return data as EmailTemplate;
     } catch (error) {
-      logger.error("Failed to fetch template from database", error instanceof Error ? error : new Error(String(error)));
+      logger.error(
+        "Failed to fetch template from database",
+        error instanceof Error ? error : new Error(String(error)),
+      );
       return null;
     }
   }
@@ -512,7 +519,7 @@ export class EmailService {
    */
   async sendTemplateEmail(
     params: SendTemplateEmailParams,
-    emailType: EmailType = "notification"
+    emailType: EmailType = "notification",
   ): Promise<SendEmailResult> {
     const { to, slug, variables, from, fromName, replyTo, tags, metadata } = params;
 
@@ -552,7 +559,7 @@ export class EmailService {
             template_version: String(template.version),
           },
         },
-        emailType
+        emailType,
       );
     }
 
@@ -566,7 +573,7 @@ export class EmailService {
    */
   private async sendFallbackTemplateEmail(
     params: SendTemplateEmailParams,
-    emailType: EmailType
+    emailType: EmailType,
   ): Promise<SendEmailResult> {
     const { to, slug, variables, from, fromName, replyTo, tags, metadata } = params;
 
@@ -655,7 +662,7 @@ export class EmailService {
               template_source: "fallback",
             },
           },
-          emailType
+          emailType,
         );
       }
 
@@ -667,7 +674,10 @@ export class EmailService {
         timestamp: Date.now(),
       };
     } catch (error) {
-      logger.error("Failed to send fallback template email", error instanceof Error ? error : new Error(String(error)));
+      logger.error(
+        "Failed to send fallback template email",
+        error instanceof Error ? error : new Error(String(error)),
+      );
       return {
         success: false,
         provider: "resend" as EmailProviderName,
@@ -720,5 +730,10 @@ export function resetEmailService(): void {
 // Convenience Exports
 // ============================================================================
 
-export { ResendProvider, BrevoProvider, AWSSESProvider, MailerSendProvider };
-export { createResendProvider, createBrevoProvider, createAWSSESProvider, createMailerSendProvider };
+export { AWSSESProvider, BrevoProvider, MailerSendProvider, ResendProvider };
+export {
+  createAWSSESProvider,
+  createBrevoProvider,
+  createMailerSendProvider,
+  createResendProvider,
+};

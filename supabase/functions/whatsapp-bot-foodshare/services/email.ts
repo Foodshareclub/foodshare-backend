@@ -3,7 +3,7 @@
  */
 
 import { logger } from "../../_shared/logger.ts";
-import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "../config/index.ts";
+import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from "../config/index.ts";
 
 export async function sendVerificationEmail(email: string, code: string): Promise<boolean> {
   try {

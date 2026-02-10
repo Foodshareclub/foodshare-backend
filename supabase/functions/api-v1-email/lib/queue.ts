@@ -7,23 +7,20 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { ok, type HandlerContext } from "../../_shared/api-handler.ts";
+import { type HandlerContext, ok } from "../../_shared/api-handler.ts";
 import { AppError, ServerError } from "../../_shared/errors.ts";
 import { logger } from "../../_shared/logger.ts";
+import { type EmailType, getEmailService } from "../../_shared/email/index.ts";
 import {
-  getEmailService,
-  type EmailType,
-} from "../../_shared/email/index.ts";
-import {
-  getServiceRoleClient,
-  requireServiceAuth,
-  escapeHtml,
-  VERSION,
   type AutomationQueueItem,
-  type QueuedEmail,
+  escapeHtml,
+  getServiceRoleClient,
   type ProcessResult,
+  type QueuedEmail,
+  requireServiceAuth,
+  VERSION,
 } from "./utils.ts";
-import type { processSchema, automationProcessSchema } from "./schemas.ts";
+import type { automationProcessSchema, processSchema } from "./schemas.ts";
 
 // =============================================================================
 // Queue Processing (preserved from api-v1-email-queue)
@@ -160,12 +157,14 @@ async function processEmailQueue(
 async function buildEmailContent(
   supabase: ReturnType<typeof getServiceRoleClient>,
   email: QueuedEmail,
-): Promise<{
-  subject: string;
-  html: string;
-  text?: string;
-  replyTo?: string;
-} | null> {
+): Promise<
+  {
+    subject: string;
+    html: string;
+    text?: string;
+    replyTo?: string;
+  } | null
+> {
   // Newsletter emails with a campaign
   if (email.email_type === "newsletter" && email.campaign_id) {
     const { data: campaign, error } = await supabase
@@ -311,12 +310,18 @@ function buildDigestHtml(firstName: string | null, metadata: Record<string, unkn
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
   <div style="background: #f8f9fa; border-radius: 8px; padding: 30px;">
-    <h1 style="margin: 0 0 20px; color: #1a1a1a; font-size: 24px;">Your ${escapeHtml(frequency)} digest</h1>
+    <h1 style="margin: 0 0 20px; color: #1a1a1a; font-size: 24px;">Your ${
+    escapeHtml(frequency)
+  } digest</h1>
     <p style="margin: 0 0 20px;">Hi ${escapeHtml(firstName || "there")}, here's what you missed:</p>
     <ul style="padding-left: 20px; margin: 0;">
       ${itemsHtml}
     </ul>
-    ${items.length > 10 ? `<p style="margin: 15px 0 0; color: #666;">...and ${items.length - 10} more</p>` : ""}
+    ${
+    items.length > 10
+      ? `<p style="margin: 15px 0 0; color: #666;">...and ${items.length - 10} more</p>`
+      : ""
+  }
   </div>
   <p style="color: #666; font-size: 14px; text-align: center; margin-top: 20px;">
     <a href="https://foodshare.app" style="color: #10b981;">Open FoodShare</a>
@@ -441,23 +446,45 @@ async function processAutomationQueueItem(
     if (!dryRun) {
       await supabase
         .from("email_automation_queue")
-        .update({ status: "processing", attempts: item.attempts + 1, updated_at: new Date().toISOString() })
+        .update({
+          status: "processing",
+          attempts: item.attempts + 1,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", item.id);
     }
 
-    const emailContent = await resolveAutomationEmailContent(supabase, item.email_data, item.profile_id);
+    const emailContent = await resolveAutomationEmailContent(
+      supabase,
+      item.email_data,
+      item.profile_id,
+    );
     if (!emailContent) {
       if (!dryRun) {
         await supabase
           .from("email_automation_queue")
-          .update({ status: "failed", error_message: "Could not resolve email content or recipient", updated_at: new Date().toISOString() })
+          .update({
+            status: "failed",
+            error_message: "Could not resolve email content or recipient",
+            updated_at: new Date().toISOString(),
+          })
           .eq("id", item.id);
       }
-      return { id: item.id, success: false, error: "Could not resolve email content or recipient", latencyMs: Math.round(performance.now() - startTime) };
+      return {
+        id: item.id,
+        success: false,
+        error: "Could not resolve email content or recipient",
+        latencyMs: Math.round(performance.now() - startTime),
+      };
     }
 
     if (dryRun) {
-      return { id: item.id, success: true, provider: "dry_run", latencyMs: Math.round(performance.now() - startTime) };
+      return {
+        id: item.id,
+        success: true,
+        provider: "dry_run",
+        latencyMs: Math.round(performance.now() - startTime),
+      };
     }
 
     const emailService = getEmailService();
@@ -472,25 +499,48 @@ async function processAutomationQueueItem(
         p_provider: result.provider || "unknown",
         p_message_id: result.messageId,
       });
-      return { id: item.id, success: true, provider: result.provider, latencyMs: Math.round(performance.now() - startTime) };
+      return {
+        id: item.id,
+        success: true,
+        provider: result.provider,
+        latencyMs: Math.round(performance.now() - startTime),
+      };
     }
 
     const newStatus = item.attempts + 1 >= maxAttempts ? "failed" : "pending";
     await supabase
       .from("email_automation_queue")
-      .update({ status: newStatus, error_message: result.error || "Unknown error", updated_at: new Date().toISOString() })
+      .update({
+        status: newStatus,
+        error_message: result.error || "Unknown error",
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", item.id);
 
-    return { id: item.id, success: false, error: result.error, latencyMs: Math.round(performance.now() - startTime) };
+    return {
+      id: item.id,
+      success: false,
+      error: result.error,
+      latencyMs: Math.round(performance.now() - startTime),
+    };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     if (!dryRun) {
       await supabase
         .from("email_automation_queue")
-        .update({ status: "failed", error_message: errorMessage, updated_at: new Date().toISOString() })
+        .update({
+          status: "failed",
+          error_message: errorMessage,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", item.id);
     }
-    return { id: item.id, success: false, error: errorMessage, latencyMs: Math.round(performance.now() - startTime) };
+    return {
+      id: item.id,
+      success: false,
+      error: errorMessage,
+      latencyMs: Math.round(performance.now() - startTime),
+    };
   }
 }
 
@@ -584,7 +634,11 @@ export async function handleProcessAutomation(
     .limit(batchSize);
 
   if (fetchError) {
-    throw new AppError(`Failed to fetch automation queue: ${fetchError.message}`, "QUEUE_FETCH_FAILED", 500);
+    throw new AppError(
+      `Failed to fetch automation queue: ${fetchError.message}`,
+      "QUEUE_FETCH_FAILED",
+      500,
+    );
   }
 
   if (!queueItems?.length) {
@@ -603,7 +657,9 @@ export async function handleProcessAutomation(
   for (let i = 0; i < queueItems.length; i += concurrency) {
     const chunk = queueItems.slice(i, i + concurrency);
     const chunkResults = await Promise.all(
-      chunk.map((item) => processAutomationQueueItem(supabase, item as AutomationQueueItem, dryRun)),
+      chunk.map((item) =>
+        processAutomationQueueItem(supabase, item as AutomationQueueItem, dryRun)
+      ),
     );
     results.push(...chunkResults);
   }
@@ -626,7 +682,9 @@ export async function handleProcessAutomation(
     processed: results.length,
     successful: successful.length,
     failed: failed.length,
-    avgLatencyMs: results.length > 0 ? Math.round(results.reduce((sum, r) => sum + r.latencyMs, 0) / results.length) : 0,
+    avgLatencyMs: results.length > 0
+      ? Math.round(results.reduce((sum, r) => sum + r.latencyMs, 0) / results.length)
+      : 0,
     errors: failed.map((f) => ({ id: f.id, error: f.error })),
     durationMs: Math.round(performance.now() - startTime),
   }, ctx);

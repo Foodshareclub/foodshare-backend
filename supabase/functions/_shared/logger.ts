@@ -157,7 +157,7 @@ function shouldLog(level: LogLevel): boolean {
 function createLogEntry(
   level: LogLevel,
   message: string,
-  data?: Record<string, unknown>
+  data?: Record<string, unknown>,
 ): LogEntry {
   const ctx = getContext();
 
@@ -193,9 +193,7 @@ function createLogEntry(
  * Output a log entry
  */
 function output(entry: LogEntry): void {
-  const json = config.prettyPrint
-    ? JSON.stringify(entry, null, 2)
-    : JSON.stringify(entry);
+  const json = config.prettyPrint ? JSON.stringify(entry, null, 2) : JSON.stringify(entry);
 
   switch (entry.level) {
     case "error":
@@ -239,7 +237,7 @@ export function warn(message: string, data?: Record<string, unknown>): void {
 export function error(
   message: string,
   errorOrData?: Error | Record<string, unknown>,
-  data?: Record<string, unknown>
+  data?: Record<string, unknown>,
 ): void {
   if (!shouldLog("error")) return;
 
@@ -265,7 +263,7 @@ export function logRequest(method: string, path: string, data?: Record<string, u
  */
 export function logResponse(
   statusCode: number,
-  data?: Record<string, unknown>
+  data?: Record<string, unknown>,
 ): void {
   const level = statusCode >= 500 ? "error" : statusCode >= 400 ? "warn" : "info";
   const message = statusCode >= 400 ? "Request failed" : "Request completed";
@@ -280,7 +278,7 @@ export function logResponse(
 export function logExternalCall(
   service: string,
   operation: string,
-  data?: Record<string, unknown>
+  data?: Record<string, unknown>,
 ): void {
   info(`External call: ${service}`, { externalService: service, operation, ...data });
 }
@@ -311,7 +309,11 @@ export function child(context: Record<string, unknown>): {
   debug: (message: string, data?: Record<string, unknown>) => void;
   info: (message: string, data?: Record<string, unknown>) => void;
   warn: (message: string, data?: Record<string, unknown>) => void;
-  error: (message: string, errorOrData?: Error | Record<string, unknown>, data?: Record<string, unknown>) => void;
+  error: (
+    message: string,
+    errorOrData?: Error | Record<string, unknown>,
+    data?: Record<string, unknown>,
+  ) => void;
 } {
   return {
     debug: (message: string, data?: Record<string, unknown>) =>
@@ -323,7 +325,7 @@ export function child(context: Record<string, unknown>): {
     error: (
       message: string,
       errorOrData?: Error | Record<string, unknown>,
-      data?: Record<string, unknown>
+      data?: Record<string, unknown>,
     ) => error(message, errorOrData, { ...context, ...data }),
   };
 }

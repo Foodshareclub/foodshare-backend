@@ -2,7 +2,7 @@
  * Image maintenance handlers — cleanup orphans and recompress old images.
  */
 
-import { ok, type HandlerContext } from "../../_shared/api-handler.ts";
+import { type HandlerContext, ok } from "../../_shared/api-handler.ts";
 import { AuthenticationError } from "../../_shared/errors.ts";
 import { cleanupOrphanImages } from "../services/cleanup.ts";
 import { recompressOldImages } from "../services/recompression.ts";

@@ -35,8 +35,8 @@ interface BackfillRequest {
   dryRun?: boolean;
   mode?: "full" | "incremental";
   hoursBack?: number;
-  source?: string;  // 'cron' or 'manual'
-  onlyUntranslated?: boolean;  // Only fetch content without existing translations
+  source?: string; // 'cron' or 'manual'
+  onlyUntranslated?: boolean; // Only fetch content without existing translations
 }
 
 interface BackfillResponse {
@@ -54,15 +54,21 @@ const SECONDS_PER_TRANSLATION = 10; // Estimated LLM time
 const JOB_TYPE = "forum_posts";
 const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
-export default async function backfillForumPostsHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
+export default async function backfillForumPostsHandler(
+  req: Request,
+  corsHeaders: Record<string, string>,
+): Promise<Response> {
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({
-      success: false,
-      error: "Method not allowed. Use POST.",
-    }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "Method not allowed. Use POST.",
+      }),
+      {
+        status: 405,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 
   try {
@@ -73,18 +79,21 @@ export default async function backfillForumPostsHandler(req: Request, corsHeader
       dryRun = false,
       mode = "full",
       hoursBack = 24,
-      onlyUntranslated = false
+      onlyUntranslated = false,
     } = body;
 
     // Validate limits
     if (limit < 1 || limit > 1000) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "limit must be between 1 and 1000",
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "limit must be between 1 and 1000",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Initialize Supabase client
@@ -105,20 +114,29 @@ export default async function backfillForumPostsHandler(req: Request, corsHeader
 
       if (jobAge < STALE_THRESHOLD_MS) {
         // Job still running - skip this cron run
-        logger.info("Skipping backfill - previous job still running", { jobType: JOB_TYPE, jobAgeMinutes: Math.round(jobAge / 60000) });
-        return new Response(JSON.stringify({
-          success: true,
-          skipped: true,
-          reason: "Previous job still in progress",
-          previousJobStarted: inProgressJob.started_at,
+        logger.info("Skipping backfill - previous job still running", {
+          jobType: JOB_TYPE,
           jobAgeMinutes: Math.round(jobAge / 60000),
-        }), {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
+        return new Response(
+          JSON.stringify({
+            success: true,
+            skipped: true,
+            reason: "Previous job still in progress",
+            previousJobStarted: inProgressJob.started_at,
+            jobAgeMinutes: Math.round(jobAge / 60000),
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       } else {
         // Stale job - mark as failed
-        logger.info("Marking stale job as failed", { jobType: JOB_TYPE, jobAgeMinutes: Math.round(jobAge / 60000) });
+        logger.info("Marking stale job as failed", {
+          jobType: JOB_TYPE,
+          jobAgeMinutes: Math.round(jobAge / 60000),
+        });
         await supabase
           .from("translation_backfill_jobs")
           .update({
@@ -147,7 +165,9 @@ export default async function backfillForumPostsHandler(req: Request, corsHeader
     // ========== End Job Locking ==========
 
     // Fetch forum posts based on mode
-    let forumPosts: Array<{ id: number; forum_post_name: string; forum_post_description: string | null }> | null = null;
+    let forumPosts:
+      | Array<{ id: number; forum_post_name: string; forum_post_description: string | null }>
+      | null = null;
     let count: number | null = null;
     let error: Error | null = null;
 
@@ -155,7 +175,7 @@ export default async function backfillForumPostsHandler(req: Request, corsHeader
       // Only untranslated mode: use RPC to find forum posts without translations
       const { data, error: rpcError } = await supabase.rpc("get_untranslated_forum_posts", {
         p_limit: limit,
-        p_offset: offset
+        p_offset: offset,
       });
 
       if (rpcError) {
@@ -195,48 +215,62 @@ export default async function backfillForumPostsHandler(req: Request, corsHeader
 
     if (error) {
       logger.error("Failed to fetch forum posts", { error: error.message });
-      return new Response(JSON.stringify({
-        success: false,
-        error: `Failed to fetch forum posts: ${error.message}`,
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Failed to fetch forum posts: ${error.message}`,
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     if (!forumPosts || forumPosts.length === 0) {
-      return new Response(JSON.stringify({
-        success: true,
-        forumPostsProcessed: 0,
-        totalTranslations: 0,
-        estimatedTimeMinutes: 0,
-        message: "No forum posts found to translate",
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          forumPostsProcessed: 0,
+          totalTranslations: 0,
+          estimatedTimeMinutes: 0,
+          message: "No forum posts found to translate",
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     const effectiveMode = onlyUntranslated ? "onlyUntranslated" : mode;
-    logger.info("Found forum posts to translate", { count: forumPosts.length, mode: effectiveMode, offset, total: count });
+    logger.info("Found forum posts to translate", {
+      count: forumPosts.length,
+      mode: effectiveMode,
+      offset,
+      total: count,
+    });
 
     // If dry run, just return counts
     if (dryRun) {
       const totalTranslations = forumPosts.length * FIELDS_PER_FORUM_POST * TARGET_LOCALES_COUNT;
       const estimatedTimeMinutes = Math.ceil(
-        (totalTranslations * SECONDS_PER_TRANSLATION) / 60
+        (totalTranslations * SECONDS_PER_TRANSLATION) / 60,
       );
 
-      return new Response(JSON.stringify({
-        success: true,
-        forumPostsProcessed: forumPosts.length,
-        totalForumPosts: count,
-        totalTranslations,
-        estimatedTimeMinutes,
-        dryRun: true,
-        mode: effectiveMode,
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          forumPostsProcessed: forumPosts.length,
+          totalForumPosts: count,
+          totalTranslations,
+          estimatedTimeMinutes,
+          dryRun: true,
+          mode: effectiveMode,
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Trigger batch translation for each forum post (fire-and-forget)
@@ -265,12 +299,18 @@ export default async function backfillForumPostsHandler(req: Request, corsHeader
         });
 
         if (response.error) {
-          logger.warn("Failed to trigger translation for forum post", { forumPostId: forumPost.id, error: response.error });
+          logger.warn("Failed to trigger translation for forum post", {
+            forumPostId: forumPost.id,
+            error: response.error,
+          });
         } else {
           logger.info("Triggered translation for forum post", { forumPostId: forumPost.id });
         }
       } catch (error) {
-        logger.warn("Error triggering translation for forum post", { forumPostId: forumPost.id, error: (error as Error).message });
+        logger.warn("Error triggering translation for forum post", {
+          forumPostId: forumPost.id,
+          error: (error as Error).message,
+        });
       }
     });
 
@@ -281,7 +321,7 @@ export default async function backfillForumPostsHandler(req: Request, corsHeader
 
     const totalTranslations = forumPosts.length * FIELDS_PER_FORUM_POST * TARGET_LOCALES_COUNT;
     const estimatedTimeMinutes = Math.ceil(
-      (totalTranslations * SECONDS_PER_TRANSLATION) / 60
+      (totalTranslations * SECONDS_PER_TRANSLATION) / 60,
     );
 
     const response: BackfillResponse = {
@@ -329,12 +369,15 @@ export default async function backfillForumPostsHandler(req: Request, corsHeader
       // Ignore - best effort
     }
 
-    return new Response(JSON.stringify({
-      success: false,
-      error: (error as Error).message,
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: (error as Error).message,
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 }

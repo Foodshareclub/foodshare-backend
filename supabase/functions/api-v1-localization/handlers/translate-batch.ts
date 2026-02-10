@@ -48,15 +48,21 @@ interface BatchTranslateResponse {
   total_translations: number;
 }
 
-export default async function translateBatchHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
+export default async function translateBatchHandler(
+  req: Request,
+  corsHeaders: Record<string, string>,
+): Promise<Response> {
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({
-      success: false,
-      error: "Method not allowed. Use POST.",
-    }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "Method not allowed. Use POST.",
+      }),
+      {
+        status: 405,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 
   try {
@@ -65,33 +71,42 @@ export default async function translateBatchHandler(req: Request, corsHeaders: R
 
     // Validate input
     if (!content_type || !["post", "challenge", "forum_post"].includes(content_type)) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "Invalid content_type. Must be 'post', 'challenge', or 'forum_post'.",
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Invalid content_type. Must be 'post', 'challenge', or 'forum_post'.",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     if (!content_id) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "content_id is required.",
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "content_id is required.",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     if (!fields || !Array.isArray(fields) || fields.length === 0) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "fields array is required and must not be empty.",
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "fields array is required and must not be empty.",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Initialize Supabase client
@@ -138,13 +153,16 @@ export default async function translateBatchHandler(req: Request, corsHeaders: R
 
       if (error) {
         logger.error("Failed to queue translations", error);
-        return new Response(JSON.stringify({
-          success: false,
-          error: `Failed to queue translations: ${error.message}`,
-        }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `Failed to queue translations: ${error.message}`,
+          }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
 
       queuedCount = count || queueItems.length;
@@ -168,12 +186,15 @@ export default async function translateBatchHandler(req: Request, corsHeaders: R
     });
   } catch (error) {
     logger.error("Batch translation error", error as Error);
-    return new Response(JSON.stringify({
-      success: false,
-      error: (error as Error).message,
-    }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: (error as Error).message,
+      }),
+      {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 }

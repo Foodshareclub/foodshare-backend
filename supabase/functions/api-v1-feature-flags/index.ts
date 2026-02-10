@@ -18,9 +18,9 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
-import { NotFoundError, ServerError, AuthenticationError } from "../_shared/errors.ts";
+import { AuthenticationError, NotFoundError, ServerError } from "../_shared/errors.ts";
 import { cache, CACHE_KEYS, CACHE_TTLS } from "../_shared/cache.ts";
 
 // =============================================================================
@@ -73,9 +73,7 @@ async function handleGetFeatureFlags(ctx: HandlerContext<unknown, FlagsQuery>): 
   });
 
   // Cache key: user-specific or global
-  const cacheKey = userId
-    ? CACHE_KEYS.userFeatureFlags(userId)
-    : CACHE_KEYS.featureFlags();
+  const cacheKey = userId ? CACHE_KEYS.userFeatureFlags(userId) : CACHE_KEYS.featureFlags();
 
   const cached = cache.get<{
     flags: Record<string, { enabled: boolean; config: Record<string, unknown> }>;
@@ -249,8 +247,8 @@ async function handleCompatibilityCheck(
       action: dbResponse.forceUpdate
         ? "force_update"
         : dbResponse.needsUpdate
-          ? "suggest_update"
-          : "none",
+        ? "suggest_update"
+        : "none",
     },
     ctx,
   );
@@ -271,7 +269,9 @@ async function handleGet(ctx: HandlerContext<unknown, FlagsQuery>): Promise<Resp
   }
 
   // GET /compatibility
-  if (subPath === "compatibility" || subPath === "compatibility/" || query.action === "compatibility") {
+  if (
+    subPath === "compatibility" || subPath === "compatibility/" || query.action === "compatibility"
+  ) {
     return handleCompatibilityCheck(ctx);
   }
 

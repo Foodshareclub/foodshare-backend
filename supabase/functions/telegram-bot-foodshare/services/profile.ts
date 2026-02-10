@@ -68,7 +68,7 @@ function classifyError(error: { code?: string; message?: string }): DatabaseErro
 function logDatabaseError(
   operation: string,
   error: { code?: string; message?: string },
-  context: Record<string, unknown> = {}
+  context: Record<string, unknown> = {},
 ): void {
   const errorType = classifyError(error);
   const logFn = errorType === DatabaseErrorType.TRANSIENT ? logger.warn : logger.error;
@@ -154,7 +154,7 @@ export async function createProfile(data: {
 
 export async function updateProfile(
   profileId: string,
-  updates: Partial<Profile>
+  updates: Partial<Profile>,
 ): Promise<boolean> {
   const supabase = getSupabaseClient();
 

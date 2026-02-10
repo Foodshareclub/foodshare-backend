@@ -2,15 +2,15 @@
  * Image upload handlers — single and batch uploads.
  */
 
-import { ok, type HandlerContext } from "../../_shared/api-handler.ts";
-import { ValidationError, RateLimitError, PayloadTooLargeError } from "../../_shared/errors.ts";
+import { type HandlerContext, ok } from "../../_shared/api-handler.ts";
+import { PayloadTooLargeError, RateLimitError, ValidationError } from "../../_shared/errors.ts";
 import { logger } from "../../_shared/logger.ts";
 import { extractEXIF, getImageDimensions } from "../services/exif.ts";
 import { compressImage, generateThumbnail } from "../../_shared/compression/index.ts";
 import { analyzeImage } from "../services/ai.ts";
 import { detectFormat, logUploadMetrics } from "../../_shared/image-utils.ts";
 import { ALLOWED_BUCKETS, checkRateLimit, uploadWithFallback } from "./storage.ts";
-import type { ImageUploadResponse, BatchUploadResponse } from "../types/index.ts";
+import type { BatchUploadResponse, ImageUploadResponse } from "../types/index.ts";
 
 /**
  * Single image upload handler.
@@ -65,23 +65,36 @@ export async function handleUpload(ctx: HandlerContext): Promise<Response> {
   const path = customPath || filename;
 
   const { publicUrl, storage } = await uploadWithFallback(
-    supabase, bucket, path, compressed.buffer, `image/${format}`,
+    supabase,
+    bucket,
+    path,
+    compressed.buffer,
+    `image/${format}`,
   );
 
   let thumbnailUrl: string | undefined;
   let thumbnailPath: string | undefined;
   if (thumbnailBuffer) {
     const thumbFilename = `${crypto.randomUUID()}_thumb.jpg`;
-    const thumbPath = customPath ? `${customPath.replace(/\.[^.]+$/, "")}_thumb.jpg` : thumbFilename;
+    const thumbPath = customPath
+      ? `${customPath.replace(/\.[^.]+$/, "")}_thumb.jpg`
+      : thumbFilename;
 
     try {
       const thumbResult = await uploadWithFallback(
-        supabase, bucket, thumbPath, thumbnailBuffer, "image/jpeg",
+        supabase,
+        bucket,
+        thumbPath,
+        thumbnailBuffer,
+        "image/jpeg",
       );
       thumbnailUrl = thumbResult.publicUrl;
       thumbnailPath = thumbPath;
     } catch (error) {
-      logger.error("Thumbnail upload failed", error instanceof Error ? error : new Error(String(error)));
+      logger.error(
+        "Thumbnail upload failed",
+        error instanceof Error ? error : new Error(String(error)),
+      );
     }
   }
 

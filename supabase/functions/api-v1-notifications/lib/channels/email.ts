@@ -11,8 +11,8 @@ import { getEmailService } from "../../../_shared/email/index.ts";
 import type {
   ChannelAdapter,
   ChannelDeliveryResult,
-  NotificationContext,
   EmailPayload,
+  NotificationContext,
 } from "../types.ts";
 import { logger } from "../../../_shared/logger.ts";
 
@@ -24,7 +24,7 @@ export class EmailChannelAdapter implements ChannelAdapter {
 
   async send(
     payload: EmailPayload,
-    context: NotificationContext
+    context: NotificationContext,
   ): Promise<ChannelDeliveryResult> {
     const startTime = performance.now();
 
@@ -49,7 +49,7 @@ export class EmailChannelAdapter implements ChannelAdapter {
           replyTo: payload.replyTo,
           attachments: payload.attachments,
         },
-        emailType
+        emailType,
       );
 
       const duration = performance.now() - startTime;
@@ -103,7 +103,7 @@ export class EmailChannelAdapter implements ChannelAdapter {
 
   async sendBatch(
     payloads: EmailPayload[],
-    context: NotificationContext
+    context: NotificationContext,
   ): Promise<ChannelDeliveryResult[]> {
     logger.info("Sending batch email notifications", {
       requestId: context.requestId,
@@ -117,7 +117,7 @@ export class EmailChannelAdapter implements ChannelAdapter {
     for (let i = 0; i < payloads.length; i += BATCH_SIZE) {
       const batch = payloads.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.all(
-        batch.map((payload) => this.send(payload, context))
+        batch.map((payload) => this.send(payload, context)),
       );
       results.push(...batchResults);
     }
@@ -187,7 +187,7 @@ export class EmailChannelAdapter implements ChannelAdapter {
  */
 export async function getUserEmail(
   context: NotificationContext,
-  userId: string
+  userId: string,
 ): Promise<string | null> {
   try {
     const { data, error } = await context.supabase
@@ -213,7 +213,7 @@ export async function getUserEmail(
  */
 export async function isEmailSuppressed(
   context: NotificationContext,
-  email: string
+  email: string,
 ): Promise<boolean> {
   try {
     const { data, error } = await context.supabase

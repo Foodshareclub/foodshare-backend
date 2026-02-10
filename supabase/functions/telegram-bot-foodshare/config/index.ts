@@ -46,7 +46,8 @@ export const SUPABASE_SERVICE_ROLE_KEY = requireEnv("SUPABASE_SERVICE_ROLE_KEY")
 export const WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET");
 
 // Bot username for detecting mentions in group chats (without @)
-export const BOT_USERNAME = optionalEnv("TELEGRAM_BOT_USERNAME", "foodshare_club_bot").toLowerCase();
+export const BOT_USERNAME = optionalEnv("TELEGRAM_BOT_USERNAME", "foodshare_club_bot")
+  .toLowerCase();
 
 // Configuration object for easy access
 export const config = {

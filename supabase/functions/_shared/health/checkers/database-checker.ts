@@ -5,7 +5,7 @@
  */
 
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
-import { ServiceHealth, HealthStatus, DATABASE_DEGRADED_THRESHOLD_MS } from "../types.ts";
+import { DATABASE_DEGRADED_THRESHOLD_MS, HealthStatus, ServiceHealth } from "../types.ts";
 
 /**
  * Check database health by performing a simple query
@@ -33,7 +33,9 @@ export async function checkDatabase(supabase: SupabaseClient): Promise<ServiceHe
       };
     }
 
-    const status: HealthStatus = responseTimeMs > DATABASE_DEGRADED_THRESHOLD_MS ? "degraded" : "healthy";
+    const status: HealthStatus = responseTimeMs > DATABASE_DEGRADED_THRESHOLD_MS
+      ? "degraded"
+      : "healthy";
     return { service: "database", status, responseTimeMs };
   } catch (error) {
     return {

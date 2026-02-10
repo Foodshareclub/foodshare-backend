@@ -4,14 +4,12 @@
  */
 
 import { logger } from "../../_shared/logger.ts";
-import { ValidationError, AuthenticationError as AuthError, ServerError } from "../../_shared/errors.ts";
 import {
-  CONFIG,
-  KeyScope,
-  circuitBreaker,
-  metrics,
-  pendingRequests,
-} from "./types.ts";
+  AuthenticationError as AuthError,
+  ServerError,
+  ValidationError,
+} from "../../_shared/errors.ts";
+import { circuitBreaker, CONFIG, KeyScope, metrics, pendingRequests } from "./types.ts";
 
 // =============================================================================
 // Circuit Breaker
@@ -50,8 +48,10 @@ export function recordFailure(): void {
   circuitBreaker.failures++;
   circuitBreaker.lastFailure = Date.now();
 
-  if (circuitBreaker.state === "half-open" ||
-      circuitBreaker.failures >= CONFIG.circuitBreaker.failureThreshold) {
+  if (
+    circuitBreaker.state === "half-open" ||
+    circuitBreaker.failures >= CONFIG.circuitBreaker.failureThreshold
+  ) {
     circuitBreaker.state = "open";
     metrics.circuitBreakerTrips++;
   }
@@ -64,7 +64,7 @@ export function recordFailure(): void {
 export async function executeRedisCommand(
   redisUrl: string,
   redisToken: string,
-  command: (string | number)[]
+  command: (string | number)[],
 ): Promise<unknown> {
   const response = await fetch(redisUrl, {
     method: "POST",
@@ -87,7 +87,7 @@ export async function executeRedisCommand(
 export async function executeRedisPipeline(
   redisUrl: string,
   redisToken: string,
-  commands: (string | number)[][]
+  commands: (string | number)[][],
 ): Promise<unknown[]> {
   const pipelineUrl = redisUrl.replace(/\/?$/, "/pipeline");
   const response = await fetch(pipelineUrl, {
@@ -114,7 +114,7 @@ export async function executeRedisPipeline(
 
 export async function coalesceRequest<T>(
   key: string,
-  operation: () => Promise<T>
+  operation: () => Promise<T>,
 ): Promise<T> {
   const existing = pendingRequests.get(key);
   if (existing) {
@@ -174,7 +174,7 @@ export function shouldCompress(value: string, options?: { compress?: boolean }):
 export function validateAndScopeKey(
   key: string,
   userId: string | null,
-  allowWrite: boolean
+  allowWrite: boolean,
 ): { scope: KeyScope; scopedKey: string } {
   if (key.startsWith("user:")) {
     const userPrefix = `user:${userId}:`;
@@ -206,18 +206,36 @@ export function validateAndScopeKey(
 
 export function isWriteOperation(operation: string): boolean {
   return [
-    "set", "delete", "incr", "decr", "expire", "getset",
-    "mset", "mdel",
-    "hset", "hdel", "hincrby", "hmset",
-    "lpush", "rpush", "lpop", "rpop", "ltrim",
-    "zadd", "zrem", "zincrby",
-    "sadd", "srem",
+    "set",
+    "delete",
+    "incr",
+    "decr",
+    "expire",
+    "getset",
+    "mset",
+    "mdel",
+    "hset",
+    "hdel",
+    "hincrby",
+    "hmset",
+    "lpush",
+    "rpush",
+    "lpop",
+    "rpop",
+    "ltrim",
+    "zadd",
+    "zrem",
+    "zincrby",
+    "sadd",
+    "srem",
     "flush_pattern",
   ].includes(operation);
 }
 
 export function getOperationType(operation: string): "read" | "write" | "delete" {
-  if (["delete", "mdel", "hdel", "zrem", "lpop", "rpop", "srem", "flush_pattern"].includes(operation)) {
+  if (
+    ["delete", "mdel", "hdel", "zrem", "lpop", "rpop", "srem", "flush_pattern"].includes(operation)
+  ) {
     return "delete";
   }
   if (isWriteOperation(operation)) return "write";
@@ -232,7 +250,7 @@ export async function checkRateLimit(
   supabase: any,
   userId: string,
   operation: string,
-  tier: keyof typeof CONFIG.rateLimits = "free"
+  tier: keyof typeof CONFIG.rateLimits = "free",
 ): Promise<boolean> {
   const opType = getOperationType(operation);
   const limit = CONFIG.rateLimits[tier][opType];

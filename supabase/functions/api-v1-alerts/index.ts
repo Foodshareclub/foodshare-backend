@@ -25,10 +25,10 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { ServerError, ValidationError } from "../_shared/errors.ts";
-import { withCircuitBreaker, CircuitBreakerError } from "../_shared/circuit-breaker.ts";
+import { CircuitBreakerError, withCircuitBreaker } from "../_shared/circuit-breaker.ts";
 
 // =============================================================================
 // Configuration
@@ -101,7 +101,7 @@ type CheckAlertsRequest = z.infer<typeof checkAlertsSchema>;
 
 async function checkErrorRate(
   supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
-  thresholds: AlertThresholds
+  thresholds: AlertThresholds,
 ): Promise<AlertCondition | null> {
   try {
     const { data, error } = await supabase.rpc("get_error_rate", { p_minutes: 5 });
@@ -116,7 +116,9 @@ async function checkErrorRate(
       return {
         type: "error_rate_high",
         severity: errorRate > thresholds.errorRatePercent * 2 ? "critical" : "warning",
-        message: `Error rate ${errorRate.toFixed(1)}% exceeds threshold ${thresholds.errorRatePercent}%`,
+        message: `Error rate ${
+          errorRate.toFixed(1)
+        }% exceeds threshold ${thresholds.errorRatePercent}%`,
         value: errorRate,
         threshold: thresholds.errorRatePercent,
         details: {
@@ -135,7 +137,7 @@ async function checkErrorRate(
 
 async function checkLatency(
   supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
-  thresholds: AlertThresholds
+  thresholds: AlertThresholds,
 ): Promise<AlertCondition | null> {
   try {
     const { data, error } = await supabase.rpc("get_p95_latency", { p_minutes: 5 });
@@ -161,7 +163,7 @@ async function checkLatency(
 }
 
 async function checkCircuitBreakers(
-  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>
+  supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
 ): Promise<AlertCondition[]> {
   try {
     const { data, error } = await supabase
@@ -191,7 +193,7 @@ async function checkCircuitBreakers(
 
 async function checkLoginSpike(
   supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
-  thresholds: AlertThresholds
+  thresholds: AlertThresholds,
 ): Promise<AlertCondition | null> {
   try {
     const { data, error } = await supabase.rpc("get_login_spike_stats", {
@@ -229,7 +231,7 @@ async function checkLoginSpike(
 
 async function checkVaultFailures(
   supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
-  thresholds: AlertThresholds
+  thresholds: AlertThresholds,
 ): Promise<AlertCondition | null> {
   try {
     const { data, error } = await supabase.rpc("get_vault_failure_count", { p_hours: 1 });
@@ -256,7 +258,7 @@ async function checkVaultFailures(
 
 async function checkConnectionPool(
   supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
-  thresholds: AlertThresholds
+  thresholds: AlertThresholds,
 ): Promise<AlertCondition | null> {
   try {
     const { data, error } = await supabase.rpc("get_connection_pool_stats");
@@ -293,7 +295,7 @@ async function checkConnectionPool(
 
 async function sendSlackAlert(
   webhookUrl: string,
-  alerts: AlertCondition[]
+  alerts: AlertCondition[],
 ): Promise<boolean> {
   try {
     const criticalCount = alerts.filter((a) => a.severity === "critical").length;
@@ -316,7 +318,8 @@ async function sendSlackAlert(
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*${alert.severity.toUpperCase()}* - ${alert.type}\n${alert.message}\n_Value: ${alert.value} (threshold: ${alert.threshold})_`,
+          text:
+            `*${alert.severity.toUpperCase()}* - ${alert.type}\n${alert.message}\n_Value: ${alert.value} (threshold: ${alert.threshold})_`,
         },
       })),
       {
@@ -356,7 +359,7 @@ async function sendSlackAlert(
 
 async function logAlerts(
   supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
-  alerts: AlertCondition[]
+  alerts: AlertCondition[],
 ): Promise<void> {
   try {
     const records = alerts.map((alert) => ({
@@ -380,11 +383,11 @@ async function logAlerts(
 
 async function filterByAlertCooldowns(
   supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
-  alerts: AlertCondition[]
+  alerts: AlertCondition[],
 ): Promise<AlertCondition[]> {
   try {
     const cooldownTime = new Date(
-      Date.now() - CONFIG.alertCooldownMinutes * 60 * 1000
+      Date.now() - CONFIG.alertCooldownMinutes * 60 * 1000,
     ).toISOString();
 
     const alertTypes = [...new Set(alerts.map((a) => a.type))];
@@ -406,7 +409,7 @@ async function filterByAlertCooldowns(
 
 async function getSecretSafe(
   supabase: ReturnType<typeof import("../_shared/supabase.ts").getSupabaseClient>,
-  secretName: string
+  secretName: string,
 ): Promise<string | null> {
   try {
     const { data, error } = await supabase.rpc("get_secret_audited", {
@@ -469,8 +472,12 @@ function formatSentryMessage(event: SentryEvent): string {
   if (issue) {
     lines.push(`<b>${issue.shortId}</b>: ${escapeTelegramHtml(issue.title)}`);
     if (issue.culprit) lines.push(`📍 ${escapeTelegramHtml(issue.culprit)}`);
-    if (issue.metadata?.value) lines.push(`💬 ${escapeTelegramHtml(issue.metadata.value.substring(0, 200))}`);
-    if (issue.count && issue.count > 1) lines.push(`📊 ${issue.count} events, ${issue.userCount || 0} users`);
+    if (issue.metadata?.value) {
+      lines.push(`💬 ${escapeTelegramHtml(issue.metadata.value.substring(0, 200))}`);
+    }
+    if (issue.count && issue.count > 1) {
+      lines.push(`📊 ${issue.count} events, ${issue.userCount || 0} users`);
+    }
     lines.push("", `🔗 https://foodshare.sentry.io/issues/${issue.id}/`);
   }
 
@@ -526,7 +533,7 @@ async function handleSentryWebhook(ctx: HandlerContext): Promise<Response> {
 // =============================================================================
 
 async function handleCheckAlerts(
-  ctx: HandlerContext<CheckAlertsRequest>
+  ctx: HandlerContext<CheckAlertsRequest>,
 ): Promise<Response> {
   const { supabase, body, ctx: requestCtx } = ctx;
   const startTime = performance.now();
@@ -540,19 +547,22 @@ async function handleCheckAlerts(
   // Load thresholds from environment or use defaults
   const thresholds: AlertThresholds = {
     errorRatePercent: parseFloat(
-      Deno.env.get("ALERT_ERROR_RATE_PERCENT") || String(CONFIG.defaultThresholds.errorRatePercent)
+      Deno.env.get("ALERT_ERROR_RATE_PERCENT") || String(CONFIG.defaultThresholds.errorRatePercent),
     ),
     p95LatencyMs: parseInt(
-      Deno.env.get("ALERT_P95_LATENCY_MS") || String(CONFIG.defaultThresholds.p95LatencyMs)
+      Deno.env.get("ALERT_P95_LATENCY_MS") || String(CONFIG.defaultThresholds.p95LatencyMs),
     ),
     failedLoginMultiplier: parseFloat(
-      Deno.env.get("ALERT_LOGIN_SPIKE_MULTIPLIER") || String(CONFIG.defaultThresholds.failedLoginMultiplier)
+      Deno.env.get("ALERT_LOGIN_SPIKE_MULTIPLIER") ||
+        String(CONFIG.defaultThresholds.failedLoginMultiplier),
     ),
     connectionPoolPercent: parseInt(
-      Deno.env.get("ALERT_CONNECTION_POOL_PERCENT") || String(CONFIG.defaultThresholds.connectionPoolPercent)
+      Deno.env.get("ALERT_CONNECTION_POOL_PERCENT") ||
+        String(CONFIG.defaultThresholds.connectionPoolPercent),
     ),
     vaultFailuresPerHour: parseInt(
-      Deno.env.get("ALERT_VAULT_FAILURES_HOUR") || String(CONFIG.defaultThresholds.vaultFailuresPerHour)
+      Deno.env.get("ALERT_VAULT_FAILURES_HOUR") ||
+        String(CONFIG.defaultThresholds.vaultFailuresPerHour),
     ),
   };
 
@@ -592,9 +602,7 @@ async function handleCheckAlerts(
   const notificationsSent: string[] = [];
 
   if (alerts.length > 0) {
-    const alertsToSend = forceCheck
-      ? alerts
-      : await filterByAlertCooldowns(supabase, alerts);
+    const alertsToSend = forceCheck ? alerts : await filterByAlertCooldowns(supabase, alerts);
 
     if (alertsToSend.length > 0) {
       const slackWebhook = await getSecretSafe(supabase, "SLACK_WEBHOOK_URL");

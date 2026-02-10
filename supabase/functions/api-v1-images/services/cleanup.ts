@@ -72,7 +72,7 @@ export async function cleanupOrphanImages(
     gracePeriodHours?: number;
     batchSize?: number;
     dryRun?: boolean;
-  } = {}
+  } = {},
 ): Promise<CleanupStats> {
   const startTime = performance.now();
   const gracePeriodHours = options.gracePeriodHours ?? 24;

@@ -63,7 +63,7 @@ async function logAdminAction(
   ctx: AdminContext,
   action: string,
   resourceId: string,
-  metadata: Record<string, unknown> = {}
+  metadata: Record<string, unknown> = {},
 ): Promise<void> {
   try {
     await ctx.supabase.rpc("log_audit_event", {
@@ -95,7 +95,7 @@ export async function handleUsersRoute(
   method: string,
   body: unknown,
   query: Record<string, string>,
-  ctx: AdminContext
+  ctx: AdminContext,
 ): Promise<Response> {
   // GET / - List users
   if (method === "GET" && segments.length === 0) {
@@ -130,7 +130,7 @@ export async function handleUsersRoute(
 
 async function handleListUsers(
   query: Record<string, string>,
-  ctx: AdminContext
+  ctx: AdminContext,
 ): Promise<Response> {
   const queryParams = listUsersQuerySchema.parse(query);
 
@@ -145,7 +145,7 @@ async function handleListUsers(
   if (queryParams.search) {
     const safeSearch = queryParams.search.replace(/[%_]/g, "\\$&");
     dbQuery = dbQuery.or(
-      `first_name.ilike.%${safeSearch}%,second_name.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%`
+      `first_name.ilike.%${safeSearch}%,second_name.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%`,
     );
   }
 
@@ -190,7 +190,7 @@ async function handleListUsers(
         productsCount: productsCount ?? 0,
         roles,
       };
-    })
+    }),
   );
 
   // Filter by role if specified
@@ -217,7 +217,7 @@ async function handleListUsers(
 async function handleUpdateRole(
   userId: string,
   body: unknown,
-  ctx: AdminContext
+  ctx: AdminContext,
 ): Promise<Response> {
   if (userId === ctx.adminId) {
     throw new ValidationError("Cannot change your own role");
@@ -241,7 +241,7 @@ async function handleUpdateRole(
     .from("user_roles")
     .upsert(
       { profile_id: userId, role_id: roleData.id },
-      { onConflict: "profile_id,role_id" }
+      { onConflict: "profile_id,role_id" },
     );
 
   if (error) throw new Error(error.message);
@@ -254,7 +254,7 @@ async function handleUpdateRole(
 async function handleUpdateRoles(
   userId: string,
   body: unknown,
-  ctx: AdminContext
+  ctx: AdminContext,
 ): Promise<Response> {
   if (userId === ctx.adminId) {
     throw new ValidationError("Cannot change your own roles");
@@ -296,13 +296,16 @@ async function handleUpdateRoles(
 
   await logAdminAction(ctx, "UPDATE_USER_ROLES", userId, { roles: input.roles });
 
-  return jsonResponse({ success: true, userId, roles: input.roles, updated: true }, ctx.corsHeaders);
+  return jsonResponse(
+    { success: true, userId, roles: input.roles, updated: true },
+    ctx.corsHeaders,
+  );
 }
 
 async function handleBanUser(
   userId: string,
   body: unknown,
-  ctx: AdminContext
+  ctx: AdminContext,
 ): Promise<Response> {
   if (userId === ctx.adminId) {
     throw new ValidationError("Cannot ban yourself");
@@ -350,7 +353,7 @@ async function handleBanUser(
 
 async function handleUnbanUser(
   userId: string,
-  ctx: AdminContext
+  ctx: AdminContext,
 ): Promise<Response> {
   // Check if user exists
   const { data: targetUser } = await ctx.supabase

@@ -7,15 +7,15 @@
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import {
-  ok,
   created,
-  noContent,
-  paginated,
   type HandlerContext,
+  noContent,
+  ok,
+  paginated,
 } from "../../_shared/api-handler.ts";
-import { NotFoundError, ValidationError, AuthorizationError } from "../../_shared/errors.ts";
+import { AuthorizationError, NotFoundError, ValidationError } from "../../_shared/errors.ts";
 import { logger } from "../../_shared/logger.ts";
-import { transformRoom, transformRoomDetail, transformMessage } from "./transformers.ts";
+import { transformMessage, transformRoom, transformRoomDetail } from "./transformers.ts";
 
 // =============================================================================
 // Schemas
@@ -99,7 +99,7 @@ export async function listRooms(ctx: HandlerContext<unknown, ListQuery>): Promis
       offset: 0,
       limit,
       total: resultRooms.length,
-    }
+    },
   );
 }
 
@@ -309,7 +309,9 @@ export async function sendMessage(ctx: HandlerContext<SendMessageBody>): Promise
 /**
  * Update room settings
  */
-export async function updateRoom(ctx: HandlerContext<UpdateRoomBody, ListQuery>): Promise<Response> {
+export async function updateRoom(
+  ctx: HandlerContext<UpdateRoomBody, ListQuery>,
+): Promise<Response> {
   const { supabase, userId, body, query } = ctx;
   const roomId = query.roomId;
 

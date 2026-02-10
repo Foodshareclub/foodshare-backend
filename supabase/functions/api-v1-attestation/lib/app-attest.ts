@@ -27,11 +27,13 @@ const CBOR_MAJOR_BYTES = 2;
 const CBOR_MAJOR_TEXT = 3;
 const CBOR_MAJOR_ARRAY = 4;
 
-export function decodeCBOR(data: Uint8Array): { fmt: string; attStmt: Record<string, Uint8Array>; authData: Uint8Array } | null {
+export function decodeCBOR(
+  data: Uint8Array,
+): { fmt: string; attStmt: Record<string, Uint8Array>; authData: Uint8Array } | null {
   try {
     let offset = 0;
 
-    function readItem(): unknown {
+    const readItem = (): unknown => {
       if (offset >= data.length) return null;
 
       const initial = data[offset++];
@@ -46,7 +48,8 @@ export function decodeCBOR(data: Uint8Array): { fmt: string; attStmt: Record<str
       } else if (additionalInfo === 25) {
         value = (data[offset++] << 8) | data[offset++];
       } else if (additionalInfo === 26) {
-        value = (data[offset++] << 24) | (data[offset++] << 16) | (data[offset++] << 8) | data[offset++];
+        value = (data[offset++] << 24) | (data[offset++] << 16) | (data[offset++] << 8) |
+          data[offset++];
       } else {
         return null;
       }
@@ -81,7 +84,7 @@ export function decodeCBOR(data: Uint8Array): { fmt: string; attStmt: Record<str
         default:
           return value;
       }
-    }
+    };
 
     const result = readItem() as Record<string, unknown>;
     if (!result || typeof result !== "object") return null;
@@ -117,7 +120,7 @@ export function parseAuthData(authData: Uint8Array): {
 
     const flags = authData[offset++];
     const signCount = (authData[offset++] << 24) | (authData[offset++] << 16) |
-                      (authData[offset++] << 8) | authData[offset++];
+      (authData[offset++] << 8) | authData[offset++];
 
     if (!(flags & 0x40)) return null;
 
@@ -209,17 +212,17 @@ export async function verifySignature(
   authData: Uint8Array,
   clientDataHash: Uint8Array,
   signature: Uint8Array,
-  publicKeyBase64: string
+  publicKeyBase64: string,
 ): Promise<boolean> {
   try {
-    const publicKeyRaw = Uint8Array.from(atob(publicKeyBase64), c => c.charCodeAt(0));
+    const publicKeyRaw = Uint8Array.from(atob(publicKeyBase64), (c) => c.charCodeAt(0));
 
     const publicKey = await crypto.subtle.importKey(
       "raw",
       publicKeyRaw,
       { name: "ECDSA", namedCurve: "P-256" },
       false,
-      ["verify"]
+      ["verify"],
     );
 
     const signedData = new Uint8Array(authData.length + clientDataHash.length);
@@ -232,7 +235,7 @@ export async function verifySignature(
       { name: "ECDSA", hash: "SHA-256" },
       publicKey,
       rawSignature,
-      signedData
+      signedData,
     );
   } catch {
     return false;
@@ -246,8 +249,8 @@ export async function verifySignature(
 export async function verifyAppAttest(
   keyId: string,
   attestation: string,
-  challenge: string,
-  bundleId: string
+  _challenge: string,
+  bundleId: string,
 ): Promise<{ verified: boolean; publicKey?: string; message?: string; riskScore: number }> {
   try {
     let attestationData: Uint8Array;
@@ -291,9 +294,17 @@ export async function verifyAppAttest(
     }
 
     logger.warn("App Attest verified without certificate chain", { keyId: keyId.substring(0, 8) });
-    return { verified: true, publicKey: publicKeyBase64, message: "Certificate chain not available", riskScore: 30 };
+    return {
+      verified: true,
+      publicKey: publicKeyBase64,
+      message: "Certificate chain not available",
+      riskScore: 30,
+    };
   } catch (error) {
-    logger.error("App Attest verification error", error instanceof Error ? error : new Error(String(error)));
+    logger.error(
+      "App Attest verification error",
+      error instanceof Error ? error : new Error(String(error)),
+    );
     return { verified: false, message: "Verification failed", riskScore: 100 };
   }
 }

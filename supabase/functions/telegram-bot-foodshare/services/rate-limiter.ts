@@ -23,7 +23,7 @@ export interface RateLimitResult {
 export async function checkRateLimitDistributed(
   userId: number,
   maxRequests = DEFAULT_MAX_REQUESTS,
-  windowMs = DEFAULT_WINDOW_MS
+  windowMs = DEFAULT_WINDOW_MS,
 ): Promise<RateLimitResult> {
   const supabase = getSupabaseClient();
   const now = new Date();
@@ -119,7 +119,7 @@ const inMemoryLimits = new Map<number, { count: number; resetAt: number }>();
 export function checkRateLimit(
   userId: number,
   maxRequests = DEFAULT_MAX_REQUESTS,
-  windowMs = DEFAULT_WINDOW_MS
+  windowMs = DEFAULT_WINDOW_MS,
 ): boolean {
   const now = Date.now();
   const userLimit = inMemoryLimits.get(userId);

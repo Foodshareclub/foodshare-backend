@@ -6,21 +6,21 @@
 import { setUserState } from "../services/user-state.ts";
 import { getProfileByWhatsAppPhone } from "../services/profile.ts";
 import { getSupabaseClient } from "../../_shared/supabase.ts";
-import { getUserImpactStats, getBadges } from "../services/impact.ts";
-import { sendTextMessage, sendButtonMessage, sendListMessage } from "../services/whatsapp-api.ts";
-import { t, getUserLanguage, saveUserLanguage } from "../lib/i18n.ts";
+import { getBadges, getUserImpactStats } from "../services/impact.ts";
+import { sendButtonMessage, sendListMessage, sendTextMessage } from "../services/whatsapp-api.ts";
+import { getUserLanguage, saveUserLanguage, t } from "../lib/i18n.ts";
 import {
-  getMainMenuButtons,
   getExtendedMenuSections,
-  getShareMethodButtons,
-  getLanguageButtons,
+  getFoodCardMessage,
   getHelpMessage,
   getImpactMessage,
-  getFoodCardMessage,
+  getLanguageButtons,
+  getMainMenuButtons,
+  getShareMethodButtons,
 } from "../lib/interactive.ts";
 import * as emoji from "../lib/emojis.ts";
 import { APP_URL } from "../config/index.ts";
-import { handleStart, handleResendCode, requireAuth } from "./auth.ts";
+import { handleResendCode, handleStart, requireAuth } from "./auth.ts";
 
 type Language = "en" | "ru" | "de";
 
@@ -143,7 +143,7 @@ async function handleShare(phoneNumber: string): Promise<void> {
   await sendButtonMessage(
     phoneNumber,
     `${emoji.FOOD} *${t(lang, "share.title")}*\n\n${t(lang, "share.chooseMethod")}`,
-    getShareMethodButtons(lang)
+    getShareMethodButtons(lang),
   );
 }
 
@@ -158,7 +158,7 @@ async function handleShareWeb(phoneNumber: string): Promise<void> {
   const shareUrl = `${APP_URL}/share`;
   await sendTextMessage(
     phoneNumber,
-    `${emoji.LINK} Open this link to share food:\n\n${shareUrl}\n\n${emoji.LIGHT_BULB} The web form is faster and easier!`
+    `${emoji.LINK} Open this link to share food:\n\n${shareUrl}\n\n${emoji.LIGHT_BULB} The web form is faster and easier!`,
   );
 
   await sendButtonMessage(phoneNumber, "What else would you like to do?", getMainMenuButtons(lang));
@@ -204,7 +204,7 @@ async function handleFind(phoneNumber: string): Promise<void> {
 
   await sendTextMessage(
     phoneNumber,
-    `${emoji.FOOD} *${t(lang, "find.title", { count: posts.length })}*`
+    `${emoji.FOOD} *${t(lang, "find.title", { count: posts.length })}*`,
   );
 
   for (const post of posts.slice(0, 3)) {
@@ -231,7 +231,7 @@ async function handleExtendedMenu(phoneNumber: string): Promise<void> {
     "Choose an option from the menu:",
     "View Menu",
     getExtendedMenuSections(lang),
-    `${emoji.MENU} FoodShare Menu`
+    `${emoji.MENU} FoodShare Menu`,
   );
 }
 
@@ -241,7 +241,7 @@ async function handleExtendedMenu(phoneNumber: string): Promise<void> {
 async function handleNearbyRequest(phoneNumber: string): Promise<void> {
   await sendTextMessage(
     phoneNumber,
-    `${emoji.LOCATION} *Nearby Food*\n\nShare your location to find food near you!\n\nTap the attachment button ${emoji.ARROW_RIGHT} Location`
+    `${emoji.LOCATION} *Nearby Food*\n\nShare your location to find food near you!\n\nTap the attachment button ${emoji.ARROW_RIGHT} Location`,
   );
 }
 
@@ -259,7 +259,11 @@ async function handleProfile(phoneNumber: string): Promise<void> {
   const profileUrl = `${APP_URL}/profile`;
   await sendTextMessage(
     phoneNumber,
-    `${emoji.USER} *${t(lang, "profile.title")}*\n\n${emoji.EMAIL} ${profile.email}\n${emoji.VERIFIED} Verified\n\n${emoji.LINK} ${t(lang, "profile.manageOnWebsite")}\n${profileUrl}`
+    `${emoji.USER} *${
+      t(lang, "profile.title")
+    }*\n\n${emoji.EMAIL} ${profile.email}\n${emoji.VERIFIED} Verified\n\n${emoji.LINK} ${
+      t(lang, "profile.manageOnWebsite")
+    }\n${profileUrl}`,
   );
 
   await sendButtonMessage(phoneNumber, "What else would you like to do?", getMainMenuButtons(lang));
@@ -299,7 +303,7 @@ async function handleStats(phoneNumber: string): Promise<void> {
 
   await sendTextMessage(
     phoneNumber,
-    `${emoji.STATS} *${t(lang, "stats.title")}*\n\n${t(lang, "stats.noStatsYet")}`
+    `${emoji.STATS} *${t(lang, "stats.title")}*\n\n${t(lang, "stats.noStatsYet")}`,
   );
 
   await sendButtonMessage(phoneNumber, "What else would you like to do?", getMainMenuButtons(lang));
@@ -347,7 +351,7 @@ async function handleLanguageSelect(phoneNumber: string): Promise<void> {
   await sendButtonMessage(
     phoneNumber,
     `${emoji.GLOBE} *${t(lang, "language.selectTitle")}*\n\n${t(lang, "language.selectMessage")}`,
-    getLanguageButtons()
+    getLanguageButtons(),
   );
 }
 
@@ -365,7 +369,9 @@ async function setLanguage(phoneNumber: string, newLang: Language): Promise<void
 
   await sendTextMessage(
     phoneNumber,
-    `${emoji.SUCCESS} *${t(newLang, "language.changed")}*\n\n${t(newLang, "language.selectedLanguage")}: ${langNames[newLang]}`
+    `${emoji.SUCCESS} *${t(newLang, "language.changed")}*\n\n${
+      t(newLang, "language.selectedLanguage")
+    }: ${langNames[newLang]}`,
   );
 
   await sendButtonMessage(phoneNumber, "What would you like to do?", getMainMenuButtons(newLang));
@@ -383,7 +389,7 @@ async function handleHelp(phoneNumber: string): Promise<void> {
     helpMsg,
     "View Options",
     getExtendedMenuSections(lang),
-    t(lang, "help.title")
+    t(lang, "help.title"),
   );
 }
 
@@ -403,6 +409,6 @@ async function handleClaimPost(phoneNumber: string, postId: string): Promise<voi
 
   await sendTextMessage(
     phoneNumber,
-    `${emoji.SHARE} To claim this food, visit:\n${postUrl}\n\nYou can message the owner directly on FoodShare!`
+    `${emoji.SHARE} To claim this food, visit:\n${postUrl}\n\nYou can message the owner directly on FoodShare!`,
   );
 }

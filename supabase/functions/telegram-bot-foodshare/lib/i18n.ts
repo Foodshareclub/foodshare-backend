@@ -23,7 +23,7 @@ const translations: Record<Language, Translations> = {
 export function t(
   lang: Language,
   key: string,
-  replacements?: Record<string, string | number>
+  replacements?: Record<string, string | number>,
 ): string {
   const keys = key.split(".");
   let value: any = translations[lang] || translations.en;

@@ -151,8 +151,7 @@ export function haversineDistance(point1: Coordinates, point2: Coordinates): num
   const deltaLat = toRadians(point2.lat - point1.lat);
   const deltaLng = toRadians(point2.lng - point1.lng);
 
-  const a =
-    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+  const a = Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
     Math.cos(lat1Rad) * Math.cos(lat2Rad) * Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
@@ -174,7 +173,7 @@ export function calculateDistanceKm(
   lat1: number,
   lng1: number,
   lat2: number,
-  lng2: number
+  lng2: number,
 ): number {
   return haversineDistance({ lat: lat1, lng: lng1 }, { lat: lat2, lng: lng2 });
 }
@@ -190,7 +189,7 @@ export function calculateDistanceKm(
 export function isWithinRadius(
   point: Coordinates,
   center: Coordinates,
-  radiusKm: number
+  radiusKm: number,
 ): boolean {
   return haversineDistance(point, center) <= radiusKm;
 }
@@ -243,7 +242,7 @@ export function bearingToCardinal(bearing: number): string {
 export function destinationPoint(
   start: Coordinates,
   bearingDegrees: number,
-  distanceKm: number
+  distanceKm: number,
 ): Coordinates {
   const toRadians = (degrees: number): number => (degrees * Math.PI) / 180;
   const toDegrees = (radians: number): number => (radians * 180) / Math.PI;
@@ -256,14 +255,13 @@ export function destinationPoint(
 
   const lat2 = Math.asin(
     Math.sin(lat1) * Math.cos(angularDistance) +
-      Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearingRad)
+      Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearingRad),
   );
 
-  const lng2 =
-    lng1 +
+  const lng2 = lng1 +
     Math.atan2(
       Math.sin(bearingRad) * Math.sin(angularDistance) * Math.cos(lat1),
-      Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2)
+      Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2),
     );
 
   return {
@@ -307,7 +305,7 @@ export function milesToKm(miles: number): number {
 export function convertDistance(
   value: number,
   from: DistanceUnit,
-  to: DistanceUnit
+  to: DistanceUnit,
 ): number {
   if (from === to) return value;
   return from === "kilometers" ? kmToMiles(value) : milesToKm(value);
@@ -370,7 +368,7 @@ export function detectUnitFromCountry(countryCode: string | null | undefined): D
  * @returns Preferred distance unit
  */
 export function detectUnitFromAcceptLanguage(
-  acceptLanguage: string | null | undefined
+  acceptLanguage: string | null | undefined,
 ): DistanceUnit {
   if (!acceptLanguage) return "kilometers";
 
@@ -452,7 +450,7 @@ export function formatDistance(
     useSmallUnits?: boolean;
     /** Threshold in km below which to use meters (default: 1) */
     smallUnitThreshold?: number;
-  } = {}
+  } = {},
 ): FormattedDistance {
   const { decimals = 1, useSmallUnits = true, smallUnitThreshold = 1 } = options;
 
@@ -582,7 +580,7 @@ export function snapSliderValue(value: number, unit: DistanceUnit): number {
  */
 export function transformDistancesInResponse<T extends Record<string, unknown>>(
   data: T,
-  includeAlternateUnit = true
+  includeAlternateUnit = true,
 ): T {
   if (!data || typeof data !== "object") return data;
 
@@ -593,27 +591,23 @@ export function transformDistancesInResponse<T extends Record<string, unknown>>(
     if (value && typeof value === "object" && !Array.isArray(value)) {
       (result as Record<string, unknown>)[key] = transformDistancesInResponse(
         value as Record<string, unknown>,
-        includeAlternateUnit
+        includeAlternateUnit,
       );
-    }
-    // Handle arrays
+    } // Handle arrays
     else if (Array.isArray(value)) {
       (result as Record<string, unknown>)[key] = value.map((item) =>
         item && typeof item === "object"
           ? transformDistancesInResponse(item as Record<string, unknown>, includeAlternateUnit)
           : item
       );
-    }
-    // Transform *_km fields
+    } // Transform *_km fields
     else if (key.endsWith("_km") && typeof value === "number" && includeAlternateUnit) {
       const milesKey = key.replace(/_km$/, "_miles");
       (result as Record<string, unknown>)[milesKey] = roundDistance(kmToMiles(value));
-    }
-    // Transform distanceKm camelCase
+    } // Transform distanceKm camelCase
     else if (key === "distanceKm" && typeof value === "number" && includeAlternateUnit) {
       (result as Record<string, unknown>)["distanceMiles"] = roundDistance(kmToMiles(value));
-    }
-    // Transform radiusKm camelCase
+    } // Transform radiusKm camelCase
     else if (key === "radiusKm" && typeof value === "number" && includeAlternateUnit) {
       (result as Record<string, unknown>)["radiusMiles"] = roundDistance(kmToMiles(value));
     }
@@ -697,7 +691,7 @@ export function isValidRadius(radius: number, unit: DistanceUnit = "kilometers")
 export function sanitizeRadiusKm(
   radius: unknown,
   unit: DistanceUnit = "kilometers",
-  defaultKm = 10
+  defaultKm = 10,
 ): number {
   if (typeof radius !== "number" || isNaN(radius) || radius <= 0) {
     return defaultKm;

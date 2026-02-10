@@ -15,23 +15,19 @@ import { cache, CACHE_KEYS, CACHE_TTLS, cacheThrough } from "../cache.ts";
 import { logger } from "../logger.ts";
 import {
   extractDisplayName,
+  type ExtractOptions,
   mapDatabaseProfile,
   type ProfileNameData,
-  type ExtractOptions,
 } from "../display-name.ts";
-import {
-  BatchSizeExceededError,
-  UserNotFoundError,
-  InvalidDisplayNameError,
-} from "./errors.ts";
+import { BatchSizeExceededError, InvalidDisplayNameError, UserNotFoundError } from "./errors.ts";
 import type {
-  DisplayNameResult,
-  DisplayNameSource,
+  BatchLookupResult,
+  DatabaseOverrideRow,
+  DatabaseProfileRow,
   DisplayNameMetrics,
   DisplayNameOverride,
-  BatchLookupResult,
-  DatabaseProfileRow,
-  DatabaseOverrideRow,
+  DisplayNameResult,
+  DisplayNameSource,
 } from "./types.ts";
 
 // =============================================================================
@@ -85,7 +81,7 @@ export class DisplayNameService {
    */
   async getDisplayName(
     userId: string,
-    options?: ExtractOptions
+    options?: ExtractOptions,
   ): Promise<DisplayNameResult> {
     const startTime = performance.now();
     metrics.totalLookups++;
@@ -145,9 +141,13 @@ export class DisplayNameService {
       return result;
     } catch (error) {
       metrics.errors++;
-      logger.error("Failed to get display name", error instanceof Error ? error : new Error(String(error)), {
-        userId,
-      });
+      logger.error(
+        "Failed to get display name",
+        error instanceof Error ? error : new Error(String(error)),
+        {
+          userId,
+        },
+      );
       throw error;
     } finally {
       const elapsed = performance.now() - startTime;
@@ -160,7 +160,7 @@ export class DisplayNameService {
    */
   async getDisplayNameBatch(
     userIds: string[],
-    options?: ExtractOptions
+    options?: ExtractOptions,
   ): Promise<BatchLookupResult> {
     if (userIds.length > MAX_BATCH_SIZE) {
       throw new BatchSizeExceededError(userIds.length, MAX_BATCH_SIZE);
@@ -198,7 +198,7 @@ export class DisplayNameService {
         // Try RPC batch function first
         const { data: batchData, error: batchError } = await this.supabase.rpc(
           "get_display_name_data_batch",
-          { p_user_ids: uncachedIds }
+          { p_user_ids: uncachedIds },
         );
 
         if (batchError) {
@@ -215,20 +215,20 @@ export class DisplayNameService {
                 item.user_id,
                 item.profile,
                 item.override,
-                options
+                options,
               );
               results[item.user_id] = result;
               cache.set(
                 CACHE_KEYS.displayName(item.user_id),
                 result,
-                CACHE_TTLS.displayName
+                CACHE_TTLS.displayName,
               );
             } catch (err) {
               errors[item.user_id] = err instanceof Error ? err.message : String(err);
             }
           }
         }
-      } catch (error) {
+      } catch (_error) {
         // Fallback to individual queries
         await this.fallbackBatchLookup(uncachedIds, results, errors, options);
       }
@@ -255,7 +255,7 @@ export class DisplayNameService {
     displayName: string,
     reason: string,
     adminUserId: string,
-    expiresAt?: string
+    expiresAt?: string,
   ): Promise<DisplayNameOverride> {
     // Validate display name
     if (!displayName || displayName.trim().length < 2) {
@@ -278,7 +278,7 @@ export class DisplayNameService {
           overridden_by: adminUserId,
           expires_at: expiresAt || null,
         },
-        { onConflict: "user_id" }
+        { onConflict: "user_id" },
       )
       .select()
       .single();
@@ -338,16 +338,14 @@ export class DisplayNameService {
    * Get service metrics
    */
   getMetrics(): DisplayNameMetrics {
-    const avgLookupTimeMs =
-      metrics.totalLookups > 0
-        ? metrics.totalLookupTimeMs / metrics.totalLookups
-        : 0;
+    const avgLookupTimeMs = metrics.totalLookups > 0
+      ? metrics.totalLookupTimeMs / metrics.totalLookups
+      : 0;
 
     const totalCacheAttempts = metrics.cacheHits + metrics.cacheMisses;
-    const cacheHitRate =
-      totalCacheAttempts > 0
-        ? (metrics.cacheHits / totalCacheAttempts) * 100
-        : 0;
+    const cacheHitRate = totalCacheAttempts > 0
+      ? (metrics.cacheHits / totalCacheAttempts) * 100
+      : 0;
 
     return {
       totalLookups: metrics.totalLookups,
@@ -428,7 +426,7 @@ export class DisplayNameService {
           createdAt: data.created_at,
         };
       },
-      { ttl: CACHE_TTLS.displayName }
+      { ttl: CACHE_TTLS.displayName },
     );
   }
 
@@ -442,7 +440,7 @@ export class DisplayNameService {
   private determineSource(
     profile: ProfileNameData,
     extractedName: string,
-    options?: ExtractOptions
+    options?: ExtractOptions,
   ): DisplayNameSource {
     const fallback = options?.fallback ?? "there";
 
@@ -451,7 +449,10 @@ export class DisplayNameService {
     }
 
     // Check in priority order
-    if (profile.displayName && extractedName.toLowerCase().includes(profile.displayName.toLowerCase().split(" ")[0])) {
+    if (
+      profile.displayName &&
+      extractedName.toLowerCase().includes(profile.displayName.toLowerCase().split(" ")[0])
+    ) {
       return "displayName";
     }
 
@@ -466,7 +467,10 @@ export class DisplayNameService {
       }
     }
 
-    if (profile.nickname && extractedName.toLowerCase().includes(profile.nickname.toLowerCase().split(" ")[0])) {
+    if (
+      profile.nickname &&
+      extractedName.toLowerCase().includes(profile.nickname.toLowerCase().split(" ")[0])
+    ) {
       return "nickname";
     }
 
@@ -481,7 +485,7 @@ export class DisplayNameService {
     userId: string,
     profile: DatabaseProfileRow | null,
     override: DatabaseOverrideRow | null,
-    options?: ExtractOptions
+    options?: ExtractOptions,
   ): DisplayNameResult {
     // Check override first
     if (override) {
@@ -525,7 +529,7 @@ export class DisplayNameService {
     userIds: string[],
     results: Record<string, DisplayNameResult>,
     errors: Record<string, string>,
-    options?: ExtractOptions
+    options?: ExtractOptions,
   ): Promise<void> {
     metrics.databaseLookups += userIds.length;
 
@@ -550,11 +554,11 @@ export class DisplayNameService {
       .in("user_id", userIds);
 
     const overrideMap = new Map(
-      (overrides || []).map((o) => [o.user_id, o])
+      (overrides || []).map((o) => [o.user_id, o]),
     );
 
     const profileMap = new Map(
-      (profiles || []).map((p) => [p.id, p])
+      (profiles || []).map((p) => [p.id, p]),
     );
 
     for (const userId of userIds) {

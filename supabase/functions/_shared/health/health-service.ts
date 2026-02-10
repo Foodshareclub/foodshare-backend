@@ -14,17 +14,17 @@ import {
 } from "../metrics.ts";
 
 import {
-  HealthStatus,
-  HealthCheckSummary,
   FunctionHealthResult,
-  ServiceHealth,
   HEALTH_VERSION,
+  HealthCheckSummary,
+  HealthStatus,
+  ServiceHealth,
 } from "./types.ts";
 import { EDGE_FUNCTIONS, getFunctionConfig, getQuickCheckFunctions } from "./config.ts";
-import { FunctionChecker, createFunctionChecker } from "./checkers/function-checker.ts";
+import { createFunctionChecker, FunctionChecker } from "./checkers/function-checker.ts";
 import { checkDatabase } from "./checkers/database-checker.ts";
 import { checkStorage } from "./checkers/storage-checker.ts";
-import { TelegramAlerter, createTelegramAlerter } from "./alerting/telegram-alerter.ts";
+import { createTelegramAlerter, TelegramAlerter } from "./alerting/telegram-alerter.ts";
 import { AlertStateManager, getAlertStateManager } from "./alerting/alert-state.ts";
 
 // =============================================================================
@@ -63,7 +63,9 @@ export class HealthService {
   /**
    * Quick health check - just database status
    */
-  async checkQuickHealth(): Promise<{ status: string; timestamp: string; version: string; database: string }> {
+  async checkQuickHealth(): Promise<
+    { status: string; timestamp: string; version: string; database: string }
+  > {
     const supabase = getSupabaseClient();
     const dbHealth = await checkDatabase(supabase);
 
@@ -111,8 +113,8 @@ export class HealthService {
     const overallStatus: HealthStatus = hasUnhealthy
       ? "unhealthy"
       : hasDegraded
-        ? "degraded"
-        : "healthy";
+      ? "degraded"
+      : "healthy";
 
     // Record health checks
     for (const service of services) {
@@ -121,7 +123,7 @@ export class HealthService {
         service.status,
         service.responseTimeMs,
         service.details,
-        service.error
+        service.error,
       );
     }
 
@@ -136,10 +138,10 @@ export class HealthService {
       circuitBreakers,
       metrics: metrics
         ? {
-            requestsLast5Min: metrics.totalRequests,
-            errorRateLast5Min: metrics.errorRate,
-            p95LatencyMs: metrics.p95Latency,
-          }
+          requestsLast5Min: metrics.totalRequests,
+          errorRateLast5Min: metrics.errorRate,
+          p95LatencyMs: metrics.p95Latency,
+        }
         : undefined,
     };
   }
@@ -166,7 +168,7 @@ export class HealthService {
     const timeout = results.filter((r) => r.status === "timeout");
 
     const criticalIssues = results.filter(
-      (r) => r.critical && (r.status === "unhealthy" || r.status === "timeout")
+      (r) => r.critical && (r.status === "unhealthy" || r.status === "timeout"),
     );
     const degradedFunctions = results.filter((r) => r.status === "degraded");
 
@@ -218,7 +220,7 @@ export class HealthService {
       {
         functions: summary.functions,
         criticalIssueCount: criticalIssues.length,
-      }
+      },
     );
 
     return summary;
@@ -227,7 +229,9 @@ export class HealthService {
   /**
    * Check a single function by name
    */
-  async checkSingleFunction(functionName: string): Promise<FunctionHealthResult | { error: string; availableFunctions?: string[] }> {
+  async checkSingleFunction(
+    functionName: string,
+  ): Promise<FunctionHealthResult | { error: string; availableFunctions?: string[] }> {
     const config = getFunctionConfig(functionName);
 
     if (!config) {
@@ -243,7 +247,10 @@ export class HealthService {
   /**
    * Handle alerting logic
    */
-  private async handleAlerting(summary: HealthCheckSummary, allUnhealthy: FunctionHealthResult[]): Promise<void> {
+  private async handleAlerting(
+    summary: HealthCheckSummary,
+    allUnhealthy: FunctionHealthResult[],
+  ): Promise<void> {
     if (!this.alerter) {
       return;
     }
@@ -251,7 +258,9 @@ export class HealthService {
     if (allUnhealthy.length > 0) {
       // Check if we should send alert (respects cooldown)
       const criticalIssues = allUnhealthy.filter((f) => f.critical);
-      const shouldAlert = criticalIssues.some((fn) => this.alertState.shouldSendAlert(fn.name, false));
+      const shouldAlert = criticalIssues.some((fn) =>
+        this.alertState.shouldSendAlert(fn.name, false)
+      );
 
       if (shouldAlert) {
         const alertMessage = this.alerter.formatAlertMessage(summary, allUnhealthy, false);

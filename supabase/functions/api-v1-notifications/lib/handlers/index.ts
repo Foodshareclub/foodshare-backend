@@ -19,7 +19,7 @@ import { logger } from "../../../_shared/logger.ts";
  * GET /health - Health check
  */
 export async function handleHealth(
-  context: NotificationContext
+  _context: NotificationContext,
 ): Promise<{ status: string; version: string; timestamp: string }> {
   return {
     status: "healthy",
@@ -32,7 +32,7 @@ export async function handleHealth(
  * GET /stats - Statistics
  */
 export async function handleStats(
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{
   success: boolean;
   data?: Record<string, unknown>;
@@ -68,7 +68,7 @@ export async function handleStats(
  * GET /preferences - Get user preferences
  */
 export async function handleGetPreferences(
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{
   success: boolean;
   data?: unknown;
@@ -98,7 +98,7 @@ export async function handleGetPreferences(
  */
 export async function handleUpdatePreferences(
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{
   success: boolean;
   data?: unknown;
@@ -129,7 +129,7 @@ export async function handleUpdatePreferences(
  */
 export async function handleEnableDnd(
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{
   success: boolean;
   data?: unknown;
@@ -143,7 +143,7 @@ export async function handleEnableDnd(
     const { duration_hours = 8 } = (body as { duration_hours?: number }) || {};
     const until = new Date(Date.now() + duration_hours * 60 * 60 * 1000);
 
-    const { data, error } = await context.supabase.rpc("update_notification_settings", {
+    const { data: _data, error } = await context.supabase.rpc("update_notification_settings", {
       p_user_id: context.userId,
       p_settings: {
         dnd: {
@@ -167,7 +167,7 @@ export async function handleEnableDnd(
  * DELETE /preferences/dnd - Disable Do Not Disturb
  */
 export async function handleDisableDnd(
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{
   success: boolean;
   data?: unknown;
@@ -178,7 +178,7 @@ export async function handleDisableDnd(
   }
 
   try {
-    const { data, error } = await context.supabase.rpc("update_notification_settings", {
+    const { data: _data, error } = await context.supabase.rpc("update_notification_settings", {
       p_user_id: context.userId,
       p_settings: {
         dnd: {
@@ -205,7 +205,7 @@ export async function handleDisableDnd(
 export async function handleWebhook(
   provider: string,
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{
   success: boolean;
   message?: string;
@@ -559,7 +559,7 @@ function parseFcmEvents(body: unknown): WebhookEvent[] {
  */
 export async function handleDigestProcess(
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{
   success: boolean;
   data?: unknown;
@@ -587,7 +587,7 @@ export async function handleDigestProcess(
       {
         p_frequency: frequency,
         p_limit: limit,
-      }
+      },
     );
 
     if (fetchError) {
@@ -684,7 +684,7 @@ export async function handleDigestProcess(
         } else {
           pushFailed++;
         }
-      } catch (e) {
+      } catch (_e) {
         pushFailed++;
       }
     }
@@ -693,7 +693,7 @@ export async function handleDigestProcess(
     if (!dryRun && allNotificationIds.length > 0) {
       const { error: markError } = await context.supabase.rpc(
         "mark_digest_notifications_sent",
-        { p_notification_ids: allNotificationIds }
+        { p_notification_ids: allNotificationIds },
       );
 
       if (markError) {
@@ -765,7 +765,11 @@ function createDigestTitle(items: Array<{ category?: string }>, frequency: strin
   }
 
   const total = items.length;
-  const frequencyLabel = frequency === "hourly" ? "this hour" : frequency === "daily" ? "today" : "this week";
+  const frequencyLabel = frequency === "hourly"
+    ? "this hour"
+    : frequency === "daily"
+    ? "today"
+    : "this week";
   return `${total} notifications ${frequencyLabel}`;
 }
 
@@ -781,7 +785,7 @@ function createDigestBody(items: Array<{ title?: string }>): string {
  * GET /dashboard - Dashboard statistics
  */
 export async function handleDashboard(
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{
   success: boolean;
   data?: unknown;
@@ -819,7 +823,7 @@ export async function handleDashboard(
  */
 export async function handleListNotifications(
   url: URL,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{
   success: boolean;
   data?: unknown;

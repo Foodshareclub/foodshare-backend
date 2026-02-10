@@ -5,7 +5,7 @@
  */
 
 import { logger } from "../../logger.ts";
-import { HealthCheckSummary, FunctionHealthResult } from "../types.ts";
+import { FunctionHealthResult, HealthCheckSummary } from "../types.ts";
 
 // =============================================================================
 // Configuration
@@ -71,7 +71,7 @@ export class TelegramAlerter {
   formatAlertMessage(
     summary: HealthCheckSummary,
     unhealthyFunctions: FunctionHealthResult[],
-    isRecovery: boolean
+    isRecovery: boolean,
   ): string {
     const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19);
 
@@ -148,7 +148,8 @@ All ${summary.functions.total} edge functions are healthy.
     // Add cold start info if any recovered
     const coldStartRecoveries = unhealthyFunctions.filter((f) => f.recoveredFromColdStart);
     if (coldStartRecoveries.length > 0) {
-      message += `\n<i>${coldStartRecoveries.length} function(s) recovered after cold start retry</i>\n`;
+      message +=
+        `\n<i>${coldStartRecoveries.length} function(s) recovered after cold start retry</i>\n`;
     }
 
     message += `\n<b>Time:</b> ${timestamp}`;

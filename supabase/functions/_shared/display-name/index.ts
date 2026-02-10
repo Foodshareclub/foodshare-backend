@@ -31,31 +31,28 @@ export {
   mapDatabaseProfile,
 } from "../display-name.ts";
 
-export type {
-  ProfileNameData,
-  ExtractOptions,
-} from "../display-name.ts";
+export type { ExtractOptions, ProfileNameData } from "../display-name.ts";
 
 // Export types
 export type {
-  DisplayNameResult,
-  DisplayNameSource,
-  DisplayNameMetrics,
-  DisplayNameOverride,
   BatchLookupRequest,
   BatchLookupResult,
-  DatabaseProfileRow,
   DatabaseOverrideRow,
+  DatabaseProfileRow,
+  DisplayNameMetrics,
+  DisplayNameOverride,
+  DisplayNameResult,
+  DisplayNameSource,
 } from "./types.ts";
 
 // Export errors
 export {
-  UserNotFoundError,
   BatchSizeExceededError,
+  DisplayNameServiceUnavailableError,
+  InvalidDisplayNameError,
   OverrideExistsError,
   OverrideNotFoundError,
-  InvalidDisplayNameError,
-  DisplayNameServiceUnavailableError,
+  UserNotFoundError,
 } from "./errors.ts";
 
 // Export service

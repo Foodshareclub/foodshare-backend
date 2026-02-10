@@ -26,7 +26,7 @@ export class BatchSizeExceededError extends AppError {
       `Batch size ${requested} exceeds maximum of ${max}`,
       "BATCH_SIZE_EXCEEDED",
       400,
-      { details: { requested, max } }
+      { details: { requested, max } },
     );
   }
 }
@@ -40,7 +40,7 @@ export class OverrideExistsError extends AppError {
       `Display name override already exists for user: ${userId}`,
       "OVERRIDE_EXISTS",
       409,
-      { details: { userId } }
+      { details: { userId } },
     );
   }
 }
@@ -54,7 +54,7 @@ export class OverrideNotFoundError extends AppError {
       `No display name override found for user: ${userId}`,
       "OVERRIDE_NOT_FOUND",
       404,
-      { details: { userId } }
+      { details: { userId } },
     );
   }
 }
@@ -77,7 +77,7 @@ export class DisplayNameServiceUnavailableError extends AppError {
       `Display name service unavailable: ${reason}`,
       "SERVICE_UNAVAILABLE",
       503,
-      { retryable: true }
+      { retryable: true },
     );
   }
 }

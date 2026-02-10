@@ -44,7 +44,7 @@ export function parseStorageUrl(url: string): ParsedStorageUrl | null {
       if (parsed.hostname === supabaseHost) {
         // Pattern: /storage/v1/object/public/{bucket}/{...path}
         const match = parsed.pathname.match(
-          /^\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/
+          /^\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/,
         );
         if (match) {
           const [, bucket, path] = match;
@@ -96,7 +96,7 @@ export function isOwnStorageUrl(url: string): boolean {
  * for a meaningful error message.
  */
 export function validateProductImageUrls(
-  urls: string[]
+  urls: string[],
 ): { valid: true } | { valid: false; invalidUrls: string[] } {
   const invalidUrls: string[] = [];
 

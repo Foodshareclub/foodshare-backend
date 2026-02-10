@@ -8,30 +8,30 @@ import type { WhatsAppMessage } from "../types/index.ts";
 import { getUserState, setUserState } from "../services/user-state.ts";
 import { getProfileByWhatsAppPhone, updateProfile } from "../services/profile.ts";
 import { getSupabaseClient } from "../../_shared/supabase.ts";
-import { geocodeAddress, extractCoordinates } from "../services/geocoding.ts";
+import { extractCoordinates, geocodeAddress } from "../services/geocoding.ts";
 import {
-  sendTextMessage,
+  getMediaUrl,
   sendButtonMessage,
   sendListMessage,
-  getMediaUrl,
+  sendTextMessage,
 } from "../services/whatsapp-api.ts";
-import { t, getUserLanguage } from "../lib/i18n.ts";
+import { getUserLanguage, t } from "../lib/i18n.ts";
 import {
-  getMainMenuButtons,
   getExtendedMenuSections,
-  getShareMethodButtons,
-  getLocationButtons,
-  getHelpMessage,
   getFoodCardMessage,
+  getHelpMessage,
+  getLocationButtons,
+  getMainMenuButtons,
+  getShareMethodButtons,
 } from "../lib/interactive.ts";
 import * as emoji from "../lib/emojis.ts";
 import { APP_URL } from "../config/index.ts";
 import { createPostGISPoint, sanitizeText } from "../utils/validation.ts";
 import {
-  handleStart,
   handleEmailInput,
-  handleVerificationCode,
   handleResendCode,
+  handleStart,
+  handleVerificationCode,
   requireAuth,
 } from "./auth.ts";
 
@@ -74,10 +74,11 @@ export async function handleTextMessage(message: WhatsAppMessage): Promise<void>
         await handleEmailInput(phoneNumber, text);
         return;
 
-      case "awaiting_verification":
+      case "awaiting_verification": {
         const handled = await handleVerificationCode(phoneNumber, text);
         if (handled) return;
         break;
+      }
 
       case "sharing_food":
         await handleSharingFoodText(phoneNumber, text, state);
@@ -104,7 +105,7 @@ export async function handlePhotoMessage(message: WhatsAppMessage): Promise<void
     if (!mediaId) {
       await sendTextMessage(
         phoneNumber,
-        `${emoji.ERROR} Could not process photo. Please try again.`
+        `${emoji.ERROR} Could not process photo. Please try again.`,
       );
       return;
     }
@@ -115,7 +116,7 @@ export async function handlePhotoMessage(message: WhatsAppMessage): Promise<void
     if (!mediaUrl) {
       await sendTextMessage(
         phoneNumber,
-        `${emoji.ERROR} Could not download photo. Please try again.`
+        `${emoji.ERROR} Could not download photo. Please try again.`,
       );
       return;
     }
@@ -138,12 +139,12 @@ export async function handlePhotoMessage(message: WhatsAppMessage): Promise<void
   if (await requireAuth(phoneNumber)) {
     await sendTextMessage(
       phoneNumber,
-      `${emoji.PHOTO} Nice photo! Would you like to share food?\n\nTap the button below to start sharing.`
+      `${emoji.PHOTO} Nice photo! Would you like to share food?\n\nTap the button below to start sharing.`,
     );
     await sendButtonMessage(
       phoneNumber,
       "Share this food with the community?",
-      getShareMethodButtons(lang)
+      getShareMethodButtons(lang),
     );
   }
 }
@@ -184,7 +185,7 @@ export async function handleLocationMessage(message: WhatsAppMessage): Promise<v
 
     await sendTextMessage(
       phoneNumber,
-      `${emoji.SUCCESS} Location updated!\n\n${emoji.SEARCH} Looking for nearby food...`
+      `${emoji.SUCCESS} Location updated!\n\n${emoji.SEARCH} Looking for nearby food...`,
     );
 
     await handleNearby(phoneNumber, coords.latitude, coords.longitude);
@@ -203,7 +204,7 @@ async function handleHelp(phoneNumber: string): Promise<void> {
     helpMsg,
     "View Options",
     getExtendedMenuSections(lang),
-    t(lang, "help.title")
+    t(lang, "help.title"),
   );
 }
 
@@ -223,7 +224,7 @@ async function handleCancel(phoneNumber: string): Promise<void> {
 async function handleSharingFoodText(
   phoneNumber: string,
   text: string,
-  state: { action: string; step?: string; data: Record<string, string | undefined> }
+  state: { action: string; step?: string; data: Record<string, string | undefined> },
 ): Promise<void> {
   const lang = await getUserLanguage(phoneNumber);
 
@@ -292,7 +293,7 @@ async function handleSharingFoodText(
  */
 async function createFoodPost(
   phoneNumber: string,
-  data: Record<string, string | number | undefined>
+  data: Record<string, string | number | undefined>,
 ): Promise<void> {
   const lang = await getUserLanguage(phoneNumber);
   const profile = await getProfileByWhatsAppPhone(phoneNumber);
@@ -336,7 +337,7 @@ async function createFoodPost(
   const postUrl = `${APP_URL}/food/${post.id}`;
   await sendTextMessage(
     phoneNumber,
-    `${emoji.CELEBRATE} *${t(lang, "share.success")}*\n\n${emoji.LINK} ${postUrl}`
+    `${emoji.CELEBRATE} *${t(lang, "share.success")}*\n\n${emoji.LINK} ${postUrl}`,
   );
 
   await sendButtonMessage(phoneNumber, "What's next?", getMainMenuButtons(lang));
@@ -348,7 +349,7 @@ async function createFoodPost(
 async function handleNearby(
   phoneNumber: string,
   _latitude: number,
-  _longitude: number
+  _longitude: number,
 ): Promise<void> {
   const lang = await getUserLanguage(phoneNumber);
   const supabase = getSupabaseClient();
@@ -368,7 +369,7 @@ async function handleNearby(
 
   await sendTextMessage(
     phoneNumber,
-    `${emoji.FOOD} *${t(lang, "find.title", { count: posts.length })}*`
+    `${emoji.FOOD} *${t(lang, "find.title", { count: posts.length })}*`,
   );
 
   for (const post of posts) {

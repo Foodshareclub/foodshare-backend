@@ -7,19 +7,19 @@
  */
 
 import type {
-  SendRequest,
-  BatchSendRequest,
-  TemplateSendRequest,
-  NotificationContext,
-  DeliveryResult,
   BatchDeliveryResult,
+  BatchSendRequest,
+  DeliveryResult,
+  NotificationContext,
+  SendRequest,
+  TemplateSendRequest,
 } from "../types.ts";
 import { sendNotification } from "../orchestrator.ts";
 import { logger } from "../../../_shared/logger.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import {
-  sendRequestSchema,
   batchSendRequestSchema,
+  sendRequestSchema,
   templateSendRequestSchema,
 } from "../validation.ts";
 
@@ -28,7 +28,7 @@ import {
  */
 export async function handleSend(
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{ success: boolean; data?: DeliveryResult; error?: string }> {
   try {
     // Validate request
@@ -69,7 +69,7 @@ export async function handleSend(
  */
 export async function handleSendBatch(
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{ success: boolean; data?: BatchDeliveryResult; error?: string }> {
   const startTime = performance.now();
 
@@ -97,7 +97,7 @@ export async function handleSendBatch(
             error: (error as Error).message,
             timestamp: new Date().toISOString(),
           }))
-        )
+        ),
       );
       results.push(...batchResults);
     } else {
@@ -180,7 +180,7 @@ export async function handleSendBatch(
  */
 export async function handleSendTemplate(
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{ success: boolean; data?: DeliveryResult; error?: string }> {
   try {
     // Validate request
@@ -204,7 +204,7 @@ export async function handleSendTemplate(
       data: {
         template: request.template,
         ...Object.fromEntries(
-          Object.entries(request.variables).map(([k, v]) => [k, String(v)])
+          Object.entries(request.variables).map(([k, v]) => [k, String(v)]),
         ),
       },
     };

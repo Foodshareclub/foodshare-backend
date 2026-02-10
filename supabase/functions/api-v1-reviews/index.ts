@@ -18,14 +18,14 @@
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import {
   createAPIHandler,
-  ok,
   created,
-  paginated,
   type HandlerContext,
+  ok,
+  paginated,
 } from "../_shared/api-handler.ts";
-import { ValidationError, ConflictError } from "../_shared/errors.ts";
+import { ConflictError, ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
-import { REVIEW, ERROR_MESSAGES } from "../_shared/validation-rules.ts";
+import { ERROR_MESSAGES, REVIEW } from "../_shared/validation-rules.ts";
 
 const VERSION = "1.0.0";
 
@@ -65,14 +65,17 @@ async function getReviews(ctx: HandlerContext<unknown, QueryParams>): Promise<Re
 
   let dbQuery = supabase
     .from("reviews")
-    .select(`
+    .select(
+      `
       id,
       profile_id,
       post_id,
       reviewed_rating,
       feedback,
       created_at
-    `, { count: "exact" })
+    `,
+      { count: "exact" },
+    )
     .order("created_at", { ascending: false })
     .limit(limit + 1);
 
@@ -106,7 +109,7 @@ async function getReviews(ctx: HandlerContext<unknown, QueryParams>): Promise<Re
       offset: 0,
       limit,
       total: count || resultItems.length,
-    }
+    },
   );
 }
 
@@ -212,7 +215,12 @@ function handleGet(ctx: HandlerContext<unknown, QueryParams>): Promise<Response>
   // Health check
   const url = new URL(ctx.request.url);
   if (url.pathname.endsWith("/health")) {
-    return ok({ status: "healthy", service: "api-v1-reviews", version: VERSION, timestamp: new Date().toISOString() }, ctx);
+    return ok({
+      status: "healthy",
+      service: "api-v1-reviews",
+      version: VERSION,
+      timestamp: new Date().toISOString(),
+    }, ctx);
   }
 
   return getReviews(ctx);

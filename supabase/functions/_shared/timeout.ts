@@ -50,7 +50,7 @@ export type TimeoutType = keyof typeof TIMEOUT_DEFAULTS;
 export async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
-  operationName: string = "Operation"
+  operationName: string = "Operation",
 ): Promise<T> {
   let timeoutId: number | undefined;
 
@@ -86,7 +86,7 @@ export async function withTimeout<T>(
 export async function withAbortableTimeout<T>(
   operation: (signal: AbortSignal) => Promise<T>,
   timeoutMs: number,
-  operationName: string = "Operation"
+  operationName: string = "Operation",
 ): Promise<T> {
   const controller = new AbortController();
 
@@ -122,12 +122,12 @@ export async function withAbortableTimeout<T>(
 export async function fetchWithTimeout(
   url: string | URL,
   options: RequestInit = {},
-  timeoutMs: number = TIMEOUT_DEFAULTS.externalApi
+  timeoutMs: number = TIMEOUT_DEFAULTS.externalApi,
 ): Promise<Response> {
   return withAbortableTimeout(
     (signal) => fetch(url, { ...options, signal }),
     timeoutMs,
-    `fetch ${url}`
+    `fetch ${url}`,
   );
 }
 
@@ -141,10 +141,9 @@ export async function fetchWithTimeout(
  * ```
  */
 export function createTimedFetch(
-  timeoutMs: number
+  timeoutMs: number,
 ): (url: string | URL, options?: RequestInit) => Promise<Response> {
-  return (url: string | URL, options?: RequestInit) =>
-    fetchWithTimeout(url, options, timeoutMs);
+  return (url: string | URL, options?: RequestInit) => fetchWithTimeout(url, options, timeoutMs);
 }
 
 /**
@@ -180,7 +179,7 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 export async function withDeadline<T>(
   promise: Promise<T>,
   deadlineMs: number,
-  operationName: string = "Operation"
+  operationName: string = "Operation",
 ): Promise<T> {
   const remainingMs = deadlineMs - Date.now();
 
@@ -240,7 +239,7 @@ export function createDeadline(totalTimeoutMs: number) {
 export function withTimeoutWrapper<TArgs extends unknown[], TResult>(
   fn: (...args: TArgs) => Promise<TResult>,
   timeoutMs: number,
-  operationName?: string
+  operationName?: string,
 ): (...args: TArgs) => Promise<TResult> {
   return (...args: TArgs) => {
     const name = operationName || fn.name || "Operation";
@@ -253,7 +252,7 @@ export function withTimeoutWrapper<TArgs extends unknown[], TResult>(
  */
 export function withOperationTimeout<T>(
   promise: Promise<T>,
-  operation: keyof typeof TIMEOUT_DEFAULTS
+  operation: keyof typeof TIMEOUT_DEFAULTS,
 ): Promise<T> {
   return withTimeout(promise, TIMEOUT_DEFAULTS[operation], operation);
 }

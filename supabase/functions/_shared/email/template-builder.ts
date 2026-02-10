@@ -13,17 +13,17 @@
 import {
   BRAND,
   buildEmail,
-  greeting,
-  paragraph,
-  bulletList,
-  infoBox,
-  highlightBox,
-  disclaimerBox,
-  statsBar,
-  divider,
-  growingCommunityBox,
   type BulletItem,
+  bulletList,
+  disclaimerBox,
+  divider,
+  greeting,
+  growingCommunityBox,
+  highlightBox,
+  infoBox,
+  paragraph,
   type StatItem,
+  statsBar,
 } from "./template-components.ts";
 
 // ============================================================================
@@ -38,8 +38,8 @@ export interface WelcomeParams {
 }
 
 // Thresholds for showing different content
-const NEARBY_THRESHOLD = 10;  // Show "nearby" stats only if >= 10 members
-const MEALS_THRESHOLD = 100;  // Show meals stat only if >= 100
+const NEARBY_THRESHOLD = 10; // Show "nearby" stats only if >= 10 members
+const MEALS_THRESHOLD = 100; // Show meals stat only if >= 100
 
 export function welcomeTemplate(params: WelcomeParams): { subject: string; html: string } {
   const nearbyMembers = params.nearbyMembers ?? 0;
@@ -47,10 +47,30 @@ export function welcomeTemplate(params: WelcomeParams): { subject: string; html:
   const totalMembers = params.totalMembers ?? 0;
 
   const features: BulletItem[] = [
-    { emoji: "🍎", title: "Share Surplus Food", description: "Post your extra groceries for neighbors", color: BRAND.primaryColor },
-    { emoji: "🗺️", title: "Discover Food Near You", description: "Browse the map to find available food", color: BRAND.accentTeal },
-    { emoji: "💬", title: "Connect & Chat", description: "Message members to coordinate pickups", color: BRAND.accentOrange },
-    { emoji: "🏆", title: "Join Challenges", description: "Participate in community challenges", color: BRAND.accentPurple },
+    {
+      emoji: "🍎",
+      title: "Share Surplus Food",
+      description: "Post your extra groceries for neighbors",
+      color: BRAND.primaryColor,
+    },
+    {
+      emoji: "🗺️",
+      title: "Discover Food Near You",
+      description: "Browse the map to find available food",
+      color: BRAND.accentTeal,
+    },
+    {
+      emoji: "💬",
+      title: "Connect & Chat",
+      description: "Message members to coordinate pickups",
+      color: BRAND.accentOrange,
+    },
+    {
+      emoji: "🏆",
+      title: "Join Challenges",
+      description: "Participate in community challenges",
+      color: BRAND.accentPurple,
+    },
   ];
 
   // Determine what to show based on actual numbers
@@ -140,12 +160,28 @@ export interface EmailVerificationParams {
   verifyUrl: string;
 }
 
-export function emailVerificationTemplate(params: EmailVerificationParams): { subject: string; html: string } {
+export function emailVerificationTemplate(
+  params: EmailVerificationParams,
+): { subject: string; html: string } {
   const content = `
     <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: ${BRAND.textPrimary};">Thanks for signing up for <strong style="color: ${BRAND.primaryColor};">FoodShare</strong>! 🥗</p>
-    ${paragraph("We're excited to have you join our community dedicated to reducing food waste and sharing delicious meals. To complete your registration and start making a difference, please confirm your email address below:")}
-    ${infoBox("What happens next?", "Once confirmed, your email will be uniquely associated with your account, and you'll gain full access to share and discover food in your community.", "✨")}
-    ${disclaimerBox(`<strong style="color: ${BRAND.textMuted};">Didn't sign up?</strong><br>If you didn't register with FoodShare, you can safely ignore this email.`)}
+    ${
+    paragraph(
+      "We're excited to have you join our community dedicated to reducing food waste and sharing delicious meals. To complete your registration and start making a difference, please confirm your email address below:",
+    )
+  }
+    ${
+    infoBox(
+      "What happens next?",
+      "Once confirmed, your email will be uniquely associated with your account, and you'll gain full access to share and discover food in your community.",
+      "✨",
+    )
+  }
+    ${
+    disclaimerBox(
+      `<strong style="color: ${BRAND.textMuted};">Didn't sign up?</strong><br>If you didn't register with FoodShare, you can safely ignore this email.`,
+    )
+  }
   `;
 
   return {
@@ -169,14 +205,30 @@ export interface PasswordResetParams {
   expiresIn?: string;
 }
 
-export function passwordResetTemplate(params: PasswordResetParams): { subject: string; html: string } {
+export function passwordResetTemplate(
+  params: PasswordResetParams,
+): { subject: string; html: string } {
   const expiresIn = params.expiresIn || "1 hour";
 
   const content = `
     ${greeting(params.name, "")}
-    ${paragraph("We received a request to reset your password. Click the button below to create a new password:")}
-    ${infoBox("Time Sensitive", `This link will expire in <strong>${expiresIn}</strong>. If you didn't request this, you can safely ignore this email.`, "⏰")}
-    ${disclaimerBox(`<strong style="color: ${BRAND.textMuted};">Didn't request this?</strong><br>If you didn't request a password reset, your account is still secure. No action is needed.`)}
+    ${
+    paragraph(
+      "We received a request to reset your password. Click the button below to create a new password:",
+    )
+  }
+    ${
+    infoBox(
+      "Time Sensitive",
+      `This link will expire in <strong>${expiresIn}</strong>. If you didn't request this, you can safely ignore this email.`,
+      "⏰",
+    )
+  }
+    ${
+    disclaimerBox(
+      `<strong style="color: ${BRAND.textMuted};">Didn't request this?</strong><br>If you didn't request a password reset, your account is still secure. No action is needed.`,
+    )
+  }
   `;
 
   return {
@@ -201,15 +253,25 @@ export interface ChatNotificationParams {
   chatUrl: string;
 }
 
-export function chatNotificationTemplate(params: ChatNotificationParams): { subject: string; html: string } {
+export function chatNotificationTemplate(
+  params: ChatNotificationParams,
+): { subject: string; html: string } {
   const preview = params.messagePreview.length > 100
     ? params.messagePreview.substring(0, 100) + "..."
     : params.messagePreview;
 
   const content = `
     ${greeting(params.recipientName)}
-    ${paragraph(`You have a new message from <strong style="color: ${BRAND.primaryColor};">${params.senderName}</strong>:`)}
-    ${highlightBox(`<p style="margin: 0; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary}; font-style: italic;">"${preview}"</p>`)}
+    ${
+    paragraph(
+      `You have a new message from <strong style="color: ${BRAND.primaryColor};">${params.senderName}</strong>:`,
+    )
+  }
+    ${
+    highlightBox(
+      `<p style="margin: 0; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary}; font-style: italic;">"${preview}"</p>`,
+    )
+  }
     ${paragraph("Reply now to continue the conversation! 💬", "0")}
   `;
 
@@ -250,8 +312,16 @@ export function newListingTemplate(params: NewListingParams): { subject: string;
 
   const listingBox = `
     <p style="font-size: 20px; font-weight: 700; margin: 0 0 12px; color: ${BRAND.textPrimary};">${emoji} ${params.listingTitle}</p>
-    ${params.listingAddress ? `<p style="margin: 0 0 8px; color: ${BRAND.textMuted}; font-size: 14px;">📍 ${params.listingAddress}</p>` : ""}
-    ${shortDesc ? `<p style="margin: 12px 0 0; font-size: 15px; line-height: 1.6; color: ${BRAND.textSecondary};">${shortDesc}</p>` : ""}
+    ${
+    params.listingAddress
+      ? `<p style="margin: 0 0 8px; color: ${BRAND.textMuted}; font-size: 14px;">📍 ${params.listingAddress}</p>`
+      : ""
+  }
+    ${
+    shortDesc
+      ? `<p style="margin: 12px 0 0; font-size: 15px; line-height: 1.6; color: ${BRAND.textSecondary};">${shortDesc}</p>`
+      : ""
+  }
     <p style="margin: 12px 0 0; color: ${BRAND.textLight}; font-size: 14px;">Posted by <strong style="color: ${BRAND.textSecondary};">${params.posterName}</strong></p>
   `;
 
@@ -281,20 +351,52 @@ export interface VolunteerWelcomeParams {
   name: string;
 }
 
-export function volunteerWelcomeTemplate(params: VolunteerWelcomeParams): { subject: string; html: string } {
+export function volunteerWelcomeTemplate(
+  params: VolunteerWelcomeParams,
+): { subject: string; html: string } {
   const features: BulletItem[] = [
-    { emoji: "📦", title: "Coordinate Pickups", description: "Help connect donors with recipients", color: BRAND.primaryColor },
-    { emoji: "🏪", title: "Manage Community Fridges", description: "Keep local fridges stocked and clean", color: BRAND.accentTeal },
-    { emoji: "📣", title: "Spread the Word", description: "Help grow our community", color: BRAND.accentOrange },
-    { emoji: "📊", title: "Track Impact", description: "See your contributions in real-time", color: BRAND.accentPurple },
+    {
+      emoji: "📦",
+      title: "Coordinate Pickups",
+      description: "Help connect donors with recipients",
+      color: BRAND.primaryColor,
+    },
+    {
+      emoji: "🏪",
+      title: "Manage Community Fridges",
+      description: "Keep local fridges stocked and clean",
+      color: BRAND.accentTeal,
+    },
+    {
+      emoji: "📣",
+      title: "Spread the Word",
+      description: "Help grow our community",
+      color: BRAND.accentOrange,
+    },
+    {
+      emoji: "📊",
+      title: "Track Impact",
+      description: "See your contributions in real-time",
+      color: BRAND.accentPurple,
+    },
   ];
 
   const content = `
     ${greeting(params.name)}
-    ${paragraph(`Thank you for joining the <strong style="color: ${BRAND.primaryColor};">FoodShare Volunteer Program</strong>! Your dedication helps make our community stronger.`)}
+    ${
+    paragraph(
+      `Thank you for joining the <strong style="color: ${BRAND.primaryColor};">FoodShare Volunteer Program</strong>! Your dedication helps make our community stronger.`,
+    )
+  }
     <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};"><strong>🌟 As a volunteer, you can:</strong></p>
     ${bulletList(features)}
-    ${infoBox("Your Impact Starts Now", "Every volunteer hour helps reduce food waste and feeds families in need. Thank you for being part of the solution!", "💪")}
+    ${
+    infoBox(
+      "Your Impact Starts Now",
+      "Every volunteer hour helps reduce food waste and feeds families in need. Thank you for being part of the solution!",
+      "💪",
+    )
+  }
   `;
 
   return {
@@ -303,7 +405,11 @@ export function volunteerWelcomeTemplate(params: VolunteerWelcomeParams): { subj
       title: "Welcome, Volunteer! 🙌",
       subtitle: "You're joining an amazing team",
       content,
-      cta: { text: "Start Volunteering", url: "https://foodshare.club/volunteer/dashboard", emoji: "🚀" },
+      cta: {
+        text: "Start Volunteering",
+        url: "https://foodshare.club/volunteer/dashboard",
+        emoji: "🚀",
+      },
     }),
   };
 }
@@ -317,21 +423,48 @@ export interface CompleteProfileParams {
   completionPercent?: number;
 }
 
-export function completeProfileTemplate(params: CompleteProfileParams): { subject: string; html: string } {
+export function completeProfileTemplate(
+  params: CompleteProfileParams,
+): { subject: string; html: string } {
   const percent = params.completionPercent || 50;
 
   const benefits: BulletItem[] = [
-    { emoji: "🔍", title: "Get Found", description: "Neighbors can discover you more easily", color: BRAND.primaryColor },
-    { emoji: "🤝", title: "Build Trust", description: "People are more likely to connect with complete profiles", color: BRAND.accentTeal },
-    { emoji: "📍", title: "Get Matched", description: "Find food shares near your location", color: BRAND.accentOrange },
+    {
+      emoji: "🔍",
+      title: "Get Found",
+      description: "Neighbors can discover you more easily",
+      color: BRAND.primaryColor,
+    },
+    {
+      emoji: "🤝",
+      title: "Build Trust",
+      description: "People are more likely to connect with complete profiles",
+      color: BRAND.accentTeal,
+    },
+    {
+      emoji: "📍",
+      title: "Get Matched",
+      description: "Find food shares near your location",
+      color: BRAND.accentOrange,
+    },
   ];
 
   const content = `
     ${greeting(params.name)}
-    ${paragraph(`Your FoodShare profile is <strong>${percent}%</strong> complete. Add a few more details to get the full experience!`)}
+    ${
+    paragraph(
+      `Your FoodShare profile is <strong>${percent}%</strong> complete. Add a few more details to get the full experience!`,
+    )
+  }
     <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};"><strong>✅ A complete profile helps you:</strong></p>
     ${bulletList(benefits)}
-    ${infoBox("Quick Tip", "Adding a profile photo increases your chances of successful connections by 3x!", "💡")}
+    ${
+    infoBox(
+      "Quick Tip",
+      "Adding a profile photo increases your chances of successful connections by 3x!",
+      "💡",
+    )
+  }
   `;
 
   return {
@@ -340,7 +473,11 @@ export function completeProfileTemplate(params: CompleteProfileParams): { subjec
       title: "Almost There! 📝",
       subtitle: "Complete your profile to unlock all features",
       content,
-      cta: { text: "Complete Profile", url: "https://foodshare.club/settings/profile", emoji: "📝" },
+      cta: {
+        text: "Complete Profile",
+        url: "https://foodshare.club/settings/profile",
+        emoji: "📝",
+      },
     }),
   };
 }
@@ -353,20 +490,52 @@ export interface FirstShareTipsParams {
   name: string;
 }
 
-export function firstShareTipsTemplate(params: FirstShareTipsParams): { subject: string; html: string } {
+export function firstShareTipsTemplate(
+  params: FirstShareTipsParams,
+): { subject: string; html: string } {
   const tips: BulletItem[] = [
-    { emoji: "📷", title: "Add Clear Photos", description: "Good photos get 5x more interest", color: BRAND.primaryColor },
-    { emoji: "📝", title: "Be Descriptive", description: "Include quantity, expiry dates, and dietary info", color: BRAND.accentTeal },
-    { emoji: "📍", title: "Set Pickup Details", description: "Clear time and location help coordination", color: BRAND.accentOrange },
-    { emoji: "⚡", title: "Respond Quickly", description: "Fast responses lead to successful pickups", color: BRAND.accentPurple },
+    {
+      emoji: "📷",
+      title: "Add Clear Photos",
+      description: "Good photos get 5x more interest",
+      color: BRAND.primaryColor,
+    },
+    {
+      emoji: "📝",
+      title: "Be Descriptive",
+      description: "Include quantity, expiry dates, and dietary info",
+      color: BRAND.accentTeal,
+    },
+    {
+      emoji: "📍",
+      title: "Set Pickup Details",
+      description: "Clear time and location help coordination",
+      color: BRAND.accentOrange,
+    },
+    {
+      emoji: "⚡",
+      title: "Respond Quickly",
+      description: "Fast responses lead to successful pickups",
+      color: BRAND.accentPurple,
+    },
   ];
 
   const content = `
     ${greeting(params.name)}
-    ${paragraph("Ready to make your first food share? Here are some tips to make it a great experience:")}
+    ${
+    paragraph(
+      "Ready to make your first food share? Here are some tips to make it a great experience:",
+    )
+  }
     <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};"><strong>📸 Creating a Great Listing:</strong></p>
     ${bulletList(tips)}
-    ${infoBox("Pro Tip", "Start with items that are still fresh but you can't use in time. Produce, bread, and leftovers are popular first shares!", "🌟")}
+    ${
+    infoBox(
+      "Pro Tip",
+      "Start with items that are still fresh but you can't use in time. Produce, bread, and leftovers are popular first shares!",
+      "🌟",
+    )
+  }
   `;
 
   return {
@@ -409,7 +578,11 @@ export function milestoneTemplate(params: MilestoneParams): { subject: string; h
   const content = `
     <p style="margin: 0 0 20px; font-size: 17px; line-height: 1.7; color: ${BRAND.textPrimary};">Congratulations <strong>${params.name}</strong>! 🎊</p>
     ${milestoneBox}
-    ${paragraph(`This achievement puts you in the top <strong style="color: ${BRAND.primaryColor};">${percentile}%</strong> of FoodShare members. Keep up the amazing work!`)}
+    ${
+    paragraph(
+      `This achievement puts you in the top <strong style="color: ${BRAND.primaryColor};">${percentile}%</strong> of FoodShare members. Keep up the amazing work!`,
+    )
+  }
     ${infoBox("Next Goal", nextMilestone, "🎯")}
   `;
 
@@ -419,7 +592,11 @@ export function milestoneTemplate(params: MilestoneParams): { subject: string; h
       title: "🎉 Achievement Unlocked!",
       subtitle: "You've reached an amazing milestone",
       content,
-      cta: { text: "View All Achievements", url: "https://foodshare.club/achievements", emoji: "🏆" },
+      cta: {
+        text: "View All Achievements",
+        url: "https://foodshare.club/achievements",
+        emoji: "🏆",
+      },
     }),
   };
 }
@@ -438,7 +615,9 @@ export interface ReengagementParams {
   unsubscribeUrl: string;
 }
 
-export function reengagementTemplate(params: ReengagementParams): { subject: string; html: string } {
+export function reengagementTemplate(
+  params: ReengagementParams,
+): { subject: string; html: string } {
   const newListings = params.newListingsNearby ?? 0;
   const mealsSaved = params.mealsSavedCommunity ?? 0;
   const newMembers = params.newMembersNearby ?? 0;
@@ -481,18 +660,23 @@ export function reengagementTemplate(params: ReengagementParams): { subject: str
   let closingMessage = "";
 
   if (hasActivity) {
-    mainMessage = `It's been <strong>${params.daysSinceLastVisit} days</strong> since we've seen you, and your community has been busy!`;
+    mainMessage =
+      `It's been <strong>${params.daysSinceLastVisit} days</strong> since we've seen you, and your community has been busy!`;
     statsSection = statsBar(stats);
-    closingMessage = `Maybe you've finished a good book recently, or have some extra groceries you won't use in time? Why not pop back and see what's happening?`;
+    closingMessage =
+      `Maybe you've finished a good book recently, or have some extra groceries you won't use in time? Why not pop back and see what's happening?`;
   } else {
     // No local activity - focus on encouraging them to be a pioneer
-    mainMessage = `It's been <strong>${params.daysSinceLastVisit} days</strong> since we've seen you. We've missed you!`;
-    statsSection = `<div style="margin: 24px 0; padding: 20px; background: linear-gradient(135deg, ${BRAND.bgSecondary} 0%, #fff5f7 100%); border-radius: ${BRAND.cardRadius}; text-align: center;">
+    mainMessage =
+      `It's been <strong>${params.daysSinceLastVisit} days</strong> since we've seen you. We've missed you!`;
+    statsSection =
+      `<div style="margin: 24px 0; padding: 20px; background: linear-gradient(135deg, ${BRAND.bgSecondary} 0%, #fff5f7 100%); border-radius: ${BRAND.cardRadius}; text-align: center;">
   <p style="margin: 0 0 8px; font-size: 24px;">💚</p>
   <p style="margin: 0 0 4px; font-size: 16px; font-weight: 700; color: ${BRAND.textPrimary};">Your neighborhood needs you!</p>
   <p style="margin: 0; font-size: 14px; color: ${BRAND.textSecondary}; line-height: 1.5;">Be the one to kickstart food sharing in your area. One listing could inspire your whole community.</p>
 </div>`;
-    closingMessage = `Got something you're not using? A book you've finished, some extra groceries, or that thing in the cupboard you keep meaning to sort out? Someone nearby might love it!`;
+    closingMessage =
+      `Got something you're not using? A book you've finished, some extra groceries, or that thing in the cupboard you keep meaning to sort out? Someone nearby might love it!`;
   }
 
   const content = `
@@ -501,7 +685,12 @@ export function reengagementTemplate(params: ReengagementParams): { subject: str
     ${statsSection}
     ${paragraph(closingMessage)}
     ${divider()}
-    ${paragraph(`One person's spare is another person's treasure. Why not make someone's day? 💚`, "0")}
+    ${
+    paragraph(
+      `One person's spare is another person's treasure. Why not make someone's day? 💚`,
+      "0",
+    )
+  }
   `;
 
   return {
@@ -515,7 +704,12 @@ export function reengagementTemplate(params: ReengagementParams): { subject: str
         url: hasActivity ? "https://foodshare.club/map" : "https://foodshare.club/new",
         emoji: hasActivity ? "🗺️" : "🍎",
       },
-      footer: { showUnsubscribe: true, unsubscribeUrl: params.unsubscribeUrl, showAppBadges: true, signOffMessage: "Happy sharing!" },
+      footer: {
+        showUnsubscribe: true,
+        unsubscribeUrl: params.unsubscribeUrl,
+        showAppBadges: true,
+        signOffMessage: "Happy sharing!",
+      },
     }),
   };
 }
@@ -535,7 +729,9 @@ export interface FeedbackAlertParams {
   timestamp?: string;
 }
 
-export function feedbackAlertTemplate(params: FeedbackAlertParams): { subject: string; html: string } {
+export function feedbackAlertTemplate(
+  params: FeedbackAlertParams,
+): { subject: string; html: string } {
   const emoji = params.feedbackEmoji || "📩";
   const timestamp = params.timestamp || new Date().toISOString();
 
@@ -585,22 +781,50 @@ export function appReleaseTemplate(params: AppLiveParams): { subject: string; ht
     : "https://play.google.com/store/apps/details?id=club.foodshare";
 
   const features: BulletItem[] = [
-    { emoji: "🍎", title: "Share Surplus Food", description: "Post your extra groceries for neighbors to enjoy", color: BRAND.primaryColor },
-    { emoji: "🗺️", title: "Discover Food Near You", description: "Browse the map to find available food in your area", color: BRAND.accentTeal },
-    { emoji: "💬", title: "Connect & Chat", description: "Message neighbors to coordinate pickups", color: BRAND.accentOrange },
-    { emoji: "🏆", title: "Join Challenges", description: "Participate in community challenges and earn rewards", color: BRAND.accentPurple },
+    {
+      emoji: "🍎",
+      title: "Share Surplus Food",
+      description: "Post your extra groceries for neighbors to enjoy",
+      color: BRAND.primaryColor,
+    },
+    {
+      emoji: "🗺️",
+      title: "Discover Food Near You",
+      description: "Browse the map to find available food in your area",
+      color: BRAND.accentTeal,
+    },
+    {
+      emoji: "💬",
+      title: "Connect & Chat",
+      description: "Message neighbors to coordinate pickups",
+      color: BRAND.accentOrange,
+    },
+    {
+      emoji: "🏆",
+      title: "Join Challenges",
+      description: "Participate in community challenges and earn rewards",
+      color: BRAND.accentPurple,
+    },
   ];
 
   const content = `
     ${greeting(name || "there")}
-    ${paragraph(`<strong style="color: ${BRAND.primaryColor};">Exciting news!</strong> FoodShare is now available on the ${platformIcon} <strong>${platformName}</strong>! Download the app and join thousands of neighbors who are reducing food waste and building community together.`)}
+    ${
+    paragraph(
+      `<strong style="color: ${BRAND.primaryColor};">Exciting news!</strong> FoodShare is now available on the ${platformIcon} <strong>${platformName}</strong>! Download the app and join thousands of neighbors who are reducing food waste and building community together.`,
+    )
+  }
 
     <p style="margin: 24px 0 16px; font-size: 16px; line-height: 1.7; color: ${BRAND.textSecondary};"><strong>🌱 With FoodShare you can:</strong></p>
     ${bulletList(features)}
 
     ${divider()}
 
-    ${paragraph(`Be part of the movement! Every item shared is one less item wasted. Download FoodShare today and start making a difference in your community.`)}
+    ${
+    paragraph(
+      `Be part of the movement! Every item shared is one less item wasted. Download FoodShare today and start making a difference in your community.`,
+    )
+  }
   `;
 
   return {
@@ -642,7 +866,7 @@ export type TemplateSlug = keyof typeof templates;
 
 export function renderTemplate(
   slug: string,
-  variables: Record<string, unknown>
+  variables: Record<string, unknown>,
 ): { subject: string; html: string } | null {
   const templateFn = templates[slug as TemplateSlug];
 

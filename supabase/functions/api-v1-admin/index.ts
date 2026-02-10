@@ -27,10 +27,10 @@
  * @version 1.0.0
  */
 
-import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
 import { getSupabaseClient } from "../_shared/supabase.ts";
 import { logger } from "../_shared/logger.ts";
-import { AppError, AuthenticationError, AuthorizationError } from "../_shared/errors.ts";
+import { AppError, AuthenticationError } from "../_shared/errors.ts";
 import { parseRoute } from "../_shared/routing.ts";
 import { handleListingsRoute } from "./lib/listings.ts";
 import { handleUsersRoute } from "./lib/users.ts";
@@ -55,7 +55,7 @@ export interface AdminContext {
 
 async function authenticateAdmin(
   req: Request,
-  supabase: ReturnType<typeof getSupabaseClient>
+  supabase: ReturnType<typeof getSupabaseClient>,
 ): Promise<{ authenticated: boolean; adminId?: string; error?: string }> {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -80,7 +80,7 @@ async function authenticateAdmin(
   }
 
   const roles = (userRoles || []).map(
-    (r) => (r.roles as unknown as { name: string }).name
+    (r) => (r.roles as unknown as { name: string }).name,
   );
   const isAdmin = roles.includes("admin") || roles.includes("superadmin");
 
@@ -147,7 +147,13 @@ async function handleRequest(ctx: HandlerContext): Promise<Response> {
 
   switch (route.resource) {
     case "users":
-      return await handleUsersRoute(route.segments.slice(1), ctx.request.method, body, query, context);
+      return await handleUsersRoute(
+        route.segments.slice(1),
+        ctx.request.method,
+        body,
+        query,
+        context,
+      );
 
     case "listings":
       return await handleListingsRoute(route.segments.slice(1), ctx.request.method, body, context);

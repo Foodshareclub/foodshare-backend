@@ -9,38 +9,38 @@
  * - API response transformation
  */
 
-import { assertEquals, assertAlmostEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertAlmostEquals, assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 
 import {
-  haversineDistance,
-  calculateDistanceKm,
-  isWithinRadius,
-  calculateBearing,
   bearingToCardinal,
-  destinationPoint,
-  kmToMiles,
-  milesToKm,
+  calculateBearing,
+  calculateDistanceKm,
+  CONVERSION,
   convertDistance,
-  getDistanceInBothUnits,
-  radiusToKm,
-  radiusFromKm,
-  detectUnitFromCountry,
+  createDistanceResponse,
+  destinationPoint,
   detectUnitFromAcceptLanguage,
+  detectUnitFromCountry,
+  EARTH_RADIUS_KM,
   formatDistance,
   formatDistanceString,
-  roundDistance,
+  getDistanceInBothUnits,
   getSliderConfig,
-  sliderValueToKm,
-  kmToSliderValue,
-  snapSliderValue,
-  transformDistancesInResponse,
-  createDistanceResponse,
+  haversineDistance,
   isValidCoordinates,
   isValidRadius,
+  isWithinRadius,
+  kmToMiles,
+  kmToSliderValue,
+  milesToKm,
+  radiusFromKm,
+  radiusToKm,
+  roundDistance,
   sanitizeRadiusKm,
-  EARTH_RADIUS_KM,
-  CONVERSION,
   SLIDER_CONFIG,
+  sliderValueToKm,
+  snapSliderValue,
+  transformDistancesInResponse,
 } from "../_shared/distance.ts";
 
 // =============================================================================
@@ -124,8 +124,10 @@ Deno.test("haversineDistance - London to Paris", () => {
 
 Deno.test("calculateDistanceKm - raw coordinates", () => {
   const distance = calculateDistanceKm(
-    NYC.lat, NYC.lng,
-    LONDON.lat, LONDON.lng
+    NYC.lat,
+    NYC.lng,
+    LONDON.lat,
+    LONDON.lng,
   );
   assertAlmostEquals(distance, 5570, 10);
 });

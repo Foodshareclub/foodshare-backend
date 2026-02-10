@@ -22,9 +22,9 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
-import { ValidationError, ServerError } from "../_shared/errors.ts";
+import { ServerError, ValidationError } from "../_shared/errors.ts";
 
 // =============================================================================
 // Constants
@@ -121,22 +121,28 @@ async function handleDeltaSync(ctx: HandlerContext<SyncRequest>): Promise<Respon
     requestId: requestCtx?.requestId,
   });
 
-  return ok({
-    tables: dbResponse.tables,
-    syncedAt: dbResponse.meta?.syncedAt || new Date().toISOString(),
-    totalChanges: dbResponse.meta?.totalChanges || 0,
-  }, ctx, {
-    uiHints: {
-      refreshAfter: 30, // Suggest re-sync in 30 seconds
+  return ok(
+    {
+      tables: dbResponse.tables,
+      syncedAt: dbResponse.meta?.syncedAt || new Date().toISOString(),
+      totalChanges: dbResponse.meta?.totalChanges || 0,
     },
-  });
+    ctx,
+    {
+      uiHints: {
+        refreshAfter: 30, // Suggest re-sync in 30 seconds
+      },
+    },
+  );
 }
 
 // =============================================================================
 // Pending Operations Handler
 // =============================================================================
 
-async function handlePendingOperations(ctx: HandlerContext<PendingOperationsRequest>): Promise<Response> {
+async function handlePendingOperations(
+  ctx: HandlerContext<PendingOperationsRequest>,
+): Promise<Response> {
   const { supabase, userId, body, ctx: requestCtx } = ctx;
 
   logger.info("Processing pending operations", {
@@ -160,14 +166,17 @@ async function handlePendingOperations(ctx: HandlerContext<PendingOperationsRequ
   for (const op of body.operations) {
     try {
       // Step 1: Submit operation for conflict detection
-      const { data: submitData, error: submitError } = await supabase.rpc("submit_pending_operation", {
-        p_user_id: userId,
-        p_operation_type: op.operation,
-        p_table_name: op.table,
-        p_record_id: op.recordId || null,
-        p_payload: op.data || {},
-        p_client_timestamp: op.clientTimestamp,
-      });
+      const { data: submitData, error: submitError } = await supabase.rpc(
+        "submit_pending_operation",
+        {
+          p_user_id: userId,
+          p_operation_type: op.operation,
+          p_table_name: op.table,
+          p_record_id: op.recordId || null,
+          p_payload: op.data || {},
+          p_client_timestamp: op.clientTimestamp,
+        },
+      );
 
       if (submitError) {
         results.push({
@@ -222,7 +231,6 @@ async function handlePendingOperations(ctx: HandlerContext<PendingOperationsRequ
         status: applyResult.success ? "applied" : (applyResult.status || "rejected"),
         error: applyResult.error,
       });
-
     } catch (opError) {
       results.push({
         operationId: op.operationId,
@@ -232,9 +240,9 @@ async function handlePendingOperations(ctx: HandlerContext<PendingOperationsRequ
     }
   }
 
-  const applied = results.filter(r => r.status === "applied").length;
-  const conflicts = results.filter(r => r.status === "conflict").length;
-  const rejected = results.filter(r => r.status === "rejected").length;
+  const applied = results.filter((r) => r.status === "applied").length;
+  const conflicts = results.filter((r) => r.status === "conflict").length;
+  const rejected = results.filter((r) => r.status === "rejected").length;
 
   logger.info("Pending operations processed", {
     userId: userId?.substring(0, 8),
@@ -296,10 +304,10 @@ async function handleSyncStatus(ctx: HandlerContext): Promise<Response> {
     checkpoints: checkpointMap,
     pendingOperations: pendingCount || 0,
     lastSyncAt: checkpoints && checkpoints.length > 0
-      ? checkpoints.reduce((latest, cp) =>
-          new Date(cp.last_sync_at) > new Date(latest) ? cp.last_sync_at : latest,
-          checkpoints[0].last_sync_at
-        )
+      ? checkpoints.reduce(
+        (latest, cp) => new Date(cp.last_sync_at) > new Date(latest) ? cp.last_sync_at : latest,
+        checkpoints[0].last_sync_at,
+      )
       : null,
   }, ctx);
 }
@@ -318,7 +326,7 @@ async function handlePostSync(ctx: HandlerContext): Promise<Response> {
     const parsed = pendingOperationsSchema.safeParse(ctx.body);
 
     if (!parsed.success) {
-      throw new ValidationError(parsed.error.errors.map(e => e.message).join(", "));
+      throw new ValidationError(parsed.error.errors.map((e) => e.message).join(", "));
     }
 
     return handlePendingOperations({ ...ctx, body: parsed.data });
@@ -328,7 +336,7 @@ async function handlePostSync(ctx: HandlerContext): Promise<Response> {
   const parsed = syncRequestSchema.safeParse(ctx.body);
 
   if (!parsed.success) {
-    throw new ValidationError(parsed.error.errors.map(e => e.message).join(", "));
+    throw new ValidationError(parsed.error.errors.map((e) => e.message).join(", "));
   }
 
   return handleDeltaSync({ ...ctx, body: parsed.data });
@@ -341,7 +349,12 @@ async function handleGetSync(ctx: HandlerContext): Promise<Response> {
 
   // Health check
   if (subPath === "health" || subPath === "health/") {
-    return ok({ status: "healthy", service: "api-v1-sync", version: VERSION, timestamp: new Date().toISOString() }, ctx);
+    return ok({
+      status: "healthy",
+      service: "api-v1-sync",
+      version: VERSION,
+      timestamp: new Date().toISOString(),
+    }, ctx);
   }
 
   // GET /sync/status

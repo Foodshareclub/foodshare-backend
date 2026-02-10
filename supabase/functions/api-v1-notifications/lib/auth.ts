@@ -42,7 +42,7 @@ export async function authenticate(
   req: Request,
   mode: AuthMode,
   provider?: string,
-  rawBody?: string
+  rawBody?: string,
 ): Promise<AuthResult> {
   switch (mode) {
     case "none":
@@ -136,7 +136,7 @@ function authenticateService(req: Request): AuthResult {
 function authenticateWebhook(
   req: Request,
   provider?: string,
-  rawBody?: string
+  rawBody?: string,
 ): AuthResult {
   if (!provider) {
     return { authenticated: false, error: "Provider not specified" };
@@ -185,9 +185,7 @@ async function authenticateAdmin(req: Request): Promise<AuthResult> {
   const authHeader = req.headers.get("Authorization");
 
   // Extract token from Bearer header
-  const token = authHeader?.startsWith("Bearer ")
-    ? authHeader.slice(7).trim()
-    : null;
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
 
   // Check if this is a service role key (for cron jobs)
   if (token && token === SUPABASE_SERVICE_ROLE_KEY) {
@@ -252,7 +250,7 @@ async function authenticateAdmin(req: Request): Promise<AuthResult> {
 function verifyResendSignature(
   req: Request,
   secret: string,
-  rawBody?: string
+  rawBody?: string,
 ): AuthResult {
   const signature = req.headers.get("resend-signature");
 
@@ -304,7 +302,7 @@ function verifyBrevoSignature(req: Request, secret: string): AuthResult {
 function verifySESSignature(
   req: Request,
   secret: string,
-  rawBody?: string
+  _rawBody?: string,
 ): AuthResult {
   // AWS SES uses SNS, which has its own signature verification
   // For now, use secret header comparison
@@ -314,7 +312,7 @@ function verifySESSignature(
 function verifyMailerSendSignature(
   req: Request,
   secret: string,
-  rawBody?: string
+  rawBody?: string,
 ): AuthResult {
   const signature = req.headers.get("mailersend-signature");
 
@@ -332,8 +330,7 @@ function verifyMailerSendSignature(
 }
 
 function verifySecretHeader(req: Request, secret: string): AuthResult {
-  const providedSecret =
-    req.headers.get("x-webhook-secret") || req.headers.get("x-secret");
+  const providedSecret = req.headers.get("x-webhook-secret") || req.headers.get("x-secret");
 
   if (!providedSecret) {
     return { authenticated: false, error: "Missing secret header" };

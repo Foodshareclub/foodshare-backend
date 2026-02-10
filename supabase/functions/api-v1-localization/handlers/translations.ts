@@ -72,8 +72,27 @@ interface TranslationsResponse {
 
 // Supported locales for validation (21 languages)
 const SUPPORTED_LOCALES = [
-  "en", "cs", "de", "es", "fr", "pt", "ru", "uk", "zh", "hi",
-  "ar", "it", "pl", "nl", "ja", "ko", "tr", "vi", "id", "th", "sv"
+  "en",
+  "cs",
+  "de",
+  "es",
+  "fr",
+  "pt",
+  "ru",
+  "uk",
+  "zh",
+  "hi",
+  "ar",
+  "it",
+  "pl",
+  "nl",
+  "ja",
+  "ko",
+  "tr",
+  "vi",
+  "id",
+  "th",
+  "sv",
 ];
 
 const SUPPORTED_PLATFORMS = ["ios", "android", "web", "desktop"];
@@ -109,7 +128,7 @@ function generateETag(content: string): string {
  */
 async function getUserContext(
   supabase: SupabaseClient,
-  authHeader: string | null
+  authHeader: string | null,
 ): Promise<UserContext> {
   const defaultContext: UserContext = {
     userId: null,
@@ -150,7 +169,7 @@ async function getUserContext(
 async function getDeltaChanges(
   supabase: SupabaseClient,
   locale: string,
-  sinceVersion: string
+  sinceVersion: string,
 ): Promise<{ delta: DeltaData; currentVersion: string } | null> {
   try {
     // Get current version
@@ -178,7 +197,10 @@ async function getDeltaChanges(
 
     // Build delta
     const delta: DeltaData = { added: {}, updated: {}, deleted: [] };
-    const keyStates = new Map<string, { type: string; oldValue: string | null; newValue: string | null }>();
+    const keyStates = new Map<
+      string,
+      { type: string; oldValue: string | null; newValue: string | null }
+    >();
 
     for (const change of changes) {
       const existing = keyStates.get(change.key_path);
@@ -229,12 +251,12 @@ async function getDeltaChanges(
  */
 function applyFeatureFlagOverrides(
   messages: Record<string, unknown>,
-  featureFlags: string[]
+  featureFlags: string[],
 ): Record<string, unknown> {
   // Feature flag translation overrides
   // Format: translations can have keys like "feature.premium.title" that override "title" when premium flag is active
   const result = { ...messages };
-  
+
   for (const flag of featureFlags) {
     const flagPrefix = `feature.${flag}.`;
     for (const [key, value] of Object.entries(messages)) {
@@ -244,7 +266,7 @@ function applyFeatureFlagOverrides(
       }
     }
   }
-  
+
   return result;
 }
 
@@ -261,7 +283,7 @@ async function trackAnalytics(
     cached: boolean;
     deltaSync: boolean;
     statusCode: number;
-  }
+  },
 ): Promise<void> {
   try {
     await supabase.from("translation_analytics").insert({
@@ -283,13 +305,16 @@ async function trackAnalytics(
 // Handler Implementation
 // =============================================================================
 
-export default async function translationsHandler(request: Request, corsHeaders: Record<string, string>): Promise<Response> {
+export default async function translationsHandler(
+  request: Request,
+  corsHeaders: Record<string, string>,
+): Promise<Response> {
   const startTime = Date.now();
 
   if (request.method !== "GET") {
     return new Response(
       JSON.stringify({ success: false, error: "Method not allowed" }),
-      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 
@@ -301,7 +326,7 @@ export default async function translationsHandler(request: Request, corsHeaders:
     const clientVersion = url.searchParams.get("version");
     const requestedFeatures = url.searchParams.get("features")?.split(",").filter(Boolean) || [];
     const ifNoneMatch = request.headers.get("If-None-Match");
-    const acceptEncoding = request.headers.get("Accept-Encoding") || "";
+    const _acceptEncoding = request.headers.get("Accept-Encoding") || "";
 
     // Validate locale
     if (!SUPPORTED_LOCALES.includes(locale)) {
@@ -331,19 +356,19 @@ export default async function translationsHandler(request: Request, corsHeaders:
 
     // Get user context (non-blocking for anonymous users)
     const userContext = await getUserContext(supabase, authHeader);
-    
+
     // Use user's preferred locale if set and different from requested
-    const effectiveLocale = userContext.preferredLocale && 
-      SUPPORTED_LOCALES.includes(userContext.preferredLocale) 
-        ? userContext.preferredLocale 
-        : locale;
+    const effectiveLocale = userContext.preferredLocale &&
+        SUPPORTED_LOCALES.includes(userContext.preferredLocale)
+      ? userContext.preferredLocale
+      : locale;
 
     // Merge feature flags
     const activeFeatures = [...new Set([...requestedFeatures, ...userContext.featureFlags])];
 
-    logger.debug("Fetching translations", { 
-      userId: userContext.userId, 
-      locale: effectiveLocale, 
+    logger.debug("Fetching translations", {
+      userId: userContext.userId,
+      locale: effectiveLocale,
       platform,
       features: activeFeatures,
       clientVersion,
@@ -382,10 +407,12 @@ export default async function translationsHandler(request: Request, corsHeaders:
       const response: TranslationsResponse = {
         success: true,
         data: cached.data,
-        userContext: userContext.userId ? {
-          preferredLocale: userContext.preferredLocale,
-          featureFlags: userContext.featureFlags,
-        } : undefined,
+        userContext: userContext.userId
+          ? {
+            preferredLocale: userContext.preferredLocale,
+            featureFlags: userContext.featureFlags,
+          }
+          : undefined,
         meta: {
           cached: true,
           compressed: false,
@@ -419,7 +446,7 @@ export default async function translationsHandler(request: Request, corsHeaders:
     // Try delta sync if client has a version
     if (clientVersion) {
       const deltaResult = await getDeltaChanges(supabase, effectiveLocale, clientVersion);
-      
+
       if (deltaResult) {
         const hasChanges = Object.keys(deltaResult.delta.added).length > 0 ||
           Object.keys(deltaResult.delta.updated).length > 0 ||
@@ -508,7 +535,7 @@ export default async function translationsHandler(request: Request, corsHeaders:
     if (error || !data) {
       logger.info("Locale not found, falling back to English", {
         locale: effectiveLocale,
-        error: error?.message
+        error: error?.message,
       });
 
       // Fallback to English
@@ -520,16 +547,16 @@ export default async function translationsHandler(request: Request, corsHeaders:
 
       if (fallbackError || !fallback) {
         logger.error("Failed to fetch fallback translations", {
-          error: fallbackError?.message
+          error: fallbackError?.message,
         });
         return new Response(
           JSON.stringify({ success: false, error: "No translations found" }),
-          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
 
       let messages = fallback.messages as Record<string, unknown>;
-      
+
       // Apply feature flag overrides
       if (activeFeatures.length > 0) {
         messages = applyFeatureFlagOverrides(messages, activeFeatures);
@@ -555,10 +582,12 @@ export default async function translationsHandler(request: Request, corsHeaders:
       const response: TranslationsResponse = {
         success: true,
         data: translationData,
-        userContext: userContext.userId ? {
-          preferredLocale: userContext.preferredLocale,
-          featureFlags: userContext.featureFlags,
-        } : undefined,
+        userContext: userContext.userId
+          ? {
+            preferredLocale: userContext.preferredLocale,
+            featureFlags: userContext.featureFlags,
+          }
+          : undefined,
         meta: {
           cached: false,
           compressed: false,
@@ -621,7 +650,7 @@ export default async function translationsHandler(request: Request, corsHeaders:
     }
 
     let messages = data.messages as Record<string, unknown>;
-    
+
     // Apply feature flag overrides
     if (activeFeatures.length > 0) {
       messages = applyFeatureFlagOverrides(messages, activeFeatures);
@@ -644,10 +673,12 @@ export default async function translationsHandler(request: Request, corsHeaders:
     const response: TranslationsResponse = {
       success: true,
       data: translationData,
-      userContext: userContext.userId ? {
-        preferredLocale: userContext.preferredLocale,
-        featureFlags: userContext.featureFlags,
-      } : undefined,
+      userContext: userContext.userId
+        ? {
+          preferredLocale: userContext.preferredLocale,
+          featureFlags: userContext.featureFlags,
+        }
+        : undefined,
       meta: {
         cached: false,
         compressed: false,
@@ -684,12 +715,11 @@ export default async function translationsHandler(request: Request, corsHeaders:
         "X-Cache": "MISS",
       },
     });
-
   } catch (err) {
     logger.error("Translation handler error", { error: (err as Error).message });
     return new Response(
       JSON.stringify({ success: false, error: "Internal server error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 }

@@ -10,21 +10,21 @@
  * - Health checks
  */
 
-import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { isDevelopment } from "../_shared/utils.ts";
-import { WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET } from "./config/index.ts";
-import { verifyMetaWebhook, handleMetaWebhookChallenge } from "../_shared/webhook-security.ts";
+import { WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN } from "./config/index.ts";
+import { verifyMetaWebhook } from "../_shared/webhook-security.ts";
 import { checkRateLimitDistributed } from "./services/rate-limiter.ts";
 import { cleanupExpiredStates } from "./services/user-state.ts";
 import { getWhatsAppApiStatus, markAsRead } from "./services/whatsapp-api.ts";
 import {
-  handleTextMessage,
-  handlePhotoMessage,
   handleLocationMessage,
+  handlePhotoMessage,
+  handleTextMessage,
 } from "./handlers/messages.ts";
 import { handleButtonReply, handleListReply } from "./handlers/interactive.ts";
-import type { WhatsAppWebhookPayload, WhatsAppMessage } from "./types/index.ts";
+import type { WhatsAppMessage, WhatsAppWebhookPayload } from "./types/index.ts";
 
 const VERSION = "1.1.0";
 const SERVICE = "whatsapp-bot-foodshare";
@@ -73,7 +73,9 @@ try {
 async function verifyWebhookSignature(payload: string, headers: Headers): Promise<boolean> {
   if (!WHATSAPP_APP_SECRET) {
     if (isDevelopment()) {
-      logger.warn("WHATSAPP_APP_SECRET not configured - skipping signature verification (dev mode)");
+      logger.warn(
+        "WHATSAPP_APP_SECRET not configured - skipping signature verification (dev mode)",
+      );
       return true;
     }
     logger.error("WHATSAPP_APP_SECRET not configured - rejecting request in production");
@@ -104,7 +106,11 @@ function jsonOk(body: unknown, ctx: HandlerContext, status = 200): Response {
 
 async function handleGet(ctx: HandlerContext): Promise<Response> {
   if (!isInitialized) {
-    return jsonOk({ error: "Service temporarily unavailable", details: initError?.message }, ctx, 503);
+    return jsonOk(
+      { error: "Service temporarily unavailable", details: initError?.message },
+      ctx,
+      503,
+    );
   }
 
   const url = new URL(ctx.request.url);
@@ -138,21 +144,25 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
   const whatsappStatus = getWhatsAppApiStatus();
   const overallStatus = whatsappStatus.status === "OPEN" ? "degraded" : "healthy";
 
-  return jsonOk({
-    status: overallStatus,
-    service: SERVICE,
-    version: VERSION,
-    timestamp: new Date().toISOString(),
-    dependencies: {
-      whatsapp: {
-        status: whatsappStatus.status,
-        failures: whatsappStatus.failures,
+  return jsonOk(
+    {
+      status: overallStatus,
+      service: SERVICE,
+      version: VERSION,
+      timestamp: new Date().toISOString(),
+      dependencies: {
+        whatsapp: {
+          status: whatsappStatus.status,
+          failures: whatsappStatus.failures,
+        },
+      },
+      maintenance: {
+        expiredStatesCleaned: cleanedStates,
       },
     },
-    maintenance: {
-      expiredStatesCleaned: cleanedStates,
-    },
-  }, ctx, overallStatus === "healthy" ? 200 : 503);
+    ctx,
+    overallStatus === "healthy" ? 200 : 503,
+  );
 }
 
 async function handlePost(ctx: HandlerContext): Promise<Response> {
@@ -160,7 +170,11 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
   const requestId = ctx.ctx.requestId;
 
   if (!isInitialized) {
-    return jsonOk({ error: "Service temporarily unavailable", details: initError?.message }, ctx, 503);
+    return jsonOk(
+      { error: "Service temporarily unavailable", details: initError?.message },
+      ctx,
+      503,
+    );
   }
 
   let payload: WhatsAppWebhookPayload | undefined;
@@ -241,7 +255,7 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
 async function routeMessage(
   message: WhatsAppMessage,
   requestId: string,
-  startTime: number
+  startTime: number,
 ): Promise<void> {
   const phoneNumber = message.from;
 

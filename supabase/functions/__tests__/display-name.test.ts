@@ -72,7 +72,7 @@ Deno.test("extractDisplayName - extracts first name from display_name with space
 Deno.test("extractDisplayName - returns full display_name when preferFirstNameOnly is false", () => {
   const result = extractDisplayName(
     { displayName: "John Doe" },
-    { preferFirstNameOnly: false }
+    { preferFirstNameOnly: false },
   );
   assertEquals(result, "John Doe");
 });
@@ -101,46 +101,46 @@ Deno.test("extractDisplayName - rejects purely numeric names", () => {
 Deno.test("email extraction - handles dot separator", () => {
   assertEquals(
     extractDisplayName({ email: "john.doe@example.com" }),
-    "John"
+    "John",
   );
 });
 
 Deno.test("email extraction - handles underscore separator", () => {
   assertEquals(
     extractDisplayName({ email: "john_doe@example.com" }),
-    "John"
+    "John",
   );
 });
 
 Deno.test("email extraction - handles hyphen separator", () => {
   assertEquals(
     extractDisplayName({ email: "john-doe@example.com" }),
-    "John"
+    "John",
   );
 });
 
 Deno.test("email extraction - handles plus sign separator", () => {
   assertEquals(
     extractDisplayName({ email: "john+newsletter@example.com" }),
-    "John"
+    "John",
   );
 });
 
 Deno.test("email extraction - removes trailing numbers", () => {
   assertEquals(
     extractDisplayName({ email: "john123@example.com" }),
-    "John"
+    "John",
   );
   assertEquals(
     extractDisplayName({ email: "john.doe456@example.com" }),
-    "John"
+    "John",
   );
 });
 
 Deno.test("email extraction - handles complex usernames", () => {
   assertEquals(
     extractDisplayName({ email: "john.doe.jr123@example.com" }),
-    "John"
+    "John",
   );
 });
 
@@ -149,25 +149,25 @@ Deno.test("email extraction - splits camelCase", () => {
   // For "johndoe" all lowercase, it becomes "Johndoe" (title-cased, no split)
   assertEquals(
     extractDisplayName({ email: "johnDoe@example.com" }),
-    "Johndoe" // all lowercase input doesn't split
+    "Johndoe", // all lowercase input doesn't split
   );
   assertEquals(
     extractDisplayName({ email: "JohnDoe@example.com" }),
-    "Johndoe" // single word, gets title-cased
+    "Johndoe", // single word, gets title-cased
   );
 });
 
 Deno.test("email extraction - rejects leading numbers", () => {
   assertEquals(
     extractDisplayName({ email: "123john@example.com" }),
-    "John"
+    "John",
   );
 });
 
 Deno.test("email extraction - rejects purely numeric usernames", () => {
   assertEquals(
     extractDisplayName({ email: "12345@example.com" }),
-    "there"
+    "there",
   );
 });
 
@@ -194,7 +194,7 @@ Deno.test("generic usernames - rejects service accounts", () => {
     assertEquals(
       extractDisplayName({ email }),
       "there",
-      `Expected "there" for ${email}`
+      `Expected "there" for ${email}`,
     );
   }
 });
@@ -218,7 +218,7 @@ Deno.test("generic usernames - rejects common bot/system accounts", () => {
     assertEquals(
       extractDisplayName({ email }),
       "there",
-      `Expected "there" for ${email}`
+      `Expected "there" for ${email}`,
     );
   }
 });
@@ -243,7 +243,7 @@ Deno.test("title case - handles mixed case", () => {
 Deno.test("title case - handles hyphenated names", () => {
   assertEquals(
     extractDisplayName({ firstName: "jean-pierre" }),
-    "Jean-Pierre"
+    "Jean-Pierre",
   );
 });
 
@@ -299,18 +299,18 @@ Deno.test("edge cases - handles special characters in names", () => {
 Deno.test("edge cases - custom fallback", () => {
   assertEquals(
     extractDisplayName({ email: "info@example.com" }, { fallback: "friend" }),
-    "friend"
+    "friend",
   );
 });
 
 Deno.test("edge cases - custom minimum length", () => {
   assertEquals(
     extractDisplayName({ firstName: "Jo" }, { minNameLength: 3 }),
-    "there"
+    "there",
   );
   assertEquals(
     extractDisplayName({ firstName: "Joe" }, { minNameLength: 3 }),
-    "Joe"
+    "Joe",
   );
 });
 
@@ -318,9 +318,9 @@ Deno.test("edge cases - disable email extraction", () => {
   assertEquals(
     extractDisplayName(
       { email: "john.doe@example.com" },
-      { extractFromEmail: false }
+      { extractFromEmail: false },
     ),
-    "there"
+    "there",
   );
 });
 
@@ -331,21 +331,21 @@ Deno.test("edge cases - disable email extraction", () => {
 Deno.test("formatGreeting - formats with name", () => {
   assertEquals(
     formatGreeting({ firstName: "John" }),
-    "Hey John!"
+    "Hey John!",
   );
 });
 
 Deno.test("formatGreeting - formats with custom prefix/suffix", () => {
   assertEquals(
     formatGreeting({ firstName: "Sarah" }, "Hi", ","),
-    "Hi Sarah,"
+    "Hi Sarah,",
   );
 });
 
 Deno.test("formatGreeting - uses fallback for generic email", () => {
   assertEquals(
     formatGreeting({ email: "info@example.com" }),
-    "Hey there!"
+    "Hey there!",
   );
 });
 

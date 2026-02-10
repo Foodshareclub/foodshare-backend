@@ -9,7 +9,7 @@ export class BotError extends Error {
     message: string,
     public userMessage: string,
     public code: string,
-    public retryable: boolean = false
+    public retryable: boolean = false,
   ) {
     super(message);
     this.name = "BotError";
@@ -48,7 +48,7 @@ export class ExternalServiceError extends BotError {
   constructor(
     message: string,
     userMessage: string,
-    public service: string
+    public service: string,
   ) {
     super(message, userMessage, "EXTERNAL_SERVICE_ERROR", true);
     this.name = "ExternalServiceError";
@@ -80,7 +80,7 @@ export function logError(error: unknown, context: Record<string, unknown> = {}) 
 export async function safeExecute<T>(
   operation: () => Promise<T>,
   context: string,
-  fallback?: T
+  fallback?: T,
 ): Promise<T | null> {
   try {
     return await operation();
@@ -126,7 +126,7 @@ function isRetryableError(error: unknown): boolean {
  */
 export async function withRetry<T>(
   operation: () => Promise<T>,
-  options: RetryOptions = {}
+  options: RetryOptions = {},
 ): Promise<T> {
   const {
     maxRetries = 3,

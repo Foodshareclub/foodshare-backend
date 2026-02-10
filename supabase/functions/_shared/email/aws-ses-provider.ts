@@ -10,11 +10,11 @@
 import {
   EmailProvider,
   EmailProviderName,
-  SendEmailParams,
-  SendEmailResult,
+  PROVIDER_LIMITS,
   ProviderHealth,
   ProviderQuota,
-  PROVIDER_LIMITS,
+  SendEmailParams,
+  SendEmailResult,
 } from "./types.ts";
 
 import { AWSV4Signer } from "../aws-signer.ts";
@@ -39,7 +39,7 @@ interface AWSSESConfig {
 async function fetchWithTimeout(
   url: string,
   options: RequestInit,
-  timeoutMs: number = REQUEST_TIMEOUT_MS
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -63,23 +63,19 @@ export class AWSSESProvider implements EmailProvider {
   constructor(config: Partial<AWSSESConfig> = {}) {
     this.config = {
       region: config.region || Deno.env.get("AWS_REGION") || Deno.env.get("AWS_SES_REGION") || "",
-      accessKeyId:
-        config.accessKeyId ||
+      accessKeyId: config.accessKeyId ||
         Deno.env.get("AWS_ACCESS_KEY_ID") ||
         Deno.env.get("AWS_SES_ACCESS_KEY_ID") ||
         "",
-      secretAccessKey:
-        config.secretAccessKey ||
+      secretAccessKey: config.secretAccessKey ||
         Deno.env.get("AWS_SECRET_ACCESS_KEY") ||
         Deno.env.get("AWS_SES_SECRET_ACCESS_KEY") ||
         "",
-      fromEmail:
-        config.fromEmail ||
+      fromEmail: config.fromEmail ||
         Deno.env.get("AWS_SES_FROM_EMAIL") ||
         Deno.env.get("EMAIL_FROM") ||
         "contact@foodshare.club",
-      fromName:
-        config.fromName ||
+      fromName: config.fromName ||
         Deno.env.get("AWS_SES_FROM_NAME") ||
         Deno.env.get("EMAIL_FROM_NAME") ||
         "FoodShare",
@@ -92,7 +88,7 @@ export class AWSSESProvider implements EmailProvider {
         this.config.region,
         "ses",
         this.config.accessKeyId,
-        this.config.secretAccessKey
+        this.config.secretAccessKey,
       );
     }
   }
@@ -149,7 +145,7 @@ export class AWSSESProvider implements EmailProvider {
         "POST",
         `${this.endpoint}/v2/email/outbound-emails`,
         headers,
-        payload
+        payload,
       );
 
       const response = await fetchWithTimeout(`${this.endpoint}/v2/email/outbound-emails`, {
@@ -190,12 +186,9 @@ export class AWSSESProvider implements EmailProvider {
       };
     } catch (error) {
       const latencyMs = Math.round(performance.now() - startTime);
-      const message =
-        error instanceof Error
-          ? error.name === "AbortError"
-            ? "Request timeout"
-            : error.message
-          : "Unknown error";
+      const message = error instanceof Error
+        ? error.name === "AbortError" ? "Request timeout" : error.message
+        : "Unknown error";
 
       return {
         success: false,
@@ -263,7 +256,7 @@ export class AWSSESProvider implements EmailProvider {
       const max24HourSendMatch = responseText.match(/<Max24HourSend>([^<]+)<\/Max24HourSend>/);
       const maxSendRateMatch = responseText.match(/<MaxSendRate>([^<]+)<\/MaxSendRate>/);
       const sentLast24HoursMatch = responseText.match(
-        /<SentLast24Hours>([^<]+)<\/SentLast24Hours>/
+        /<SentLast24Hours>([^<]+)<\/SentLast24Hours>/,
       );
 
       const max24HourSend = max24HourSendMatch ? parseFloat(max24HourSendMatch[1]) : 0;
@@ -299,18 +292,17 @@ export class AWSSESProvider implements EmailProvider {
         status: healthScore >= 70 ? "ok" : "degraded",
         healthScore,
         latencyMs,
-        message: `Connected. Region: ${this.config.region}. Quota: ${sentLast24Hours.toFixed(0)}/${max24HourSend.toFixed(0)} (24h), Rate: ${maxSendRate}/sec`,
+        message: `Connected. Region: ${this.config.region}. Quota: ${sentLast24Hours.toFixed(0)}/${
+          max24HourSend.toFixed(0)
+        } (24h), Rate: ${maxSendRate}/sec`,
         configured: true,
         lastChecked: Date.now(),
       };
     } catch (error) {
       const latencyMs = Math.round(performance.now() - startTime);
-      const message =
-        error instanceof Error
-          ? error.name === "AbortError"
-            ? "Request timeout (10s)"
-            : error.message
-          : "Unknown error";
+      const message = error instanceof Error
+        ? error.name === "AbortError" ? "Request timeout (10s)" : error.message
+        : "Unknown error";
 
       return {
         provider: this.name,
@@ -354,7 +346,7 @@ export class AWSSESProvider implements EmailProvider {
       const responseText = await response.text();
       const max24HourSendMatch = responseText.match(/<Max24HourSend>([^<]+)<\/Max24HourSend>/);
       const sentLast24HoursMatch = responseText.match(
-        /<SentLast24Hours>([^<]+)<\/SentLast24Hours>/
+        /<SentLast24Hours>([^<]+)<\/SentLast24Hours>/,
       );
 
       const max24HourSend = max24HourSendMatch ? parseFloat(max24HourSendMatch[1]) : limits.daily;

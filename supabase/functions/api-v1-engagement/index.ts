@@ -21,12 +21,8 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import {
-  createAPIHandler,
-  ok,
-  type HandlerContext,
-} from "../_shared/api-handler.ts";
-import { ValidationError, ServerError } from "../_shared/errors.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
+import { ServerError, ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
 import { toggleRow } from "../_shared/toggle.ts";
 
@@ -82,7 +78,9 @@ async function getEngagement(ctx: HandlerContext<unknown, QueryParams>): Promise
 
   // Batch request
   if (query.postIds) {
-    const postIds = query.postIds.split(",").map((id) => parseInt(id.trim())).filter((id) => !isNaN(id));
+    const postIds = query.postIds.split(",").map((id) => parseInt(id.trim())).filter((id) =>
+      !isNaN(id)
+    );
 
     if (postIds.length === 0 || postIds.length > 100) {
       throw new ValidationError("Invalid postIds (1-100 required)");
@@ -122,7 +120,8 @@ async function getEngagement(ctx: HandlerContext<unknown, QueryParams>): Promise
     }
 
     // Build result
-    const result: Record<number, { isLiked: boolean; isBookmarked: boolean; likeCount: number }> = {};
+    const result: Record<number, { isLiked: boolean; isBookmarked: boolean; likeCount: number }> =
+      {};
     for (const postId of postIds) {
       result[postId] = {
         isLiked: userLikes.includes(postId),
@@ -220,11 +219,16 @@ async function toggleLike(ctx: HandlerContext<ToggleBody>): Promise<Response> {
     throw new ValidationError("Authentication required");
   }
 
-  const result = await toggleRow(supabase, {
-    table: "post_likes",
-    entityColumn: "post_id",
-    userColumn: "profile_id",
-  }, body.postId, userId);
+  const result = await toggleRow(
+    supabase,
+    {
+      table: "post_likes",
+      entityColumn: "post_id",
+      userColumn: "profile_id",
+    },
+    body.postId,
+    userId,
+  );
 
   const isLiked = result.active;
   await logActivity(supabase, body.postId, userId, isLiked ? "liked" : "unliked");
@@ -254,11 +258,16 @@ async function toggleBookmark(ctx: HandlerContext<ToggleBody>): Promise<Response
     throw new ValidationError("Authentication required");
   }
 
-  const result = await toggleRow(supabase, {
-    table: "post_bookmarks",
-    entityColumn: "post_id",
-    userColumn: "profile_id",
-  }, body.postId, userId);
+  const result = await toggleRow(
+    supabase,
+    {
+      table: "post_bookmarks",
+      entityColumn: "post_id",
+      userColumn: "profile_id",
+    },
+    body.postId,
+    userId,
+  );
 
   const isBookmarked = result.active;
   await logActivity(supabase, body.postId, userId, isBookmarked ? "bookmarked" : "unbookmarked");
@@ -324,7 +333,7 @@ async function toggleFavorite(ctx: HandlerContext<ToggleBody, QueryParams>): Pro
       .from("favorites")
       .upsert(
         { user_id: userId, post_id: body.postId },
-        { onConflict: "user_id,post_id", ignoreDuplicates: true }
+        { onConflict: "user_id,post_id", ignoreDuplicates: true },
       );
 
     if (error) {
@@ -382,7 +391,7 @@ async function logActivity(
   postId: number,
   actorId: string | null,
   activityType: string,
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>,
 ) {
   try {
     // @ts-ignore - supabase client type
@@ -409,7 +418,12 @@ function handleGet(ctx: HandlerContext<unknown, QueryParams>): Promise<Response>
   // Health check
   const url = new URL(ctx.request.url);
   if (url.pathname.endsWith("/health")) {
-    return ok({ status: "healthy", service: "api-v1-engagement", version: VERSION, timestamp: new Date().toISOString() }, ctx);
+    return ok({
+      status: "healthy",
+      service: "api-v1-engagement",
+      version: VERSION,
+      timestamp: new Date().toISOString(),
+    }, ctx);
   }
 
   if (ctx.query.action === "bookmarks") {
@@ -418,13 +432,15 @@ function handleGet(ctx: HandlerContext<unknown, QueryParams>): Promise<Response>
   return getEngagement(ctx);
 }
 
-function handlePost(ctx: HandlerContext<ToggleBody | ShareBody | BatchOperationsBody, QueryParams>): Promise<Response> {
+function handlePost(
+  ctx: HandlerContext<ToggleBody | ShareBody | BatchOperationsBody, QueryParams>,
+): Promise<Response> {
   const url = new URL(ctx.request.url);
-  
+
   if (url.pathname.endsWith("/batch")) {
     return handleBatchOperations(ctx as HandlerContext<BatchOperationsBody, QueryParams>);
   }
-  
+
   const action = ctx.query.action;
 
   switch (action) {
@@ -441,7 +457,9 @@ function handlePost(ctx: HandlerContext<ToggleBody | ShareBody | BatchOperations
   }
 }
 
-async function handleBatchOperations(ctx: HandlerContext<BatchOperationsBody, QueryParams>): Promise<Response> {
+async function handleBatchOperations(
+  ctx: HandlerContext<BatchOperationsBody, QueryParams>,
+): Promise<Response> {
   const { operations } = ctx.body;
   const { userId, supabase } = ctx;
 
@@ -452,7 +470,7 @@ async function handleBatchOperations(ctx: HandlerContext<BatchOperationsBody, Qu
   logger.info("Processing batch operations", {
     count: operations.length,
     userId: userId.substring(0, 8),
-    types: [...new Set(operations.map(op => op.type))],
+    types: [...new Set(operations.map((op) => op.type))],
   });
 
   const results = await Promise.all(
@@ -472,20 +490,30 @@ async function handleBatchOperations(ctx: HandlerContext<BatchOperationsBody, Qu
             break;
           }
           case "toggle_like": {
-            const likeResult = await toggleRow(supabase, {
-              table: "post_likes",
-              entityColumn: "post_id",
-              userColumn: "profile_id",
-            }, entityId, userId);
+            const likeResult = await toggleRow(
+              supabase,
+              {
+                table: "post_likes",
+                entityColumn: "post_id",
+                userColumn: "profile_id",
+              },
+              entityId,
+              userId,
+            );
             data = { isLiked: likeResult.active };
             break;
           }
           case "toggle_bookmark": {
-            const bookmarkResult = await toggleRow(supabase, {
-              table: "post_bookmarks",
-              entityColumn: "post_id",
-              userColumn: "profile_id",
-            }, entityId, userId);
+            const bookmarkResult = await toggleRow(
+              supabase,
+              {
+                table: "post_bookmarks",
+                entityColumn: "post_id",
+                userColumn: "profile_id",
+              },
+              entityId,
+              userId,
+            );
             data = { isBookmarked: bookmarkResult.active };
             break;
           }
@@ -518,11 +546,11 @@ async function handleBatchOperations(ctx: HandlerContext<BatchOperationsBody, Qu
           error: (error as Error).message,
         };
       }
-    })
+    }),
   );
 
-  const successful = results.filter(r => r.success).length;
-  const failed = results.filter(r => !r.success).length;
+  const successful = results.filter((r) => r.success).length;
+  const failed = results.filter((r) => !r.success).length;
 
   return ok({
     totalOperations: operations.length,

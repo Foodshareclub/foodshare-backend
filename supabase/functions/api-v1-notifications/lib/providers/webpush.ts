@@ -3,7 +3,7 @@
  */
 
 import webpush from "npm:web-push@3.6.7";
-import { withCircuitBreaker, CircuitBreakerError } from "../../../_shared/circuit-breaker.ts";
+import { CircuitBreakerError, withCircuitBreaker } from "../../../_shared/circuit-breaker.ts";
 import type { DeviceToken, PushPayload, SendResult } from "./types.ts";
 import { generateDeepLink } from "./types.ts";
 
@@ -39,9 +39,7 @@ export async function sendWebPush(device: DeviceToken, payload: PushPayload): Pr
   };
 
   const webOptions = payload.web || {};
-  const deepLinkUrl = payload.deepLink
-    ? generateDeepLink("web", payload.deepLink)
-    : payload.url;
+  const deepLinkUrl = payload.deepLink ? generateDeepLink("web", payload.deepLink) : payload.url;
 
   const webPayload = JSON.stringify({
     title: payload.title,
@@ -77,7 +75,7 @@ export async function sendWebPush(device: DeviceToken, payload: PushPayload): Pr
 
         return { success: true, platform: "web", messageId: result.headers?.location };
       },
-      { failureThreshold: 5, resetTimeout: 60000, halfOpenRequests: 3 }
+      { failureThreshold: 5, resetTimeout: 60000, halfOpenRequests: 3 },
     );
   } catch (e: unknown) {
     if (e instanceof CircuitBreakerError) {

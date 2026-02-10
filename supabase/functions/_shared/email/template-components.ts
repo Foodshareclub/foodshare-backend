@@ -36,8 +36,8 @@ export const BRAND = {
   accentGreen: "#10B981",
 
   // Background - soft, warm tones (inspired by Olio's lavender)
-  bgPrimary: "#fff5f7",      // Soft pink tint
-  bgSecondary: "#fafafa",    // Light gray
+  bgPrimary: "#fff5f7", // Soft pink tint
+  bgSecondary: "#fafafa", // Light gray
   bgCard: "#ffffff",
 
   // Typography
@@ -50,13 +50,12 @@ export const BRAND = {
 
   // Layout
   maxWidth: "600px",
-  borderRadius: "20px",      // Rounded corners like Olio
+  borderRadius: "20px", // Rounded corners like Olio
   cardRadius: "12px",
   buttonRadius: "50px",
 
   // Assets
-  logoUrl:
-    "https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png",
+  logoUrl: "https://api.foodshare.club/storage/v1/object/public/assets/logo-512.png",
 
   // App Store links
   appStore: {
@@ -136,7 +135,11 @@ export function header({ title, subtitle }: HeaderProps): string {
   <td style="background: ${BRAND.primaryGradient}; padding: 50px 30px; text-align: center;">
     <img src="${BRAND.logoUrl}" alt="FoodShare Logo" style="width: 100px; height: 100px; border-radius: 50%; margin-bottom: 24px; border: 5px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3); background: white; padding: 4px;">
     <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 800; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.25); letter-spacing: -0.5px;">${title}</h1>
-    ${subtitle ? `<p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);">${subtitle}</p>` : ""}
+    ${
+    subtitle
+      ? `<p style="margin: 12px 0 0; color: rgba(255, 255, 255, 0.95); font-size: 16px; font-weight: 500; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);">${subtitle}</p>`
+      : ""
+  }
   </td>
 </tr>`;
 }
@@ -186,7 +189,9 @@ export function bulletList(items: BulletItem[]): string {
   const listItems = items
     .map(
       (item) =>
-        `<li><strong style="color: ${item.color || BRAND.primaryColor};">${item.emoji} ${item.title}</strong> – ${item.description}</li>`
+        `<li><strong style="color: ${
+          item.color || BRAND.primaryColor
+        };">${item.emoji} ${item.title}</strong> – ${item.description}</li>`,
     )
     .join("\n");
 
@@ -201,7 +206,9 @@ export function bulletList(items: BulletItem[]): string {
 
 export function infoBox(title: string, content: string, emoji?: string): string {
   return `<div style="margin: 24px 0 0; padding: 20px; background: linear-gradient(135deg, #f8f8f8 0%, #f3f3f3 100%); border-radius: 8px; border-left: 4px solid ${BRAND.primaryColor};">
-  <p style="margin: 0; font-size: 14px; line-height: 1.6; color: ${BRAND.textMuted};"><strong style="color: ${BRAND.primaryColor};">${emoji ? emoji + " " : ""}${title}</strong><br>${content}</p>
+  <p style="margin: 0; font-size: 14px; line-height: 1.6; color: ${BRAND.textMuted};"><strong style="color: ${BRAND.primaryColor};">${
+    emoji ? emoji + " " : ""
+  }${title}</strong><br>${content}</p>
 </div>`;
 }
 
@@ -296,7 +303,7 @@ export function formatStatNumber(num: number): string {
 
 export function statsBar(stats: StatItem[]): string {
   // Filter out stats with zero/low values if hideIfZero is set
-  const visibleStats = stats.filter(stat => {
+  const visibleStats = stats.filter((stat) => {
     if (!stat.hideIfZero) return true;
     const numValue = typeof stat.value === "number" ? stat.value : parseInt(String(stat.value), 10);
     return !isNaN(numValue) && numValue > 0;
@@ -304,14 +311,14 @@ export function statsBar(stats: StatItem[]): string {
 
   if (visibleStats.length === 0) return "";
 
-  const statCells = visibleStats.map(stat => {
-    const displayValue = typeof stat.value === "number"
-      ? formatStatNumber(stat.value)
-      : stat.value;
+  const statCells = visibleStats.map((stat) => {
+    const displayValue = typeof stat.value === "number" ? formatStatNumber(stat.value) : stat.value;
 
     return `
     <td align="center" style="padding: 16px 8px;">
-      <p style="margin: 0; font-size: 28px; font-weight: 800; color: ${stat.color || BRAND.primaryColor};">${displayValue}</p>
+      <p style="margin: 0; font-size: 28px; font-weight: 800; color: ${
+      stat.color || BRAND.primaryColor
+    };">${displayValue}</p>
       <p style="margin: 4px 0 0; font-size: 13px; color: ${BRAND.textMuted}; text-transform: uppercase; letter-spacing: 0.5px;">${stat.label}</p>
     </td>
   `;
@@ -350,14 +357,21 @@ export interface FeaturedItem {
   url?: string;
 }
 
-export function featuredItems(items: FeaturedItem[], title = "See what others are sharing"): string {
-  const itemCards = items.slice(0, 3).map(item => `
+export function featuredItems(
+  items: FeaturedItem[],
+  title = "See what others are sharing",
+): string {
+  const itemCards = items.slice(0, 3).map((item) => `
     <td align="center" valign="top" style="width: 33%; padding: 8px;">
       <a href="${item.url || BRAND.company.website}" style="text-decoration: none;">
         <img src="${item.imageUrl}" alt="${item.title}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 8px; display: block;" />
         <p style="margin: 10px 0 4px; font-size: 14px; font-weight: 700; color: ${BRAND.textPrimary}; line-height: 1.3;">${item.title}</p>
         <p style="margin: 0; font-size: 12px; color: ${BRAND.textMuted};">Shared by ${item.sharedBy}</p>
-        ${item.timeAgo ? `<p style="margin: 2px 0 0; font-size: 11px; color: ${BRAND.textLight};">Requested in ${item.timeAgo}</p>` : ""}
+        ${
+    item.timeAgo
+      ? `<p style="margin: 2px 0 0; font-size: 11px; color: ${BRAND.textLight};">Requested in ${item.timeAgo}</p>`
+      : ""
+  }
       </a>
     </td>
   `).join("");
@@ -385,7 +399,9 @@ export function divider(margin = "24px"): string {
 // ============================================================================
 
 function socialIcon(url: string, label: string, fontSize: string): string {
-  return `<a href="${url}" style="display: inline-block; margin: 0 6px; width: 48px; height: 48px; background: rgba(255, 255, 255, 0.25); border-radius: 50%; line-height: 48px; text-align: center; text-decoration: none; border: 2px solid rgba(255, 255, 255, 0.4);"><strong style="font-size: ${fontSize}; color: #ffffff; font-family: ${label === "f" ? "Georgia, serif" : "Arial, sans-serif"}; font-weight: ${label === "in" ? "700" : "900"};">${label}</strong></a>`;
+  return `<a href="${url}" style="display: inline-block; margin: 0 6px; width: 48px; height: 48px; background: rgba(255, 255, 255, 0.25); border-radius: 50%; line-height: 48px; text-align: center; text-decoration: none; border: 2px solid rgba(255, 255, 255, 0.4);"><strong style="font-size: ${fontSize}; color: #ffffff; font-family: ${
+    label === "f" ? "Georgia, serif" : "Arial, sans-serif"
+  }; font-weight: ${label === "in" ? "700" : "900"};">${label}</strong></a>`;
 }
 
 export function socialIcons(): string {
@@ -492,12 +508,11 @@ export function footer(props: FooterProps = {}): string {
   }
 
   // Sign-off section
-  const signOffSection = signOffMessage
-    ? signOff(signOffMessage)
-    : signOff();
+  const signOffSection = signOffMessage ? signOff(signOffMessage) : signOff();
 
   // Social icons (cleaner, without heavy styling)
-  const socialSection = showSocialLinks ? `
+  const socialSection = showSocialLinks
+    ? `
     <table width="100%" cellpadding="0" cellspacing="0" style="margin: 0 0 20px;">
       <tr>
         <td align="center">
@@ -512,7 +527,8 @@ export function footer(props: FooterProps = {}): string {
           </a>
         </td>
       </tr>
-    </table>` : "";
+    </table>`
+    : "";
 
   // App badges section
   const appBadgesSection = showAppBadges ? appStoreBadges() : "";
@@ -556,8 +572,8 @@ export function buildEmail(config: EmailConfig): string {
 
   const emailBody = emailContainer(
     header({ title, subtitle }) +
-    contentSection(contentWithCta) +
-    footer(footerProps)
+      contentSection(contentWithCta) +
+      footer(footerProps),
   );
 
   return documentWrapper(emailBody, title);

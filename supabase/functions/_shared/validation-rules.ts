@@ -91,17 +91,18 @@ export const VALIDATION = {
 
 export const ERROR_MESSAGES = {
   // Listing errors
-  titleEmpty: 'Title is required',
+  titleEmpty: "Title is required",
   titleTooShort: (min: number) => `Title must be at least ${min} characters`,
   titleTooLong: (max: number) => `Title cannot exceed ${max} characters`,
-  descriptionEmpty: 'Description is required',
+  descriptionEmpty: "Description is required",
   descriptionTooLong: (max: number) => `Description cannot exceed ${max} characters`,
-  invalidQuantity: 'Quantity must be at least 1',
-  expirationInPast: 'Expiration date cannot be in the past',
-  expirationTooFarFuture: (days: number) => `Expiration date cannot be more than ${days} days from now`,
+  invalidQuantity: "Quantity must be at least 1",
+  expirationInPast: "Expiration date cannot be in the past",
+  expirationTooFarFuture: (days: number) =>
+    `Expiration date cannot be more than ${days} days from now`,
 
   // Profile errors
-  displayNameEmpty: 'Display name is required',
+  displayNameEmpty: "Display name is required",
   displayNameTooShort: (min: number) => `Display name must be at least ${min} characters`,
   displayNameTooLong: (max: number) => `Display name cannot exceed ${max} characters`,
   bioTooLong: (max: number) => `Bio cannot exceed ${max} characters`,
@@ -109,14 +110,14 @@ export const ERROR_MESSAGES = {
   // Review errors
   invalidRating: (min: number, max: number) => `Rating must be between ${min} and ${max}`,
   commentTooLong: (max: number) => `Comment cannot exceed ${max} characters`,
-  missingReviewee: 'Missing user to review',
-  alreadyReviewed: 'You have already reviewed this transaction',
-  cannotReviewSelf: 'You cannot review yourself',
+  missingReviewee: "Missing user to review",
+  alreadyReviewed: "You have already reviewed this transaction",
+  cannotReviewSelf: "You cannot review yourself",
 
   // Auth errors
-  emailRequired: 'Email is required',
-  emailInvalid: 'Please enter a valid email address',
-  passwordRequired: 'Password is required',
+  emailRequired: "Email is required",
+  emailInvalid: "Please enter a valid email address",
+  passwordRequired: "Password is required",
   passwordTooShort: (min: number) => `Password must be at least ${min} characters`,
   passwordTooLong: (max: number) => `Password cannot exceed ${max} characters`,
 } as const;
@@ -141,7 +142,7 @@ export function validateListing(
   title: string,
   description: string,
   quantity: number = 1,
-  expiresAt?: Date
+  expiresAt?: Date,
 ): ValidationResult {
   const errors: string[] = [];
   const trimmedTitle = title.trim();
@@ -188,7 +189,7 @@ export function validateListing(
  */
 export function validateProfile(
   nickname: string | null | undefined,
-  bio: string | null | undefined
+  bio: string | null | undefined,
 ): ValidationResult {
   const errors: string[] = [];
 
@@ -221,7 +222,7 @@ export function validateProfile(
 export function validateReview(
   rating: number,
   comment?: string | null,
-  revieweeId?: string | null
+  revieweeId?: string | null,
 ): ValidationResult {
   const errors: string[] = [];
 
@@ -319,14 +320,14 @@ export function evaluatePasswordStrength(password: string): PasswordStrength {
  * HTML entities to escape for XSS prevention
  */
 const HTML_ESCAPE_MAP: Record<string, string> = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#x27;',
-  '/': '&#x2F;',
-  '`': '&#x60;',
-  '=': '&#x3D;',
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#x27;",
+  "/": "&#x2F;",
+  "`": "&#x60;",
+  "=": "&#x3D;",
 };
 
 /**
@@ -346,7 +347,7 @@ const XSS_PATTERNS = [
  * Prevents XSS attacks when user input is rendered in HTML context
  */
 export function sanitizeHtml(input: string | null | undefined): string {
-  if (!input) return '';
+  if (!input) return "";
 
   return input.replace(/[&<>"'`=/]/g, (char) => HTML_ESCAPE_MAP[char] || char);
 }
@@ -356,17 +357,17 @@ export function sanitizeHtml(input: string | null | undefined): string {
  * More aggressive than sanitizeHtml - actually strips dangerous content
  */
 export function stripDangerousContent(input: string | null | undefined): string {
-  if (!input) return '';
+  if (!input) return "";
 
   let result = input;
 
   // Remove script tags and their content
   for (const pattern of XSS_PATTERNS) {
-    result = result.replace(pattern, '');
+    result = result.replace(pattern, "");
   }
 
   // Remove any remaining HTML tags
-  result = result.replace(/<[^>]*>/g, '');
+  result = result.replace(/<[^>]*>/g, "");
 
   return result.trim();
 }
@@ -377,7 +378,7 @@ export function stripDangerousContent(input: string | null | undefined): string 
 export function containsXssPatterns(input: string | null | undefined): boolean {
   if (!input) return false;
 
-  return XSS_PATTERNS.some(pattern => pattern.test(input));
+  return XSS_PATTERNS.some((pattern) => pattern.test(input));
 }
 
 /**
@@ -389,7 +390,7 @@ export function sanitizeObject<T extends Record<string, unknown>>(
   options: {
     stripDangerous?: boolean;
     excludeKeys?: string[];
-  } = {}
+  } = {},
 ): T {
   const { stripDangerous = false, excludeKeys = [] } = options;
 
@@ -399,7 +400,7 @@ export function sanitizeObject<T extends Record<string, unknown>>(
       return value;
     }
 
-    if (typeof value === 'string') {
+    if (typeof value === "string") {
       return stripDangerous ? stripDangerousContent(value) : sanitizeHtml(value);
     }
 
@@ -407,7 +408,7 @@ export function sanitizeObject<T extends Record<string, unknown>>(
       return value.map((item) => sanitize(item));
     }
 
-    if (value !== null && typeof value === 'object') {
+    if (value !== null && typeof value === "object") {
       const result: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(value)) {
         result[k] = sanitize(v, k);
@@ -431,10 +432,10 @@ export function sanitizeObject<T extends Record<string, unknown>>(
  */
 export function parseIntSafe(
   value: string | number | null | undefined,
-  defaultValue: number = 0
+  defaultValue: number = 0,
 ): number {
   if (value === null || value === undefined) return defaultValue;
-  if (typeof value === 'number') return Number.isNaN(value) ? defaultValue : Math.floor(value);
+  if (typeof value === "number") return Number.isNaN(value) ? defaultValue : Math.floor(value);
 
   const parsed = parseInt(value, 10);
   return Number.isNaN(parsed) ? defaultValue : parsed;
@@ -446,10 +447,10 @@ export function parseIntSafe(
  */
 export function parseFloatSafe(
   value: string | number | null | undefined,
-  defaultValue: number = 0
+  defaultValue: number = 0,
 ): number {
   if (value === null || value === undefined) return defaultValue;
-  if (typeof value === 'number') {
+  if (typeof value === "number") {
     return Number.isNaN(value) || !Number.isFinite(value) ? defaultValue : value;
   }
 
@@ -465,7 +466,7 @@ export function parseIntSafeWithBounds(
   value: string | number | null | undefined,
   min: number,
   max: number,
-  defaultValue?: number
+  defaultValue?: number,
 ): number {
   const effectiveDefault = defaultValue ?? min;
   const parsed = parseIntSafe(value, effectiveDefault);
@@ -480,7 +481,7 @@ export function parseFloatSafeWithBounds(
   value: string | number | null | undefined,
   min: number,
   max: number,
-  defaultValue?: number
+  defaultValue?: number,
 ): number {
   const effectiveDefault = defaultValue ?? min;
   const parsed = parseFloatSafe(value, effectiveDefault);
@@ -514,23 +515,23 @@ export function validateEmailEnhanced(email: string): ValidationResult {
 
   // No consecutive dots
   if (/\.{2,}/.test(trimmed)) {
-    errors.push('Email cannot contain consecutive dots');
+    errors.push("Email cannot contain consecutive dots");
     return { isValid: false, errors };
   }
 
   // Check domain part
-  const [, domain] = trimmed.split('@');
+  const [, domain] = trimmed.split("@");
   if (domain) {
     // Domain length check (max 253 chars per RFC)
     if (domain.length > 253) {
-      errors.push('Email domain is too long');
+      errors.push("Email domain is too long");
       return { isValid: false, errors };
     }
 
     // TLD validation (at least 2 chars, no numbers only)
-    const tld = domain.split('.').pop() || '';
+    const tld = domain.split(".").pop() || "";
     if (tld.length < 2 || /^\d+$/.test(tld)) {
-      errors.push('Email has invalid top-level domain');
+      errors.push("Email has invalid top-level domain");
       return { isValid: false, errors };
     }
   }

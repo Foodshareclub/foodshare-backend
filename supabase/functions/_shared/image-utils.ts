@@ -51,6 +51,9 @@ export async function logUploadMetrics(supabase: any, metrics: {
       uploaded_at: new Date().toISOString(),
     });
   } catch (error) {
-    logger.error("Failed to log metrics", error instanceof Error ? error : new Error(String(error)));
+    logger.error(
+      "Failed to log metrics",
+      error instanceof Error ? error : new Error(String(error)),
+    );
   }
 }

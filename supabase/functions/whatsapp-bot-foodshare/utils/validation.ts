@@ -4,8 +4,8 @@
 
 import {
   EMAIL_REGEX,
-  MIN_DESCRIPTION_LENGTH,
   MAX_DESCRIPTION_LENGTH,
+  MIN_DESCRIPTION_LENGTH,
 } from "../config/constants.ts";
 
 /**

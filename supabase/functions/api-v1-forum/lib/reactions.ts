@@ -9,11 +9,11 @@
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import {
-  ok,
   created,
-  noContent,
-  paginated,
   type HandlerContext,
+  noContent,
+  ok,
+  paginated,
 } from "../../_shared/api-handler.ts";
 import { ValidationError } from "../../_shared/errors.ts";
 import { logger } from "../../_shared/logger.ts";

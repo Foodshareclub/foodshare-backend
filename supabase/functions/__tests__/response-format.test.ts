@@ -1,13 +1,13 @@
 /**
  * Response Format Tests
- * 
+ *
  * Ensures consistent response format across all endpoints
  */
 
 import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import {
-  buildSuccessResponse,
   buildErrorResponse,
+  buildSuccessResponse,
   createTransitionalResponse,
 } from "../_shared/response-adapter.ts";
 import { AppError, ValidationError } from "../_shared/errors.ts";

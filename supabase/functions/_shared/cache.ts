@@ -185,7 +185,7 @@ export interface CacheThroughOptions {
 export async function cacheThrough<T>(
   key: string,
   fetcher: () => Promise<T>,
-  options: CacheThroughOptions = {}
+  options: CacheThroughOptions = {},
 ): Promise<T> {
   const { ttl = CACHE_TTLS.medium, forceRefresh = false, cacheKey } = options;
   const effectiveKey = cacheKey || key;
@@ -215,7 +215,7 @@ export async function cacheThrough<T>(
 export function cacheThroughSync<T>(
   key: string,
   fetcher: () => T,
-  options: CacheThroughOptions = {}
+  options: CacheThroughOptions = {},
 ): T {
   const { ttl = CACHE_TTLS.medium, forceRefresh = false, cacheKey } = options;
   const effectiveKey = cacheKey || key;
@@ -294,12 +294,12 @@ export function invalidateGlobalCaches(): void {
  */
 export async function getCachedProfile<T>(
   userId: string,
-  fetcher: () => Promise<T>
+  fetcher: () => Promise<T>,
 ): Promise<T> {
   return cacheThrough(
     CACHE_KEYS.profile(userId),
     fetcher,
-    { ttl: CACHE_TTLS.profile }
+    { ttl: CACHE_TTLS.profile },
   );
 }
 
@@ -308,12 +308,12 @@ export async function getCachedProfile<T>(
  */
 export async function getCachedAddress<T>(
   userId: string,
-  fetcher: () => Promise<T>
+  fetcher: () => Promise<T>,
 ): Promise<T> {
   return cacheThrough(
     CACHE_KEYS.address(userId),
     fetcher,
-    { ttl: CACHE_TTLS.address }
+    { ttl: CACHE_TTLS.address },
   );
 }
 
@@ -321,11 +321,11 @@ export async function getCachedAddress<T>(
  * Get categories from cache or fetch
  */
 export async function getCachedCategories<T>(
-  fetcher: () => Promise<T>
+  fetcher: () => Promise<T>,
 ): Promise<T> {
   return cacheThrough(
     CACHE_KEYS.categories(),
     fetcher,
-    { ttl: CACHE_TTLS.categories }
+    { ttl: CACHE_TTLS.categories },
   );
 }

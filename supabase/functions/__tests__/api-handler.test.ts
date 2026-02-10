@@ -1,20 +1,22 @@
 /**
  * API Handler Tests
- * 
+ *
  * Comprehensive test suite for the unified API handler
  */
 
 import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { createAPIHandler, ok, created, paginated } from "../_shared/api-handler.ts";
+import { createAPIHandler, created, ok, paginated } from "../_shared/api-handler.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
-// Mock Supabase client
-const mockSupabase = {
+// Mock Supabase client (available for future test expansion)
+// @ts-ignore Kept for future tests
+const _mockSupabase = {
   auth: {
-    getUser: () => Promise.resolve({
-      data: { user: { id: "test-user-id" } },
-      error: null,
-    }),
+    getUser: () =>
+      Promise.resolve({
+        data: { user: { id: "test-user-id" } },
+        error: null,
+      }),
   },
   from: () => ({
     select: () => ({
@@ -63,7 +65,7 @@ Deno.test("API Handler - POST with Zod validation", async () => {
       POST: {
         schema,
         handler: async (ctx) => {
-          return created({ id: "123", ...ctx.body }, ctx);
+          return created({ id: "123", ...(ctx.body as Record<string, unknown>) }, ctx);
         },
       },
     },
@@ -194,8 +196,8 @@ Deno.test("API Handler - Pagination helper", async () => {
 
 Deno.test("API Handler - Query parameter validation", async () => {
   const querySchema = z.object({
-    page: z.string().transform(Number),
-    limit: z.string().transform(Number),
+    page: z.string(),
+    limit: z.string(),
   });
 
   const handler = createAPIHandler({
@@ -205,7 +207,7 @@ Deno.test("API Handler - Query parameter validation", async () => {
       GET: {
         querySchema,
         handler: async (ctx) => {
-          return ok({ page: ctx.query.page, limit: ctx.query.limit }, ctx);
+          return ok({ page: Number(ctx.query.page), limit: Number(ctx.query.limit) }, ctx);
         },
       },
     },

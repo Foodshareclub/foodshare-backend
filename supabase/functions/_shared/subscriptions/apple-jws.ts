@@ -103,7 +103,7 @@ async function importCertificate(derBase64: string): Promise<CryptoKey> {
       namedCurve: "P-256",
     },
     true,
-    ["verify"]
+    ["verify"],
   );
 }
 
@@ -199,8 +199,8 @@ function extractPublicKeyFromCert(derBytes: Uint8Array): Uint8Array {
         const totalLength = lengthByte < 0x80
           ? 2 + spkiLength
           : lengthByte === 0x81
-            ? 3 + spkiLength
-            : 4 + spkiLength;
+          ? 3 + spkiLength
+          : 4 + spkiLength;
 
         return derBytes.slice(spkiStart, spkiStart + totalLength);
       }
@@ -226,7 +226,7 @@ async function verifyCertificateChain(x5c: string[]): Promise<CryptoKey> {
   // 4. Certificate extensions (EKU, etc.)
 
   // Verify the root certificate matches Apple Root CA
-  const rootCert = x5c[x5c.length - 1];
+  const _rootCert = x5c[x5c.length - 1];
 
   // Simple check: verify the root cert matches our known Apple Root CA
   // In production, you'd want to do a proper comparison
@@ -382,7 +382,7 @@ export async function verifyAppleJWS<T>(jws: string): Promise<T> {
       },
       publicKey,
       derSignature,
-      signedData
+      signedData,
     );
 
     if (!isValid) {

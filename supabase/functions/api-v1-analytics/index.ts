@@ -14,7 +14,7 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { ServerError } from "../_shared/errors.ts";
 import { getSupabaseClient } from "../_shared/supabase.ts";
@@ -222,8 +222,8 @@ async function syncUsers(
 
   if (mode === "incremental") {
     const lastSync = await getLastSyncTime(mdToken, "full_users");
-    const syncFrom =
-      lastSync || new Date(Date.now() - CONFIG.defaultIncrementalHours * 60 * 60 * 1000);
+    const syncFrom = lastSync ||
+      new Date(Date.now() - CONFIG.defaultIncrementalHours * 60 * 60 * 1000);
     query = query.gte("updated_at", syncFrom.toISOString());
   }
 
@@ -242,7 +242,13 @@ async function syncUsers(
     const values = batch
       .map(
         (p) =>
-          `(${escapeValue(p.id)}, ${escapeValue(p.created_time)}, ${escapeValue(p.updated_at)}, ${escapeValue(p.email)}, ${escapeValue(p.nickname)}, ${escapeValue(p.first_name)}, ${escapeValue(p.second_name)}, ${escapeValue(p.is_active)}, ${escapeValue(p.is_verified)}, ${escapeValue(p.last_seen_at)}, CURRENT_TIMESTAMP)`,
+          `(${escapeValue(p.id)}, ${escapeValue(p.created_time)}, ${escapeValue(p.updated_at)}, ${
+            escapeValue(p.email)
+          }, ${escapeValue(p.nickname)}, ${escapeValue(p.first_name)}, ${
+            escapeValue(p.second_name)
+          }, ${escapeValue(p.is_active)}, ${escapeValue(p.is_verified)}, ${
+            escapeValue(p.last_seen_at)
+          }, CURRENT_TIMESTAMP)`,
       )
       .join(",");
 
@@ -273,8 +279,8 @@ async function syncListings(
 
   if (mode === "incremental") {
     const lastSync = await getLastSyncTime(mdToken, "full_listings");
-    const syncFrom =
-      lastSync || new Date(Date.now() - CONFIG.defaultIncrementalHours * 60 * 60 * 1000);
+    const syncFrom = lastSync ||
+      new Date(Date.now() - CONFIG.defaultIncrementalHours * 60 * 60 * 1000);
     query = query.gte("updated_at", syncFrom.toISOString());
   }
 
@@ -293,7 +299,15 @@ async function syncListings(
     const values = batch
       .map(
         (p) =>
-          `(${p.id}, ${escapeValue(p.created_at)}, ${escapeValue(p.updated_at)}, ${escapeValue(p.post_name)}, ${escapeValue(p.post_type)}, ${escapeValue(p.is_active)}, ${escapeValue(p.is_arranged)}, ${escapeValue(p.post_arranged_at)}, ${escapeValue(p.profile_id)}, ${p.post_views || 0}, ${p.post_like_counter || 0}, ${escapeValue(p.latitude)}, ${escapeValue(p.longitude)}, CURRENT_TIMESTAMP)`,
+          `(${p.id}, ${escapeValue(p.created_at)}, ${escapeValue(p.updated_at)}, ${
+            escapeValue(p.post_name)
+          }, ${escapeValue(p.post_type)}, ${escapeValue(p.is_active)}, ${
+            escapeValue(p.is_arranged)
+          }, ${escapeValue(p.post_arranged_at)}, ${escapeValue(p.profile_id)}, ${
+            p.post_views || 0
+          }, ${p.post_like_counter || 0}, ${escapeValue(p.latitude)}, ${
+            escapeValue(p.longitude)
+          }, CURRENT_TIMESTAMP)`,
       )
       .join(",");
 

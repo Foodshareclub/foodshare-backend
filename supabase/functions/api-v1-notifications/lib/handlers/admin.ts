@@ -65,7 +65,7 @@ interface SyncResult {
 async function fetchWithTimeout(
   url: string,
   options: RequestInit,
-  timeoutMs: number = REQUEST_TIMEOUT_MS
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -92,7 +92,7 @@ async function fetchBrevoStats(): Promise<Record<string, unknown>> {
     const [statsRes, accountRes] = await Promise.all([
       fetchWithTimeout(
         `https://api.brevo.com/v3/smtp/statistics/aggregatedReport?startDate=${startDate}&endDate=${endDate}`,
-        { method: "GET", headers: { "api-key": apiKey, Accept: "application/json" } }
+        { method: "GET", headers: { "api-key": apiKey, Accept: "application/json" } },
       ),
       fetchWithTimeout("https://api.brevo.com/v3/account", {
         method: "GET",
@@ -133,7 +133,7 @@ async function fetchMailerSendStats(): Promise<Record<string, unknown>> {
       {
         method: "GET",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      }
+      },
     );
 
     if (!response.ok) return {};
@@ -188,7 +188,7 @@ async function fetchResendStats(): Promise<Record<string, unknown>> {
 async function syncProvider(providerName: string): Promise<ProviderStats> {
   const emailService = getEmailService();
   const provider = emailService.getProvider(
-    providerName as "resend" | "brevo" | "aws_ses" | "mailersend"
+    providerName as "resend" | "brevo" | "aws_ses" | "mailersend",
   );
 
   if (!provider) {
@@ -234,12 +234,11 @@ async function syncProvider(providerName: string): Promise<ProviderStats> {
       delivered: (externalStats.delivered as number) ?? undefined,
       opened: (externalStats.opened as number) ?? undefined,
       clicked: (externalStats.clicked as number) ?? undefined,
-      bounced:
-        ((externalStats.hardBounces as number) ?? 0) +
+      bounced: ((externalStats.hardBounces as number) ?? 0) +
           ((externalStats.softBounces as number) ?? 0) +
           ((externalStats.bounces as number) ?? 0) || undefined,
-      complained:
-        (externalStats.complaints as number) ?? (externalStats.complained as number) ?? undefined,
+      complained: (externalStats.complaints as number) ?? (externalStats.complained as number) ??
+        undefined,
     },
     syncedAt: new Date().toISOString(),
   };
@@ -247,7 +246,7 @@ async function syncProvider(providerName: string): Promise<ProviderStats> {
 
 async function storeProviderStats(
   context: NotificationContext,
-  stats: ProviderStats
+  stats: ProviderStats,
 ): Promise<void> {
   const today = new Date().toISOString().split("T")[0];
 
@@ -271,7 +270,7 @@ async function storeProviderStats(
       monthly_quota_limit: stats.quota.monthly?.limit ?? 15000,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: "provider,date" }
+    { onConflict: "provider,date" },
   );
 
   if (error) {
@@ -297,13 +296,19 @@ async function storeProviderStats(
         health_score: stats.health.healthScore,
         // Preserve internal tracking if higher than provider stats
         total_requests: Math.max(existing?.total_requests ?? 0, stats.stats?.delivered ?? 0),
-        successful_requests: Math.max(existing?.successful_requests ?? 0, stats.stats?.delivered ?? 0),
+        successful_requests: Math.max(
+          existing?.successful_requests ?? 0,
+          stats.stats?.delivered ?? 0,
+        ),
         failed_requests: stats.stats?.bounced ?? 0,
         average_latency_ms: stats.health.latencyMs,
         // Use MAX of internal tracking and provider API
         daily_quota_used: Math.max(existing?.daily_quota_used ?? 0, stats.quota.daily.sent),
         daily_quota_limit: stats.quota.daily.limit,
-        monthly_quota_used: Math.max(existing?.monthly_quota_used ?? 0, stats.quota.monthly?.sent ?? 0),
+        monthly_quota_used: Math.max(
+          existing?.monthly_quota_used ?? 0,
+          stats.quota.monthly?.sent ?? 0,
+        ),
         monthly_quota_limit: stats.quota.monthly?.limit ?? 15000,
         emails_delivered: stats.stats?.delivered ?? 0,
         emails_opened: stats.stats?.opened ?? 0,
@@ -313,7 +318,7 @@ async function storeProviderStats(
         last_synced_at: new Date().toISOString(),
         last_updated: new Date().toISOString(),
       },
-      { onConflict: "provider" }
+      { onConflict: "provider" },
     );
   } catch {
     // Table might not exist yet
@@ -329,7 +334,7 @@ async function storeProviderStats(
  * Get current provider status without syncing
  */
 export async function handleAdminProviderStatus(
-  context: NotificationContext
+  _context: NotificationContext,
 ): Promise<{ success: boolean; data?: unknown; error?: string }> {
   try {
     const emailService = getEmailService();
@@ -353,7 +358,7 @@ export async function handleAdminProviderStatus(
  */
 export async function handleAdminProviderSync(
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{ success: boolean; data?: SyncResult; error?: string }> {
   const startTime = performance.now();
   const providers = ["resend", "brevo", "mailersend", "aws_ses"];
@@ -404,7 +409,7 @@ export async function handleAdminProviderSync(
  * Get provider health from database
  */
 export async function handleAdminProviderHealth(
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{ success: boolean; data?: unknown; error?: string }> {
   try {
     const { data, error } = await context.supabase
@@ -420,10 +425,9 @@ export async function handleAdminProviderHealth(
     const providers = (data || []).map((m) => ({
       provider: m.provider,
       healthScore: m.health_score || 100,
-      successRate:
-        m.total_requests > 0
-          ? Math.round((m.successful_requests / m.total_requests) * 1000) / 10
-          : 100,
+      successRate: m.total_requests > 0
+        ? Math.round((m.successful_requests / m.total_requests) * 1000) / 10
+        : 100,
       avgLatencyMs: m.average_latency_ms || 0,
       totalRequests: m.total_requests || 0,
       status: m.health_score >= 80 ? "healthy" : m.health_score >= 50 ? "degraded" : "down",
@@ -466,7 +470,7 @@ export async function handleAdminProviderHealth(
  * Get email dashboard statistics
  */
 export async function handleAdminStats(
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{ success: boolean; data?: unknown; error?: string }> {
   try {
     // Try the enhanced stats function first
@@ -501,7 +505,7 @@ export async function handleAdminStats(
  */
 export async function handleAdminTestEmail(
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{ success: boolean; data?: unknown; error?: string }> {
   const { provider, recipient } = (body as { provider?: string; recipient?: string }) || {};
 
@@ -526,7 +530,7 @@ export async function handleAdminTestEmail(
           </div>
         `,
       },
-      providerName as "resend" | "brevo" | "mailersend" | "aws_ses"
+      providerName as "resend" | "brevo" | "mailersend" | "aws_ses",
     );
 
     // Record the send in health metrics
@@ -562,7 +566,7 @@ export async function handleAdminRoute(
   segments: string[],
   method: string,
   body: unknown,
-  context: NotificationContext
+  context: NotificationContext,
 ): Promise<{ success: boolean; data?: unknown; error?: string; status?: number }> {
   // /admin/providers/status - GET
   if (segments[1] === "providers" && segments[2] === "status" && method === "GET") {

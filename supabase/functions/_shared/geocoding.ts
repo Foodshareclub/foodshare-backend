@@ -3,7 +3,7 @@
  * Used across multiple Edge Functions for consistent geocoding behavior
  */
 
-import { withCircuitBreaker, CircuitBreakerError } from "./circuit-breaker.ts";
+import { CircuitBreakerError, withCircuitBreaker } from "./circuit-breaker.ts";
 import { logger } from "./logger.ts";
 
 // Types
@@ -135,7 +135,10 @@ async function fetchWithRetry(url: string, retries = MAX_RETRIES): Promise<Respo
           continue;
         }
 
-        logger.error("Nominatim HTTP error", { status: response.status, statusText: response.statusText });
+        logger.error("Nominatim HTTP error", {
+          status: response.status,
+          statusText: response.statusText,
+        });
         return null;
       } finally {
         clearTimeout(timeout);
@@ -144,7 +147,11 @@ async function fetchWithRetry(url: string, retries = MAX_RETRIES): Promise<Respo
       if (error instanceof Error && error.name === "AbortError") {
         logger.error("Nominatim request timeout", { attempt: attempt + 1, retries });
       } else {
-        logger.error("Nominatim fetch error", { attempt: attempt + 1, retries, error: String(error) });
+        logger.error("Nominatim fetch error", {
+          attempt: attempt + 1,
+          retries,
+          error: String(error),
+        });
       }
 
       if (attempt === retries - 1) {
@@ -274,7 +281,7 @@ export async function geocodeAddress(address: string): Promise<Coordinates | nul
  */
 export async function geocodeWithCountryFallback(
   location: string,
-  fallbackCountries: string[] = ["USA", "United States", "Czech Republic", "France", "Russia"]
+  fallbackCountries: string[] = ["USA", "United States", "Czech Republic", "France", "Russia"],
 ): Promise<Coordinates | null> {
   if (!location || location.trim().length === 0) {
     logger.warn("Empty location provided");

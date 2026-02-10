@@ -29,22 +29,40 @@ interface TranslationResult {
 
 // Supported locales
 const SUPPORTED_LOCALES = [
-  "cs", "de", "es", "fr", "pt", "ru", "uk", "zh", "hi", "ar",
-  "it", "pl", "nl", "ja", "ko", "tr", "sv", "vi", "id", "th"
+  "cs",
+  "de",
+  "es",
+  "fr",
+  "pt",
+  "ru",
+  "uk",
+  "zh",
+  "hi",
+  "ar",
+  "it",
+  "pl",
+  "nl",
+  "ja",
+  "ko",
+  "tr",
+  "sv",
+  "vi",
+  "id",
+  "th",
 ];
 
 // Field mappings for different content types
 const CONTENT_FIELD_MAPPINGS: Record<string, Record<string, string>> = {
   post: { title: "post_name", description: "post_description" },
   challenge: { title: "challenge_title", description: "challenge_description" },
-  forum_post: { title: "forum_post_name", content: "forum_post_description" }
+  forum_post: { title: "forum_post_name", content: "forum_post_description" },
 };
 
 // Table names for different content types
 const CONTENT_TABLES: Record<string, string> = {
   post: "posts",
   challenge: "challenges",
-  forum_post: "forum"
+  forum_post: "forum",
 };
 
 /**
@@ -55,18 +73,24 @@ async function hashText(text: string): Promise<string> {
   const data = encoder.encode(text);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export default async function getTranslationsHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
+export default async function getTranslationsHandler(
+  req: Request,
+  corsHeaders: Record<string, string>,
+): Promise<Response> {
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({
-      success: false,
-      error: "Method not allowed. Use POST."
-    }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "Method not allowed. Use POST.",
+      }),
+      {
+        status: 405,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 
   try {
@@ -75,13 +99,16 @@ export default async function getTranslationsHandler(req: Request, corsHeaders: 
 
     // Validate content type
     if (!contentType || !["post", "challenge", "forum_post"].includes(contentType)) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "Invalid contentType. Must be 'post', 'challenge', or 'forum_post'."
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Invalid contentType. Must be 'post', 'challenge', or 'forum_post'.",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Return empty for English
@@ -93,40 +120,49 @@ export default async function getTranslationsHandler(req: Request, corsHeaders: 
           emptyTranslations[id][field] = null;
         }
       }
-      return new Response(JSON.stringify({
-        success: true,
-        translations: emptyTranslations,
-        locale: "en",
-        fromDatabase: 0,
-        notFound: contentIds?.length || 0
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          translations: emptyTranslations,
+          locale: "en",
+          fromDatabase: 0,
+          notFound: contentIds?.length || 0,
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Validate locale
     if (!locale || !SUPPORTED_LOCALES.includes(locale)) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: `Unsupported locale: ${locale}`,
-        supportedLocales: SUPPORTED_LOCALES
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Unsupported locale: ${locale}`,
+          supportedLocales: SUPPORTED_LOCALES,
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Validate content IDs
     if (!contentIds || !Array.isArray(contentIds) || contentIds.length === 0) {
-      return new Response(JSON.stringify({
-        success: true,
-        translations: {},
-        locale,
-        fromDatabase: 0,
-        notFound: 0
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          translations: {},
+          locale,
+          fromDatabase: 0,
+          notFound: 0,
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Limit batch size
@@ -150,17 +186,20 @@ export default async function getTranslationsHandler(req: Request, corsHeaders: 
     const { data: sourceContent, error: sourceError } = await supabase
       .from(tableName)
       .select(selectColumns)
-      .in("id", limitedIds.map(id => parseInt(id, 10)));
+      .in("id", limitedIds.map((id) => parseInt(id, 10)));
 
     if (sourceError) {
       logger.error("Failed to fetch source content", sourceError);
-      return new Response(JSON.stringify({
-        success: false,
-        error: `Failed to fetch source content: ${sourceError.message}`
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Failed to fetch source content: ${sourceError.message}`,
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     if (sourceContent && sourceContent.length > 0) {
@@ -212,34 +251,39 @@ export default async function getTranslationsHandler(req: Request, corsHeaders: 
     }
 
     const notFound = Object.values(translations).filter(
-      t => Object.values(t).every(v => v === null)
+      (t) => Object.values(t).every((v) => v === null),
     ).length;
 
-    logger.debug("Get translations completed", { 
-      itemCount: limitedIds.length, 
-      fromDatabase, 
-      notFound, 
-      locale 
-    });
-
-    return new Response(JSON.stringify({
-      success: true,
-      translations,
-      locale,
+    logger.debug("Get translations completed", {
+      itemCount: limitedIds.length,
       fromDatabase,
-      notFound
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
+      notFound,
+      locale,
     });
 
+    return new Response(
+      JSON.stringify({
+        success: true,
+        translations,
+        locale,
+        fromDatabase,
+        notFound,
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
     logger.error("Get translations error", error as Error);
-    return new Response(JSON.stringify({
-      success: false,
-      error: (error as Error).message
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: (error as Error).message,
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 }

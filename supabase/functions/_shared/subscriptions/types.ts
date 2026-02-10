@@ -14,16 +14,16 @@
 export type SubscriptionPlatform = "apple" | "google_play" | "stripe";
 
 export type SubscriptionStatus =
-  | "active"           // Subscription is active and in good standing
-  | "expired"          // Subscription has expired
-  | "in_grace_period"  // Payment failed but in grace period
+  | "active" // Subscription is active and in good standing
+  | "expired" // Subscription has expired
+  | "in_grace_period" // Payment failed but in grace period
   | "in_billing_retry" // Payment failed, provider is retrying
-  | "on_hold"          // Account hold (Google Play)
-  | "revoked"          // Subscription was refunded or revoked
-  | "refunded"         // Subscription was refunded
-  | "paused"           // Subscription is paused (Google Play only)
-  | "pending"          // Subscription is pending (awaiting payment)
-  | "unknown";         // Initial state before first webhook
+  | "on_hold" // Account hold (Google Play)
+  | "revoked" // Subscription was refunded or revoked
+  | "refunded" // Subscription was refunded
+  | "paused" // Subscription is paused (Google Play only)
+  | "pending" // Subscription is pending (awaiting payment)
+  | "unknown"; // Initial state before first webhook
 
 export type SubscriptionEnvironment = "production" | "sandbox" | "test";
 
@@ -67,23 +67,23 @@ export interface SubscriptionEvent {
  * Normalized event types across platforms
  */
 export type SubscriptionEventType =
-  | "subscription_created"      // New subscription started
-  | "subscription_renewed"      // Subscription successfully renewed
-  | "subscription_expired"      // Subscription ended
-  | "subscription_canceled"     // User canceled (may still be active until period ends)
-  | "subscription_reactivated"  // User reactivated after cancellation
-  | "billing_issue"             // Payment failed
-  | "billing_recovered"         // Payment recovered after issue
-  | "grace_period_started"      // Entered grace period
-  | "grace_period_expired"      // Grace period ended
-  | "refunded"                  // Subscription was refunded
-  | "revoked"                   // Access revoked (family sharing, etc.)
-  | "price_change"              // Price change notification
-  | "plan_changed"              // User changed plans (upgrade/downgrade)
-  | "paused"                    // Subscription paused (Google Play)
-  | "resumed"                   // Subscription resumed after pause
-  | "test"                      // Test notification
-  | "unknown";                  // Unrecognized event type
+  | "subscription_created" // New subscription started
+  | "subscription_renewed" // Subscription successfully renewed
+  | "subscription_expired" // Subscription ended
+  | "subscription_canceled" // User canceled (may still be active until period ends)
+  | "subscription_reactivated" // User reactivated after cancellation
+  | "billing_issue" // Payment failed
+  | "billing_recovered" // Payment recovered after issue
+  | "grace_period_started" // Entered grace period
+  | "grace_period_expired" // Grace period ended
+  | "refunded" // Subscription was refunded
+  | "revoked" // Access revoked (family sharing, etc.)
+  | "price_change" // Price change notification
+  | "plan_changed" // User changed plans (upgrade/downgrade)
+  | "paused" // Subscription paused (Google Play)
+  | "resumed" // Subscription resumed after pause
+  | "test" // Test notification
+  | "unknown"; // Unrecognized event type
 
 // =============================================================================
 // Subscription Data

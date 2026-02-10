@@ -25,17 +25,16 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { createAPIHandler, ok, type HandlerContext } from "../_shared/api-handler.ts";
-import { logger } from "../_shared/logger.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
 import { ValidationError } from "../_shared/errors.ts";
-import { parseRoute, type ParsedRoute } from "../_shared/routing.ts";
+import { parseRoute } from "../_shared/routing.ts";
 import {
+  evaluatePasswordStrength,
+  validateEmailEnhanced,
   validateListing,
+  validatePassword,
   validateProfile,
   validateReview,
-  validateEmailEnhanced,
-  validatePassword,
-  evaluatePasswordStrength,
   VALIDATION,
   type ValidationResult,
 } from "../_shared/validation-rules.ts";
@@ -92,7 +91,7 @@ function handleValidateListing(body: unknown): ValidationResult {
     data.title,
     data.description || "",
     data.quantity || 1,
-    expiresAt
+    expiresAt,
   );
 }
 
@@ -162,7 +161,11 @@ function handleBatchValidation(body: unknown): { results: BatchValidationItem[] 
           result = handleValidatePassword(item.data);
           break;
         default:
-          return { type: item.type, isValid: false, errors: [`Unknown validation type: ${item.type}`] };
+          return {
+            type: item.type,
+            isValid: false,
+            errors: [`Unknown validation type: ${item.type}`],
+          };
       }
 
       return { type: item.type, ...result };
@@ -194,11 +197,15 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
       }, ctx);
 
     case "rules":
-      return ok({
-        success: true,
-        rules: VALIDATION,
-        version: VERSION,
-      }, ctx, { cacheTTL: 3600 });
+      return ok(
+        {
+          success: true,
+          rules: VALIDATION,
+          version: VERSION,
+        },
+        ctx,
+        { cacheTTL: 3600 },
+      );
 
     default:
       throw new ValidationError(`Not found: ${route.resource}`);
@@ -234,7 +241,7 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
         error.errors.map((e) => ({
           field: e.path.join("."),
           message: e.message,
-        }))
+        })),
       );
     }
     throw error;

@@ -3,16 +3,16 @@
  */
 
 import { logger } from "../../_shared/logger.ts";
-import { WHATSAPP_API_URL, WHATSAPP_ACCESS_TOKEN } from "../config/index.ts";
-import { WHATSAPP_API_TIMEOUT_MS, MAX_RETRIES, RETRY_DELAY_MS } from "../config/constants.ts";
-import { withCircuitBreaker, getCircuitStatus } from "../../_shared/circuit-breaker.ts";
+import { WHATSAPP_ACCESS_TOKEN, WHATSAPP_API_URL } from "../config/index.ts";
+import { MAX_RETRIES, RETRY_DELAY_MS, WHATSAPP_API_TIMEOUT_MS } from "../config/constants.ts";
+import { getCircuitStatus, withCircuitBreaker } from "../../_shared/circuit-breaker.ts";
 import type {
-  TextMessage,
   ImageMessage,
-  LocationMessage,
-  InteractiveMessage,
   InteractiveButton,
   InteractiveListSection,
+  InteractiveMessage,
+  LocationMessage,
+  TextMessage,
 } from "../types/index.ts";
 
 const SERVICE_NAME = "whatsapp-api";
@@ -23,7 +23,7 @@ const SERVICE_NAME = "whatsapp-api";
 async function fetchWithTimeout(
   url: string,
   options: RequestInit,
-  timeoutMs = WHATSAPP_API_TIMEOUT_MS
+  timeoutMs = WHATSAPP_API_TIMEOUT_MS,
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -45,7 +45,7 @@ async function fetchWithTimeout(
 async function makeRequest<T>(
   endpoint: string,
   body: unknown,
-  method = "POST"
+  method = "POST",
 ): Promise<{ success: boolean; data?: T; error?: string }> {
   const url = `${WHATSAPP_API_URL}${endpoint}`;
 
@@ -63,7 +63,11 @@ async function makeRequest<T>(
 
     if (!response.ok) {
       const errorMessage = data?.error?.message || `HTTP ${response.status}`;
-      logger.error("WhatsApp API error", { endpoint, status: response.status, error: errorMessage });
+      logger.error("WhatsApp API error", {
+        endpoint,
+        status: response.status,
+        error: errorMessage,
+      });
       return { success: false, error: errorMessage };
     }
 
@@ -81,7 +85,7 @@ async function makeRequest<T>(
 async function sendWithRetry<T>(
   endpoint: string,
   body: unknown,
-  retries = MAX_RETRIES
+  retries = MAX_RETRIES,
 ): Promise<{ success: boolean; data?: T; error?: string }> {
   return withCircuitBreaker(
     SERVICE_NAME,
@@ -109,7 +113,7 @@ async function sendWithRetry<T>(
 
       return { success: false, error: lastError };
     },
-    { failureThreshold: 5, resetTimeoutMs: 60000 }
+    { failureThreshold: 5, resetTimeoutMs: 60000 },
   );
 }
 
@@ -142,7 +146,7 @@ export async function sendTextMessage(to: string, text: string): Promise<boolean
 export async function sendImageMessage(
   to: string,
   imageUrl: string,
-  caption?: string
+  caption?: string,
 ): Promise<boolean> {
   const message: ImageMessage = {
     messaging_product: "whatsapp",
@@ -167,7 +171,7 @@ export async function sendLocationMessage(
   latitude: number,
   longitude: number,
   name?: string,
-  address?: string
+  address?: string,
 ): Promise<boolean> {
   const message: LocationMessage = {
     messaging_product: "whatsapp",
@@ -194,7 +198,7 @@ export async function sendButtonMessage(
   bodyText: string,
   buttons: Array<{ id: string; title: string }>,
   headerText?: string,
-  footerText?: string
+  footerText?: string,
 ): Promise<boolean> {
   // Validate and truncate button titles (max 20 chars)
   const formattedButtons: InteractiveButton[] = buttons.slice(0, 3).map((btn) => ({
@@ -238,7 +242,7 @@ export async function sendListMessage(
   buttonText: string,
   sections: InteractiveListSection[],
   headerText?: string,
-  footerText?: string
+  footerText?: string,
 ): Promise<boolean> {
   const message: InteractiveMessage = {
     messaging_product: "whatsapp",
@@ -317,7 +321,7 @@ export async function downloadMedia(mediaUrl: string): Promise<ArrayBuffer | nul
           Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
         },
       },
-      30000 // 30 second timeout for downloads
+      30000, // 30 second timeout for downloads
     );
 
     if (!response.ok) {

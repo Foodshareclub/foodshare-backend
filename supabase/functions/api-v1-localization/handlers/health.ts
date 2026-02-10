@@ -5,11 +5,14 @@
 
 import { llmTranslationService } from "../services/llm-translation.ts";
 
-export default async function healthHandler(req: Request, corsHeaders: Record<string, string>): Promise<Response> {
+export default async function healthHandler(
+  req: Request,
+  corsHeaders: Record<string, string>,
+): Promise<Response> {
   if (req.method !== "GET") {
     return new Response(
       JSON.stringify({ error: "Method not allowed" }),
-      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 
@@ -19,9 +22,9 @@ export default async function healthHandler(req: Request, corsHeaders: Record<st
 
     // Determine HTTP status based on health
     let httpStatus = 200;
-    if (health.status === 'UNHEALTHY') {
+    if (health.status === "UNHEALTHY") {
       httpStatus = 503; // Service Unavailable
-    } else if (health.status === 'DEGRADED') {
+    } else if (health.status === "DEGRADED") {
       httpStatus = 200; // Still OK but degraded
     }
 
@@ -34,7 +37,7 @@ export default async function healthHandler(req: Request, corsHeaders: Record<st
           "Content-Type": "application/json",
           "Cache-Control": "no-cache, no-store, must-revalidate",
         },
-      }
+      },
     );
   } catch (error) {
     logger.error("Health check error", error as Error);
@@ -47,7 +50,7 @@ export default async function healthHandler(req: Request, corsHeaders: Record<st
       {
         status: 503,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      },
     );
   }
 }

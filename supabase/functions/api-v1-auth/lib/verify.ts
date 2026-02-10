@@ -19,7 +19,7 @@
 import { logger } from "../../_shared/logger.ts";
 import { getEmailService } from "../../_shared/email/index.ts";
 import type { AuthContext } from "./types.ts";
-import type { VerifySendBody, VerifyConfirmBody, VerifyResendBody } from "./schemas.ts";
+import type { VerifyConfirmBody, VerifyResendBody, VerifySendBody } from "./schemas.ts";
 
 // =============================================================================
 // Constants
@@ -153,12 +153,16 @@ export async function handleVerifySend(
     if (lockedUntil > new Date()) {
       const remainingMs = lockedUntil.getTime() - Date.now();
       const remainingMinutes = Math.ceil(remainingMs / 60000);
-      return json({
-        success: false,
-        error: "Account temporarily locked due to too many failed attempts",
-        lockedUntil: profile.verification_locked_until,
-        remainingMinutes,
-      }, corsHeaders, 429);
+      return json(
+        {
+          success: false,
+          error: "Account temporarily locked due to too many failed attempts",
+          lockedUntil: profile.verification_locked_until,
+          remainingMinutes,
+        },
+        corsHeaders,
+        429,
+      );
     }
   }
 
@@ -187,7 +191,10 @@ export async function handleVerifySend(
     return json({ success: false, error: "Failed to send verification email" }, corsHeaders, 502);
   }
 
-  logger.info("Verification code sent", { email: email.substring(0, 3) + "***", requestId: ctx.requestId });
+  logger.info("Verification code sent", {
+    email: email.substring(0, 3) + "***",
+    requestId: ctx.requestId,
+  });
 
   return json({
     success: true,
@@ -210,7 +217,9 @@ export async function handleVerifyConfirm(
   // Look up profile
   const { data: profile, error: lookupError } = await supabase
     .from("profiles")
-    .select("id, verification_code, verification_code_expires_at, verification_attempts, verification_locked_until")
+    .select(
+      "id, verification_code, verification_code_expires_at, verification_attempts, verification_locked_until",
+    )
     .eq("email", email)
     .maybeSingle();
 
@@ -229,12 +238,16 @@ export async function handleVerifyConfirm(
     if (lockedUntil > new Date()) {
       const remainingMs = lockedUntil.getTime() - Date.now();
       const remainingMinutes = Math.ceil(remainingMs / 60000);
-      return json({
-        success: false,
-        error: "Account temporarily locked due to too many failed attempts",
-        lockedUntil: profile.verification_locked_until,
-        remainingMinutes,
-      }, corsHeaders, 429);
+      return json(
+        {
+          success: false,
+          error: "Account temporarily locked due to too many failed attempts",
+          lockedUntil: profile.verification_locked_until,
+          remainingMinutes,
+        },
+        corsHeaders,
+        429,
+      );
     }
   }
 
@@ -243,7 +256,11 @@ export async function handleVerifyConfirm(
     !profile.verification_code_expires_at ||
     new Date(profile.verification_code_expires_at) < new Date()
   ) {
-    return json({ success: false, error: "Verification code has expired. Request a new one." }, corsHeaders, 410);
+    return json(
+      { success: false, error: "Verification code has expired. Request a new one." },
+      corsHeaders,
+      410,
+    );
   }
 
   // Check code match
@@ -268,12 +285,16 @@ export async function handleVerifyConfirm(
         requestId: ctx.requestId,
       });
 
-      return json({
-        success: false,
-        error: "Too many failed attempts. Account temporarily locked.",
-        lockedUntil: lockedUntil.toISOString(),
-        remainingMinutes: LOCKOUT_DURATION_MINUTES,
-      }, corsHeaders, 429);
+      return json(
+        {
+          success: false,
+          error: "Too many failed attempts. Account temporarily locked.",
+          lockedUntil: lockedUntil.toISOString(),
+          remainingMinutes: LOCKOUT_DURATION_MINUTES,
+        },
+        corsHeaders,
+        429,
+      );
     }
 
     await supabase
@@ -281,11 +302,15 @@ export async function handleVerifyConfirm(
       .update({ verification_attempts: newAttempts })
       .eq("id", profile.id);
 
-    return json({
-      success: false,
-      error: "Incorrect verification code",
-      attemptsRemaining: attemptsLeft,
-    }, corsHeaders, 400);
+    return json(
+      {
+        success: false,
+        error: "Incorrect verification code",
+        attemptsRemaining: attemptsLeft,
+      },
+      corsHeaders,
+      400,
+    );
   }
 
   // Code is correct — mark verified and clear verification state
@@ -324,11 +349,15 @@ export async function handleVerifyResend(
   // Check resend rate limit
   const rateLimit = checkResendRateLimit(email);
   if (!rateLimit.allowed) {
-    return json({
-      success: false,
-      error: "Too many resend requests. Please wait before trying again.",
-      remainingMinutes: rateLimit.remainingMinutes,
-    }, corsHeaders, 429);
+    return json(
+      {
+        success: false,
+        error: "Too many resend requests. Please wait before trying again.",
+        remainingMinutes: rateLimit.remainingMinutes,
+      },
+      corsHeaders,
+      429,
+    );
   }
 
   // Look up profile
@@ -357,12 +386,16 @@ export async function handleVerifyResend(
     if (lockedUntil > new Date()) {
       const remainingMs = lockedUntil.getTime() - Date.now();
       const remainingMinutes = Math.ceil(remainingMs / 60000);
-      return json({
-        success: false,
-        error: "Account temporarily locked",
-        lockedUntil: profile.verification_locked_until,
-        remainingMinutes,
-      }, corsHeaders, 429);
+      return json(
+        {
+          success: false,
+          error: "Account temporarily locked",
+          lockedUntil: profile.verification_locked_until,
+          remainingMinutes,
+        },
+        corsHeaders,
+        429,
+      );
     }
   }
 
@@ -389,7 +422,10 @@ export async function handleVerifyResend(
     return json({ success: false, error: "Failed to send verification email" }, corsHeaders, 502);
   }
 
-  logger.info("Verification code resent", { email: email.substring(0, 3) + "***", requestId: ctx.requestId });
+  logger.info("Verification code resent", {
+    email: email.substring(0, 3) + "***",
+    requestId: ctx.requestId,
+  });
 
   return json({
     success: true,

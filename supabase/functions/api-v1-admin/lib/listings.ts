@@ -55,7 +55,7 @@ async function logAdminAction(
   ctx: AdminContext,
   action: string,
   resourceId: string,
-  metadata: Record<string, unknown> = {}
+  metadata: Record<string, unknown> = {},
 ): Promise<void> {
   try {
     await ctx.supabase.from("admin_audit_log").insert({
@@ -78,7 +78,7 @@ export async function handleListingsRoute(
   segments: string[],
   method: string,
   body: unknown,
-  ctx: AdminContext
+  ctx: AdminContext,
 ): Promise<Response> {
   // Bulk operations: /listings/bulk/:operation
   if (segments[0] === "bulk") {
@@ -130,7 +130,7 @@ export async function handleListingsRoute(
 async function handleUpdate(
   listingId: number,
   body: unknown,
-  ctx: AdminContext
+  ctx: AdminContext,
 ): Promise<Response> {
   const input = updateListingSchema.parse(body);
 
@@ -177,7 +177,7 @@ async function handleActivate(listingId: number, ctx: AdminContext): Promise<Res
 async function handleDeactivate(
   listingId: number,
   body: unknown,
-  ctx: AdminContext
+  ctx: AdminContext,
 ): Promise<Response> {
   const input = z.object({ reason: z.string().max(500).optional() }).parse(body || {});
 
@@ -204,13 +204,16 @@ async function handleDelete(listingId: number, ctx: AdminContext): Promise<Respo
 
   await logAdminAction(ctx, "delete_listing", String(listingId));
 
-  return new Response(null, { status: 204, headers: { ...ctx.corsHeaders, "Content-Type": "application/json" } });
+  return new Response(null, {
+    status: 204,
+    headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
+  });
 }
 
 async function handleUpdateNotes(
   listingId: number,
   body: unknown,
-  ctx: AdminContext
+  ctx: AdminContext,
 ): Promise<Response> {
   const input = updateNotesSchema.parse(body);
 
@@ -240,7 +243,10 @@ async function handleBulkActivate(body: unknown, ctx: AdminContext): Promise<Res
     count: input.ids.length,
   });
 
-  return jsonResponse({ success: true, activated: input.ids.length, ids: input.ids }, ctx.corsHeaders);
+  return jsonResponse(
+    { success: true, activated: input.ids.length, ids: input.ids },
+    ctx.corsHeaders,
+  );
 }
 
 async function handleBulkDeactivate(body: unknown, ctx: AdminContext): Promise<Response> {
@@ -262,7 +268,10 @@ async function handleBulkDeactivate(body: unknown, ctx: AdminContext): Promise<R
     reason: input.reason,
   });
 
-  return jsonResponse({ success: true, deactivated: input.ids.length, ids: input.ids }, ctx.corsHeaders);
+  return jsonResponse(
+    { success: true, deactivated: input.ids.length, ids: input.ids },
+    ctx.corsHeaders,
+  );
 }
 
 async function handleBulkDelete(body: unknown, ctx: AdminContext): Promise<Response> {
@@ -276,5 +285,8 @@ async function handleBulkDelete(body: unknown, ctx: AdminContext): Promise<Respo
     count: input.ids.length,
   });
 
-  return jsonResponse({ success: true, deleted: input.ids.length, ids: input.ids }, ctx.corsHeaders);
+  return jsonResponse(
+    { success: true, deleted: input.ids.length, ids: input.ids },
+    ctx.corsHeaders,
+  );
 }

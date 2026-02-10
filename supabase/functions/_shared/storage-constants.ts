@@ -100,7 +100,7 @@ export const MAX_FILE_SIZES = {
  */
 export function isValidFileType(
   contentType: string,
-  bucket: keyof typeof STORAGE_BUCKETS
+  bucket: keyof typeof STORAGE_BUCKETS,
 ): boolean {
   const allowedTypes = ALLOWED_MIME_TYPES[bucket];
   return allowedTypes.includes(contentType as any);
@@ -120,7 +120,7 @@ export function isValidFileSize(fileSize: number, bucket: keyof typeof STORAGE_B
 export function validateFile(
   contentType: string,
   fileSize: number,
-  bucket: keyof typeof STORAGE_BUCKETS
+  bucket: keyof typeof STORAGE_BUCKETS,
 ): { valid: boolean; error?: string } {
   if (!isValidFileType(contentType, bucket)) {
     const allowedTypes = ALLOWED_MIME_TYPES[bucket]

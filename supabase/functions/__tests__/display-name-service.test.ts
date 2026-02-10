@@ -11,14 +11,14 @@ import {
   assertRejects,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import {
-  DisplayNameService,
-  getDisplayNameService,
-  resetDisplayNameService,
-  extractDisplayName,
-  mapDatabaseProfile,
-  UserNotFoundError,
   BatchSizeExceededError,
+  DisplayNameService,
+  extractDisplayName,
+  getDisplayNameService,
   InvalidDisplayNameError,
+  mapDatabaseProfile,
+  resetDisplayNameService,
+  UserNotFoundError,
 } from "../_shared/display-name/index.ts";
 import { cache } from "../_shared/cache.ts";
 
@@ -62,7 +62,7 @@ function createMockSupabase(options: {
             single: () => {
               if (table === "profiles") {
                 const profile = profiles.find(
-                  (p) => p.id === value && !p.deleted_at
+                  (p) => p.id === value && !p.deleted_at,
                 );
                 if (!profile) {
                   return {
@@ -97,14 +97,12 @@ function createMockSupabase(options: {
           is: (_field2: string, _value2: unknown) => {
             if (table === "profiles") {
               const matchedProfiles = profiles.filter(
-                (p) => values.includes(p.id) && !p.deleted_at
+                (p) => values.includes(p.id) && !p.deleted_at,
               );
               return { data: matchedProfiles, error: null };
             }
             if (table === "display_name_overrides") {
-              const matchedOverrides = overrides.filter((o) =>
-                values.includes(o.user_id)
-              );
+              const matchedOverrides = overrides.filter((o) => values.includes(o.user_id));
               return { data: matchedOverrides, error: null };
             }
             return { data: [], error: null };
@@ -154,7 +152,7 @@ function createMockSupabase(options: {
         const userIds = params.p_user_ids as string[];
         const results = userIds.map((userId) => {
           const profile = profiles.find(
-            (p) => p.id === userId && !p.deleted_at
+            (p) => p.id === userId && !p.deleted_at,
           );
           const override = overrides.find((o) => o.user_id === userId);
           return {
@@ -308,7 +306,7 @@ Deno.test("DisplayNameService - getDisplayName throws for non-existent user", as
   await assertRejects(
     () => service.getDisplayName("non-existent"),
     UserNotFoundError,
-    "User not found"
+    "User not found",
   );
 });
 
@@ -400,7 +398,7 @@ Deno.test("DisplayNameService - getDisplayNameBatch throws for batch > 100", asy
   await assertRejects(
     () => service.getDisplayNameBatch(userIds),
     BatchSizeExceededError,
-    "Batch size 101 exceeds maximum of 100"
+    "Batch size 101 exceeds maximum of 100",
   );
 });
 
@@ -462,7 +460,7 @@ Deno.test("DisplayNameService - setAdminOverride creates override", async () => 
     "user-1",
     "New Display Name",
     "User requested name change",
-    "admin-1"
+    "admin-1",
   );
 
   assertEquals(override.userId, "user-1");
@@ -480,14 +478,13 @@ Deno.test("DisplayNameService - setAdminOverride validates name length", async (
   await assertRejects(
     () => service.setAdminOverride("user-1", "A", "Reason", "admin-1"),
     InvalidDisplayNameError,
-    "at least 2 characters"
+    "at least 2 characters",
   );
 
   await assertRejects(
-    () =>
-      service.setAdminOverride("user-1", "A".repeat(101), "Reason", "admin-1"),
+    () => service.setAdminOverride("user-1", "A".repeat(101), "Reason", "admin-1"),
     InvalidDisplayNameError,
-    "at most 100 characters"
+    "at most 100 characters",
   );
 });
 

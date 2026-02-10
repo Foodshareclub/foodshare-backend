@@ -2,7 +2,7 @@
  * Callback query handlers for inline button interactions
  */
 
-import { sendMessage, answerCallbackQuery } from "../services/telegram-api.ts";
+import { answerCallbackQuery, sendMessage } from "../services/telegram-api.ts";
 import { setUserState } from "../services/user-state.ts";
 import { getProfileByTelegramId, requiresEmailVerification } from "../services/profile.ts";
 import * as emoji from "../lib/emojis.ts";
@@ -11,14 +11,14 @@ import { getUserLanguage } from "../lib/i18n.ts";
 import { safeExecute } from "../utils/errors.ts";
 import type { TelegramCallbackQuery } from "../types/index.ts";
 import {
-  handleStartCommand,
-  handleShareCommand,
-  handleShareViaChat,
   handleFindCommand,
+  handleLeaderboardCommand,
   handleNearbyCommand,
   handleProfileCommand,
+  handleShareCommand,
+  handleShareViaChat,
+  handleStartCommand,
   handleStatsCommand,
-  handleLeaderboardCommand,
 } from "./commands.ts";
 import { requireAuth } from "./messages.ts";
 
@@ -56,7 +56,7 @@ export async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery):
         chatId,
         userId,
         callbackQuery.from,
-        callbackQuery.from?.language_code
+        callbackQuery.from?.language_code,
       );
       break;
 
@@ -103,7 +103,7 @@ export async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery):
         chatId,
         userId,
         callbackQuery.from,
-        callbackQuery.from?.language_code
+        callbackQuery.from?.language_code,
       );
       break;
 
@@ -117,7 +117,7 @@ async function handleLanguageSelection(
   chatId: number,
   userId: number,
   language: string,
-  telegramUser: { id: number; first_name: string; language_code?: string }
+  telegramUser: { id: number; first_name: string; language_code?: string },
 ): Promise<void> {
   const { saveUserLanguage } = await import("../lib/i18n.ts");
 
@@ -129,15 +129,15 @@ async function handleLanguageSelection(
     chatId,
     msg.successMessage(
       "Language Updated",
-      `${emoji.SUCCESS} Your language preference has been saved!`
-    )
+      `${emoji.SUCCESS} Your language preference has been saved!`,
+    ),
   );
 
   // Show main menu in new language
   setTimeout(() => {
     safeExecute(
       () => handleStartCommand(chatId, userId, telegramUser, language),
-      "post-language-selection-start"
+      "post-language-selection-start",
     );
   }, 1000);
 }
@@ -148,14 +148,14 @@ async function handleProfileLocationUpdate(chatId: number, userId: number): Prom
   if (!profile || requiresEmailVerification(profile)) {
     await sendMessage(
       chatId,
-      msg.infoMessage("Verification Required", "Please verify your email to update your profile.")
+      msg.infoMessage("Verification Required", "Please verify your email to update your profile."),
     );
     return;
   }
 
   await sendMessage(
     chatId,
-    `${emoji.LOCATION} <b>Send your new location</b>\n\nUse the attachment menu to send your current location.`
+    `${emoji.LOCATION} <b>Send your new location</b>\n\nUse the attachment menu to send your current location.`,
   );
   await setUserState(userId, { action: "updating_profile_location", data: {} });
 }
@@ -166,14 +166,14 @@ async function handleProfileRadiusUpdate(chatId: number, userId: number): Promis
   if (!profile || requiresEmailVerification(profile)) {
     await sendMessage(
       chatId,
-      msg.infoMessage("Verification Required", "Please verify your email to update your profile.")
+      msg.infoMessage("Verification Required", "Please verify your email to update your profile."),
     );
     return;
   }
 
   await sendMessage(
     chatId,
-    `${emoji.COMPASS} <b>Enter search radius (km)</b>\n\nType a number between 1 and 805.`
+    `${emoji.COMPASS} <b>Enter search radius (km)</b>\n\nType a number between 1 and 805.`,
   );
   await setUserState(userId, { action: "setting_radius", data: {} });
 }
