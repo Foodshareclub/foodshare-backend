@@ -6963,7 +6963,7 @@ CREATE FUNCTION public.get_edge_function_url() RETURNS text
     LANGUAGE plpgsql IMMUTABLE
     AS $$
 BEGIN
-  RETURN 'https://***REMOVED***/functions/v1';
+  RETURN 'https://api.foodshare.club/functions/v1';
 END;
 $$;
 
@@ -15182,7 +15182,7 @@ BEGIN
     LIMIT 1;
 
     SELECT net.http_post(
-      url := format('https://***REMOVED***/functions/v1/resize-tinify-upload-image?mode=batch&bucket=%s&limit=3&concurrency=3', v_bucket),
+      url := format('https://api.foodshare.club/functions/v1/resize-tinify-upload-image?mode=batch&bucket=%s&limit=3&concurrency=3', v_bucket),
       headers := '{"Content-Type": "application/json"}'::jsonb,
       body := '{}'::jsonb,
       timeout_milliseconds := 120000
@@ -16912,7 +16912,7 @@ BEGIN
     
     -- If setting not available, use the project URL directly
     IF edge_function_url IS NULL OR edge_function_url = '/functions/v1/notify-forum-post' THEN
-      edge_function_url := 'https://***REMOVED***/functions/v1/notify-forum-post';
+      edge_function_url := 'https://api.foodshare.club/functions/v1/notify-forum-post';
     END IF;
     
     -- Build payload with the new record
@@ -17178,7 +17178,7 @@ BEGIN
   IF NEW.is_active = true THEN
     -- Use pg_net to make HTTP request to edge function
     SELECT INTO request_id net.http_post(
-      url := 'https://***REMOVED***/functions/v1/notify-new-post',
+      url := 'https://api.foodshare.club/functions/v1/notify-new-post',
       headers := '{"Content-Type": "application/json", "Authorization": "Bearer ***REMOVED***"}'::jsonb,
       body := jsonb_build_object(
         'record', jsonb_build_object(
@@ -17218,7 +17218,7 @@ DECLARE
 BEGIN
   -- Use pg_net to make HTTP request to edge function
   SELECT INTO request_id net.http_post(
-    url := 'https://***REMOVED***/functions/v1/notify-new-report',
+    url := 'https://api.foodshare.club/functions/v1/notify-new-report',
     headers := '{"Content-Type": "application/json", "Authorization": "Bearer ***REMOVED***"}'::jsonb,
     body := jsonb_build_object(
       'record', row_to_json(NEW)::jsonb,
@@ -17411,7 +17411,7 @@ DECLARE
 BEGIN
   -- Call the edge function with comprehensive profile data
   SELECT INTO request_id net.http_post(
-    url := 'https://***REMOVED***/functions/v1/notify-new-user',
+    url := 'https://api.foodshare.club/functions/v1/notify-new-user',
     headers := '{"Content-Type": "application/json", "Authorization": "Bearer ***REMOVED***"}'::jsonb,
     body := jsonb_build_object(
       'record', jsonb_build_object(
@@ -17789,7 +17789,7 @@ DECLARE
   v_url text;
   v_service_key text;
 BEGIN
-  v_url := 'https://***REMOVED***/functions/v1/email';
+  v_url := 'https://api.foodshare.club/functions/v1/email';
   
   SELECT decrypted_secret INTO v_service_key
   FROM vault.decrypted_secrets
@@ -23315,7 +23315,7 @@ BEGIN
   -- Make HTTP POST request to the Edge Function using pg_net
   -- Note: verify_jwt = false is set in config.toml, so no auth needed
   SELECT net.http_post(
-    url := 'https://***REMOVED***/functions/v1/send-digest-notifications',
+    url := 'https://api.foodshare.club/functions/v1/send-digest-notifications',
     body := jsonb_build_object(
       'frequency', p_frequency,
       'limit', 100
@@ -23361,7 +23361,7 @@ BEGIN
 
   -- Call the Edge Function with internal secret
   SELECT net.http_post(
-    url := 'https://***REMOVED***/functions/v1/api-v1-notifications/admin/providers/sync',
+    url := 'https://api.foodshare.club/functions/v1/api-v1-notifications/admin/providers/sync',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'Authorization', 'Bearer ' || v_internal_secret
@@ -23386,7 +23386,7 @@ DECLARE
   v_service_key text;
 BEGIN
   -- Get the Supabase URL and service role key from vault
-  v_url := 'https://***REMOVED***/functions/v1/email';
+  v_url := 'https://api.foodshare.club/functions/v1/email';
   
   SELECT decrypted_secret INTO v_service_key
   FROM vault.decrypted_secrets
@@ -23511,7 +23511,7 @@ BEGIN
   -- Call the Edge Function asynchronously via pg_net (fire-and-forget)
   -- No auth needed since verify_jwt = false in config.toml
   PERFORM net.http_post(
-    url := 'https://***REMOVED***/functions/v1/notify-new-post',
+    url := 'https://api.foodshare.club/functions/v1/notify-new-post',
     headers := jsonb_build_object(
       'Content-Type', 'application/json'
     ),
@@ -23936,7 +23936,7 @@ BEGIN
     
     -- Construct the full public URL
     -- Format: https://{project}.supabase.co/storage/v1/object/public/{bucket}/{path}
-    public_url := 'https://***REMOVED***/storage/v1/object/public/profiles/' || NEW.name;
+    public_url := 'https://api.foodshare.club/storage/v1/object/public/profiles/' || NEW.name;
     
     -- Update the profile's avatar_url with the full public URL
     UPDATE public.profiles
@@ -26185,7 +26185,7 @@ CREATE TABLE public.profiles (
     nickname text DEFAULT ''::text NOT NULL,
     first_name text DEFAULT ''::text NOT NULL,
     second_name text DEFAULT ''::text NOT NULL,
-    avatar_url text DEFAULT 'https://***REMOVED***/storage/v1/object/public/profiles/avatar.png'::text NOT NULL,
+    avatar_url text DEFAULT 'https://api.foodshare.club/storage/v1/object/public/profiles/avatar.png'::text NOT NULL,
     about_me text DEFAULT '-'::text NOT NULL,
     phone text DEFAULT ''::text NOT NULL,
     updated_at timestamp with time zone DEFAULT (now() AT TIME ZONE 'utc'::text) NOT NULL,
@@ -26844,7 +26844,7 @@ CREATE TABLE public.challenges (
     challenged_people numeric DEFAULT '0'::numeric NOT NULL,
     challenge_score numeric DEFAULT '0'::numeric NOT NULL,
     challenge_action text DEFAULT '''Uncategorized''::text'::text NOT NULL,
-    challenge_image text DEFAULT 'https://***REMOVED***/storage/v1/object/public/assets/challenge-pic.webp'::text NOT NULL,
+    challenge_image text DEFAULT 'https://api.foodshare.club/storage/v1/object/public/assets/challenge-pic.webp'::text NOT NULL,
     challenge_title text DEFAULT ''::text NOT NULL,
     challenge_views numeric DEFAULT '0'::numeric NOT NULL,
     challenge_description text DEFAULT ''::text NOT NULL,
@@ -43270,7 +43270,7 @@ SELECT cron.schedule('cleanup-translation-job-history', '0 5 * * *', 'DELETE FRO
 SELECT cron.schedule('compress-large-images', '* * * * *', 'SELECT invoke_image_compression();');
 SELECT cron.schedule('domain-monitor-check', '0 */6 * * *', '
   SELECT net.http_post(
-    url := ''https://***REMOVED***/functions/v1/domain-monitor?notify=true'',
+    url := ''https://api.foodshare.club/functions/v1/domain-monitor?notify=true'',
     headers := ''{"Content-Type": "application/json"}''::jsonb,
     body := ''{}''::jsonb
   ) AS request_id;

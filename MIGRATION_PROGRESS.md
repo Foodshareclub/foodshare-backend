@@ -46,7 +46,7 @@
 ### Task 4: Export Data from Supabase Cloud ✅
 **Status**: Complete  
 **What was done**:
-- Linked to cloud project: ***REMOVED***
+- Linked to cloud project: api.foodshare.club (migrated from ***REMOVED***)
 - Exported full schema: 41,474 lines (~1.5MB)
 - Exported all data: 450,051 lines
 - **Cloud instance remains fully operational** ✅

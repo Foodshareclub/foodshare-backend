@@ -137,7 +137,7 @@ Two env files (both gitignored, see `.env.example` and `.env.functions.example` 
 
 ```bash
 # SSH into VPS
-ssh -i ~/.ssh/id_rsa_gitlab organic@152.53.136.84
+autossh -M 0 -o ServerAliveInterval=6000 -o ServerAliveCountMax=6000 -o ConnectTimeout=10 -o ConnectionAttempts=6000 -i ~/.ssh/id_rsa_gitlab organic@vps.foodshare.club
 
 # Update code
 cd /home/organic/dev/foodshare-backend
