@@ -22,7 +22,6 @@ jobs:
           host: 152.53.136.84
           username: organic
           key: ${{ secrets.VPS_SSH_KEY }}
-          script_stop: true
           script: |
             set -e
             cd /home/organic/dev/foodshare-backend
