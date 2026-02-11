@@ -17,6 +17,7 @@
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, created, type HandlerContext, ok } from "../_shared/api-handler.ts";
+import { createHealthHandler } from "../_shared/health-handler.ts";
 import { getSupabaseClient } from "../_shared/supabase.ts";
 import { AppError, ForbiddenError, ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
@@ -28,6 +29,9 @@ import { getWebhookHealthData, getWebhookMetricsData, handleWebhook } from "./we
 // =============================================================================
 
 const VERSION = "1.0.0";
+const healthCheck = createHealthHandler("api-v1-subscription", VERSION, {
+  extra: () => getWebhookHealthData(new Request("http://localhost")),
+});
 
 // =============================================================================
 // Schemas
@@ -399,8 +403,7 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
 
   // GET /health
   if (path.endsWith("/health")) {
-    const webhookHealth = getWebhookHealthData(ctx.request);
-    return ok({ status: "ok", version: VERSION, ...webhookHealth }, ctx);
+    return healthCheck(ctx);
   }
 
   // GET /webhook/metrics — webhook metrics (service auth)

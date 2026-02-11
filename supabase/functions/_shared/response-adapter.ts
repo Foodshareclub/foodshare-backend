@@ -1,11 +1,10 @@
 /**
  * Response Adapter
  *
- * Provides bidirectional conversion between response formats:
- * - Legacy format (errors.ts): { success, data, requestId, timestamp, durationMs }
- * - Unified format (response.ts): { success, data, meta: { requestId, timestamp, responseTime }, pagination, uiHints }
+ * Unified response format for all Edge Functions:
+ * { success, data, meta: { requestId, timestamp, responseTime }, pagination, uiHints }
  *
- * Enables gradual migration with feature flag support and backward compatibility.
+ * Platform-aware optimizations for iOS, Android, and Web clients.
  *
  * @module response-adapter
  */
@@ -15,7 +14,7 @@ import { logger } from "./logger.ts";
 import type { AppError } from "./errors.ts";
 
 // =============================================================================
-// Types (previously in response.ts)
+// Types
 // =============================================================================
 
 export interface APIError {
@@ -61,228 +60,11 @@ export interface APIResponse<T = unknown> {
 }
 
 // =============================================================================
-// Feature Flag
+// Response Builders
 // =============================================================================
 
 /**
- * Check if unified response format is enabled
- * Controlled by USE_UNIFIED_RESPONSE environment variable
- */
-export function isUnifiedResponseEnabled(): boolean {
-  return Deno.env.get("USE_UNIFIED_RESPONSE") === "true";
-}
-
-// =============================================================================
-// Types
-// =============================================================================
-
-/** Legacy response format from errors.ts */
-export interface LegacySuccessResponse<T = unknown> {
-  success: true;
-  data: T;
-  requestId?: string;
-  correlationId?: string;
-  timestamp: string;
-  durationMs?: number;
-}
-
-/** Legacy error response format from errors.ts */
-export interface LegacyErrorResponse {
-  success: false;
-  error: {
-    code: string;
-    message: string;
-    details?: unknown;
-    retryable?: boolean;
-    retryAfterMs?: number;
-  };
-  requestId?: string;
-  correlationId?: string;
-  timestamp: string;
-  durationMs?: number;
-}
-
-/** Combined legacy response type */
-export type LegacyResponse<T = unknown> = LegacySuccessResponse<T> | LegacyErrorResponse;
-
-/** Unified response format from response.ts (target format) */
-export type UnifiedResponse<T = unknown> = APIResponse<T>;
-
-/** Adapter response that includes both formats for transition period */
-export interface TransitionalResponse<T = unknown> {
-  // Unified format fields
-  success: boolean;
-  data?: T;
-  error?: APIError;
-  meta: ResponseMeta;
-  pagination?: Pagination;
-  uiHints?: UIHints;
-
-  // Legacy format fields (for backward compatibility during transition)
-  requestId?: string; // Duplicate of meta.requestId
-  timestamp?: string; // Duplicate of meta.timestamp
-  durationMs?: number; // Duplicate of meta.responseTime
-  correlationId?: string; // Legacy field
-}
-
-// =============================================================================
-// Conversion Functions
-// =============================================================================
-
-/**
- * Convert legacy success response to unified format
- */
-export function legacyToUnified<T>(legacy: LegacySuccessResponse<T>): UnifiedResponse<T> {
-  return {
-    success: true,
-    data: legacy.data,
-    meta: {
-      requestId: legacy.requestId || crypto.randomUUID(),
-      timestamp: legacy.timestamp,
-      responseTime: legacy.durationMs || 0,
-    },
-  };
-}
-
-/**
- * Convert legacy error response to unified format
- */
-export function legacyErrorToUnified(legacy: LegacyErrorResponse): UnifiedResponse<never> {
-  return {
-    success: false,
-    error: {
-      code: legacy.error.code,
-      message: legacy.error.message,
-      details: legacy.error.details,
-    },
-    meta: {
-      requestId: legacy.requestId || crypto.randomUUID(),
-      timestamp: legacy.timestamp,
-      responseTime: legacy.durationMs || 0,
-    },
-  };
-}
-
-/**
- * Convert unified response to legacy format (for legacy clients)
- */
-export function unifiedToLegacy<T>(unified: UnifiedResponse<T>): LegacyResponse<T> {
-  if (unified.success && unified.data !== undefined) {
-    return {
-      success: true,
-      data: unified.data,
-      requestId: unified.meta.requestId,
-      timestamp: unified.meta.timestamp,
-      durationMs: unified.meta.responseTime,
-    };
-  }
-
-  return {
-    success: false,
-    error: unified.error || { code: "UNKNOWN_ERROR", message: "Unknown error" },
-    requestId: unified.meta.requestId,
-    timestamp: unified.meta.timestamp,
-    durationMs: unified.meta.responseTime,
-  };
-}
-
-/**
- * Create a transitional response with both formats
- * This allows legacy clients to continue working while new clients use unified format
- */
-export function createTransitionalResponse<T>(
-  data: T,
-  options?: {
-    pagination?: Pagination;
-    uiHints?: UIHints;
-    cacheTTL?: number;
-    version?: string;
-    correlationId?: string;
-  },
-): TransitionalResponse<T> {
-  const ctx = getContext();
-  const now = new Date().toISOString();
-  const elapsed = ctx ? getElapsedMs() : 0;
-  const requestId = ctx?.requestId || crypto.randomUUID();
-
-  return {
-    // Unified format (primary)
-    success: true,
-    data,
-    meta: {
-      requestId,
-      timestamp: now,
-      responseTime: elapsed,
-      cacheTTL: options?.cacheTTL,
-      version: options?.version,
-    },
-    pagination: options?.pagination,
-    uiHints: options?.uiHints,
-
-    // Legacy format (backward compatibility)
-    requestId,
-    timestamp: now,
-    durationMs: elapsed,
-    correlationId: options?.correlationId || ctx?.correlationId,
-  };
-}
-
-/**
- * Create a transitional error response with both formats
- */
-export function createTransitionalErrorResponse(
-  error: AppError | Error | { code: string; message: string; details?: unknown },
-  options?: {
-    version?: string;
-    correlationId?: string;
-    retryable?: boolean;
-    retryAfterMs?: number;
-  },
-): TransitionalResponse<never> {
-  const ctx = getContext();
-  const now = new Date().toISOString();
-  const elapsed = ctx ? getElapsedMs() : 0;
-  const requestId = ctx?.requestId || crypto.randomUUID();
-
-  let errorBody: APIError;
-  if ("code" in error && typeof error.code === "string") {
-    errorBody = {
-      code: error.code,
-      message: error.message,
-      details: "details" in error ? error.details : undefined,
-    };
-  } else {
-    errorBody = {
-      code: "INTERNAL_ERROR",
-      message: error.message,
-    };
-  }
-
-  return {
-    // Unified format (primary)
-    success: false,
-    error: errorBody,
-    meta: {
-      requestId,
-      timestamp: now,
-      responseTime: elapsed,
-      version: options?.version,
-    },
-
-    // Legacy format (backward compatibility)
-    requestId,
-    timestamp: now,
-    durationMs: elapsed,
-    correlationId: options?.correlationId || ctx?.correlationId,
-  };
-}
-
-// =============================================================================
-// Response Builders (Unified API)
-// =============================================================================
-
-/**
- * Build a unified success response with optional transitional fields
+ * Build a unified success response
  */
 export function buildSuccessResponse<T>(
   data: T,
@@ -293,34 +75,23 @@ export function buildSuccessResponse<T>(
     uiHints?: UIHints;
     cacheTTL?: number;
     version?: string;
-    includeTransitional?: boolean;
   },
 ): Response {
   const ctx = getContext();
-  const useUnified = isUnifiedResponseEnabled();
-  const includeTransitional = options?.includeTransitional ?? true; // Default to transitional during migration
 
-  let response: UnifiedResponse<T> | TransitionalResponse<T>;
-
-  if (useUnified && !includeTransitional) {
-    // Pure unified format
-    response = {
-      success: true,
-      data,
-      meta: {
-        requestId: ctx?.requestId || crypto.randomUUID(),
-        timestamp: new Date().toISOString(),
-        responseTime: ctx ? getElapsedMs() : 0,
-        cacheTTL: options?.cacheTTL,
-        version: options?.version,
-      },
-      pagination: options?.pagination,
-      uiHints: options?.uiHints,
-    };
-  } else {
-    // Transitional format (includes both)
-    response = createTransitionalResponse(data, options);
-  }
+  const response: APIResponse<T> = {
+    success: true,
+    data,
+    meta: {
+      requestId: ctx?.requestId || crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      responseTime: ctx ? getElapsedMs() : 0,
+      cacheTTL: options?.cacheTTL,
+      version: options?.version,
+    },
+    pagination: options?.pagination,
+    uiHints: options?.uiHints,
+  };
 
   const headers: Record<string, string> = {
     ...corsHeaders,
@@ -340,7 +111,6 @@ export function buildSuccessResponse<T>(
   }
 
   logger.debug("Building success response", {
-    format: useUnified ? "unified" : "transitional",
     hasData: !!data,
     hasPagination: !!options?.pagination,
     hasUIHints: !!options?.uiHints,
@@ -353,7 +123,11 @@ export function buildSuccessResponse<T>(
 }
 
 /**
- * Build a unified error response with optional transitional fields
+ * Build a unified error response
+ *
+ * In production, strips `details` from non-validation errors to prevent
+ * internal field name leakage. Keeps `details` for VALIDATION_ERROR since
+ * clients need field-level error info.
  */
 export function buildErrorResponse(
   error: AppError | Error | { code: string; message: string; details?: unknown },
@@ -361,13 +135,11 @@ export function buildErrorResponse(
   options?: {
     status?: number;
     version?: string;
-    includeTransitional?: boolean;
     retryAfterMs?: number;
   },
 ): Response {
   const ctx = getContext();
-  const useUnified = isUnifiedResponseEnabled();
-  const includeTransitional = options?.includeTransitional ?? true;
+  const isProduction = Deno.env.get("ENVIRONMENT") === "production";
 
   // Determine status code
   let statusCode = options?.status || 500;
@@ -375,41 +147,37 @@ export function buildErrorResponse(
     statusCode = error.statusCode;
   }
 
-  let response: UnifiedResponse<never> | TransitionalResponse<never>;
+  // Build error body
+  let errorBody: APIError;
+  if ("code" in error && typeof error.code === "string") {
+    const rawDetails = "details" in error ? error.details : undefined;
+    // In production, only expose details for validation errors
+    const details = isProduction && error.code !== "VALIDATION_ERROR"
+      ? undefined
+      : rawDetails;
 
-  if (useUnified && !includeTransitional) {
-    // Pure unified format
-    let errorBody: APIError;
-    if ("code" in error && typeof error.code === "string") {
-      errorBody = {
-        code: error.code,
-        message: error.message,
-        details: "details" in error ? error.details : undefined,
-      };
-    } else {
-      errorBody = {
-        code: "INTERNAL_ERROR",
-        message: error.message,
-      };
-    }
-
-    response = {
-      success: false,
-      error: errorBody,
-      meta: {
-        requestId: ctx?.requestId || crypto.randomUUID(),
-        timestamp: new Date().toISOString(),
-        responseTime: ctx ? getElapsedMs() : 0,
-        version: options?.version,
-      },
+    errorBody = {
+      code: error.code,
+      message: error.message,
+      details,
     };
   } else {
-    // Transitional format
-    response = createTransitionalErrorResponse(error, {
-      version: options?.version,
-      retryAfterMs: options?.retryAfterMs,
-    });
+    errorBody = {
+      code: "INTERNAL_ERROR",
+      message: isProduction ? "Internal server error" : error.message,
+    };
   }
+
+  const response: APIResponse<never> = {
+    success: false,
+    error: errorBody,
+    meta: {
+      requestId: ctx?.requestId || crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      responseTime: ctx ? getElapsedMs() : 0,
+      version: options?.version,
+    },
+  };
 
   const headers: Record<string, string> = {
     ...corsHeaders,
@@ -437,63 +205,6 @@ export function buildErrorResponse(
 }
 
 // =============================================================================
-// Client Detection
-// =============================================================================
-
-/**
- * Detect client type from request headers
- * Used to determine which response format to use
- */
-export function detectClientType(request: Request): "legacy" | "unified" | "unknown" {
-  const accept = request.headers.get("accept") || "";
-  const clientVersion = request.headers.get("x-client-version") || "";
-
-  // Check for explicit unified format request
-  if (accept.includes("vnd.foodshare.v2")) {
-    return "unified";
-  }
-
-  // Check for legacy format request
-  if (accept.includes("vnd.foodshare.v1")) {
-    return "legacy";
-  }
-
-  // Check client version header (newer clients use unified)
-  if (clientVersion) {
-    const version = parseFloat(clientVersion);
-    if (!isNaN(version) && version >= 2.0) {
-      return "unified";
-    }
-    if (!isNaN(version) && version < 2.0) {
-      return "legacy";
-    }
-  }
-
-  return "unknown";
-}
-
-/**
- * Get the appropriate response format for a client
- * Returns true if transitional format should be used (includes both)
- */
-export function shouldUseTransitionalFormat(request: Request): boolean {
-  const clientType = detectClientType(request);
-
-  // Unknown clients get transitional format during migration
-  if (clientType === "unknown") {
-    return true;
-  }
-
-  // Legacy clients explicitly requesting v1 get transitional (includes their format)
-  if (clientType === "legacy") {
-    return true;
-  }
-
-  // Unified clients can get pure unified format
-  return false;
-}
-
-// =============================================================================
 // Platform-Specific Response Optimization
 // =============================================================================
 
@@ -507,19 +218,16 @@ export const PLATFORM_UI_HINTS: Record<Platform, Partial<UIHints>> = {
     refreshAfter: 300, // 5 minutes - ProMotion-aware
     displayMode: "list",
     pullToRefresh: true,
-    // iOS-specific: hint for ProMotion displays
   },
   android: {
     refreshAfter: 300,
     displayMode: "list",
     pullToRefresh: true,
-    // Android-specific: Material Design preferences
   },
   web: {
     refreshAfter: 600, // 10 minutes - longer for web
     displayMode: "grid",
-    pullToRefresh: false, // No pull-to-refresh on web
-    // Web-specific: page-based pagination preferred
+    pullToRefresh: false,
   },
   unknown: {
     refreshAfter: 300,
@@ -595,11 +303,6 @@ export interface PlatformOptimizationOptions {
 
 /**
  * Apply platform-specific optimizations to response data
- *
- * @param data Original response data
- * @param platform Target platform
- * @param options Optimization options
- * @returns Optimized response data
  */
 export function applyPlatformOptimizations<T extends Record<string, unknown>>(
   data: T,
@@ -610,7 +313,6 @@ export function applyPlatformOptimizations<T extends Record<string, unknown>>(
 
   switch (platform) {
     case "ios": {
-      // iOS optimizations
       if (options?.proMotionHints) {
         result._platformHints = {
           ...result._platformHints,
@@ -626,9 +328,7 @@ export function applyPlatformOptimizations<T extends Record<string, unknown>>(
     }
 
     case "android": {
-      // Android optimizations - minimize payload for bandwidth
       if (options?.minimizePayload) {
-        // Remove null/undefined values to reduce payload size
         for (const key of Object.keys(result)) {
           if (result[key] === null || result[key] === undefined) {
             delete result[key];
@@ -637,14 +337,13 @@ export function applyPlatformOptimizations<T extends Record<string, unknown>>(
         result._platformHints = {
           ...result._platformHints,
           materialDesign: true,
-          useDataMessages: true, // Prefer FCM data messages
+          useDataMessages: true,
         };
       }
       break;
     }
 
     case "web": {
-      // Web optimizations - SEO and full URLs
       if (options?.includeCanonicalUrls && options?.baseUrl) {
         result._platformHints = {
           ...result._platformHints,
@@ -652,7 +351,6 @@ export function applyPlatformOptimizations<T extends Record<string, unknown>>(
           baseUrl: options.baseUrl,
         };
 
-        // Add canonical URL if data has an ID
         if ("id" in data && typeof data.id === "string") {
           (result as Record<string, unknown>).canonicalUrl = `${options.baseUrl}/${data.id}`;
         }
@@ -676,7 +374,6 @@ export function buildPlatformOptimizedResponse<T>(
     pagination?: Pagination;
     cacheTTL?: number;
     version?: string;
-    includeTransitional?: boolean;
     platformOptions?: PlatformOptimizationOptions;
   },
 ): Response {
@@ -708,7 +405,6 @@ export function buildPlatformOptimizedResponse<T>(
     uiHints: platformUIHints,
     cacheTTL: options?.cacheTTL,
     version: options?.version,
-    includeTransitional: options?.includeTransitional,
   });
 }
 

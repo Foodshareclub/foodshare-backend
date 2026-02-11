@@ -23,6 +23,7 @@
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
+import { createHealthHandler } from "../_shared/health-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { ServerError, ValidationError } from "../_shared/errors.ts";
 
@@ -31,6 +32,7 @@ import { ServerError, ValidationError } from "../_shared/errors.ts";
 // =============================================================================
 
 const VERSION = "2.0.0";
+const healthCheck = createHealthHandler("api-v1-sync", VERSION);
 const ALLOWED_TABLES = ["posts", "notifications", "rooms", "profiles", "messages"] as const;
 
 // =============================================================================
@@ -349,12 +351,7 @@ async function handleGetSync(ctx: HandlerContext): Promise<Response> {
 
   // Health check
   if (subPath === "health" || subPath === "health/") {
-    return ok({
-      status: "healthy",
-      service: "api-v1-sync",
-      version: VERSION,
-      timestamp: new Date().toISOString(),
-    }, ctx);
+    return healthCheck(ctx);
   }
 
   // GET /sync/status
@@ -374,6 +371,7 @@ Deno.serve(createAPIHandler({
   service: "api-v1-sync",
   version: "2.0.0",
   requireAuth: true,
+  csrf: true,
   rateLimit: {
     limit: 30,
     windowMs: 60000, // 30 sync requests per minute

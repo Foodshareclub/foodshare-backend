@@ -19,6 +19,7 @@
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
+import { createHealthHandler } from "../_shared/health-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { AuthenticationError, NotFoundError, ServerError } from "../_shared/errors.ts";
 import { cache, CACHE_KEYS, CACHE_TTLS } from "../_shared/cache.ts";
@@ -28,6 +29,7 @@ import { cache, CACHE_KEYS, CACHE_TTLS } from "../_shared/cache.ts";
 // =============================================================================
 
 const VERSION = "1.0.0";
+const healthCheck = createHealthHandler("api-v1-feature-flags", VERSION);
 
 // =============================================================================
 // Query Schemas
@@ -265,7 +267,7 @@ async function handleGet(ctx: HandlerContext<unknown, FlagsQuery>): Promise<Resp
 
   // GET /health
   if (subPath === "health" || subPath === "health/") {
-    return ok({ status: "ok", version: VERSION }, ctx);
+    return healthCheck(ctx);
   }
 
   // GET /compatibility

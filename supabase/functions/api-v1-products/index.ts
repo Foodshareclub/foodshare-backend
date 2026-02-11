@@ -30,6 +30,7 @@ import {
   ok,
   paginated,
 } from "../_shared/api-handler.ts";
+import { createHealthHandler } from "../_shared/health-handler.ts";
 import { ConflictError, NotFoundError, ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
 import { cache } from "../_shared/cache.ts";
@@ -46,6 +47,7 @@ import { aggregateCounts } from "../_shared/aggregation.ts";
 import { transformCategory, transformProfileSummary } from "../_shared/transformers.ts";
 
 const VERSION = "2.0.0";
+const healthCheck = createHealthHandler("api-v1-products", VERSION);
 
 // =============================================================================
 // Schemas
@@ -599,12 +601,7 @@ async function handleGet(ctx: HandlerContext<unknown, ListQuery>): Promise<Respo
   // Health check
   const url = new URL(ctx.request.url);
   if (url.pathname.endsWith("/health")) {
-    return ok({
-      status: "healthy",
-      service: "api-v1-products",
-      version: VERSION,
-      timestamp: new Date().toISOString(),
-    }, ctx);
+    return healthCheck(ctx);
   }
 
   if (ctx.query.mode === "feed") {
@@ -626,6 +623,7 @@ Deno.serve(createAPIHandler({
   service: "api-v1-products",
   version: "2.0.0",
   requireAuth: false, // Allow public listing, auth checked per-route
+  csrf: true,
   rateLimit: {
     limit: 100,
     windowMs: 60000, // 100 requests per minute

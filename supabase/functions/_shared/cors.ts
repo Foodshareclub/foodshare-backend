@@ -8,13 +8,12 @@
  * - Consistent headers across all functions
  *
  * Primary exports:
- * - `getCorsHeaders(request, additionalOrigins?)` — origin-validated CORS for web + mobile
- * - `handleCorsPreflight(request, additionalOrigins?)` — OPTIONS handler
+ * - `getCorsHeaders(request, additionalOrigins?)` -- origin-validated CORS for web + mobile
+ * - `handleCorsPreflight(request, additionalOrigins?)` -- OPTIONS handler
  *
  * Utility exports:
- * - `isMobileOrigin(request)` — check if request is from mobile app
- * - `isOriginAllowed(request)` — validate origin against allowlist
- * - `getPermissiveCorsHeaders()` — wildcard CORS for server-to-server endpoints
+ * - `isMobileOrigin(request)` -- check if request is from mobile app
+ * - `isOriginAllowed(request)` -- validate origin against allowlist
  */
 
 /**
@@ -38,17 +37,9 @@ export const MOBILE_ORIGINS = [
   "capacitor://localhost", // Capacitor iOS/Android
   "ionic://localhost", // Ionic apps
   "http://localhost", // iOS WKWebView
-  "file://", // Android WebView
+  "file://", // Android WebView (exact match)
   "app://localhost", // Custom app scheme
 ];
-
-/**
- * @deprecated Use `getCorsHeaders(request)` instead
- */
-export const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
 // =============================================================================
 // Primary API
@@ -81,24 +72,12 @@ export function getCorsHeaders(
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       "Access-Control-Max-Age": "3600",
       "Access-Control-Expose-Headers":
-        "x-request-id, x-correlation-id, x-response-time, retry-after",
+        "x-request-id, x-correlation-id, x-response-time, retry-after, x-ratelimit-limit, x-ratelimit-remaining, x-ratelimit-reset",
     };
   }
 
-  // SECURITY: Use exact hostname matching for mobile schemes to prevent bypasses
-  // like capacitor://localhost.attacker.com
-  let allowedOrigin = allAllowed.find((allowed) => {
-    if (allowed.endsWith("//")) {
-      return origin.startsWith(allowed);
-    }
-    if (
-      allowed.startsWith("capacitor://") || allowed.startsWith("ionic://") ||
-      allowed.startsWith("app://")
-    ) {
-      return origin === allowed;
-    }
-    return origin === allowed;
-  });
+  // SECURITY: Use exact matching for all origins to prevent bypasses
+  let allowedOrigin = allAllowed.find((allowed) => origin === allowed);
 
   if (!allowedOrigin) {
     allowedOrigin = DEFAULT_ALLOWED_ORIGINS[0];
@@ -111,7 +90,8 @@ export function getCorsHeaders(
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
     "Access-Control-Allow-Credentials": "true",
     "Access-Control-Max-Age": "3600",
-    "Access-Control-Expose-Headers": "x-request-id, x-correlation-id, x-response-time, retry-after",
+    "Access-Control-Expose-Headers":
+      "x-request-id, x-correlation-id, x-response-time, retry-after, x-ratelimit-limit, x-ratelimit-remaining, x-ratelimit-reset",
   };
 }
 
@@ -133,22 +113,8 @@ export function handleCorsPreflight(
 // =============================================================================
 
 /**
- * Get permissive CORS headers (allows all origins).
- * Use only for server-to-server endpoints (webhooks, cron triggers, health checks).
- * @deprecated Prefer `getCorsHeaders(request)` for client-facing endpoints
- */
-export function getPermissiveCorsHeaders(): Record<string, string> {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Max-Age": "3600",
-  };
-}
-
-/**
  * Check if the request origin is from a mobile app
- * SECURITY: Uses exact matching for mobile schemes to prevent hostname manipulation
+ * SECURITY: Uses exact matching for all mobile schemes to prevent hostname manipulation
  */
 export function isMobileOrigin(request: Request): boolean {
   const origin = request.headers.get("origin");
@@ -157,12 +123,7 @@ export function isMobileOrigin(request: Request): boolean {
     return true;
   }
 
-  return MOBILE_ORIGINS.some((mobileOrigin) => {
-    if (mobileOrigin.endsWith("//")) {
-      return origin.startsWith(mobileOrigin);
-    }
-    return origin === mobileOrigin;
-  });
+  return MOBILE_ORIGINS.some((mobileOrigin) => origin === mobileOrigin);
 }
 
 /**
@@ -185,34 +146,8 @@ export function isOriginAllowed(
   }
 
   if (allowMobile) {
-    return MOBILE_ORIGINS.some((mobileOrigin) => {
-      if (mobileOrigin.endsWith("//")) {
-        return origin.startsWith(mobileOrigin);
-      }
-      return origin === mobileOrigin;
-    });
+    return MOBILE_ORIGINS.some((mobileOrigin) => origin === mobileOrigin);
   }
 
   return false;
-}
-
-// =============================================================================
-// Deprecated Aliases (kept for backward compatibility)
-// =============================================================================
-
-/**
- * @deprecated Use `getCorsHeaders(request, additionalOrigins)` — now the primary export
- */
-export const getCorsHeadersWithMobile = getCorsHeaders;
-
-/**
- * @deprecated Use `handleCorsPreflight(request, additionalOrigins)`
- */
-export const handleMobileCorsPrelight = handleCorsPreflight;
-
-/**
- * @deprecated Use `handleCorsPreflight(request)`
- */
-export function handleCorsPrelight(request: Request, allowedOrigins?: string[]): Response {
-  return handleCorsPreflight(request, allowedOrigins);
 }

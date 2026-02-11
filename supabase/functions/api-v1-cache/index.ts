@@ -25,6 +25,7 @@ Deno.serve(createAPIHandler({
   service: "api-v1-cache",
   version: CONFIG.version,
   requireAuth: false,
+  csrf: true,
   routes: {
     GET: {
       handler: handleGetRequest,

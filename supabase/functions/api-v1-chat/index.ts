@@ -29,6 +29,7 @@
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
+import { createHealthHandler } from "../_shared/health-handler.ts";
 
 // Generic chat handlers
 import {
@@ -57,6 +58,7 @@ import {
 } from "./lib/food-chat.ts";
 
 const VERSION = "2.0.0";
+const healthCheck = createHealthHandler("api-v1-chat", VERSION);
 
 // =============================================================================
 // Shared Query Schema
@@ -73,6 +75,12 @@ const listQuerySchema = z.object({
 
 type ListQuery = z.infer<typeof listQuerySchema>;
 
+/** Union of all POST body types for the chat endpoint */
+type PostBody = CreateRoomBody | SendMessageBody | FoodCreateRoomBody | FoodSendMessageBody;
+
+/** Union of all PUT body types for the chat endpoint */
+type PutBody = UpdateRoomBody | FoodUpdateRoomBody;
+
 // =============================================================================
 // Route Handlers
 // =============================================================================
@@ -81,12 +89,7 @@ function handleGet(ctx: HandlerContext<unknown, ListQuery>): Promise<Response> {
   // Health check
   const url = new URL(ctx.request.url);
   if (url.pathname.endsWith("/health")) {
-    return ok({
-      status: "healthy",
-      service: "api-v1-chat",
-      version: VERSION,
-      timestamp: new Date().toISOString(),
-    }, ctx);
+    return healthCheck(ctx);
   }
 
   if (ctx.query.mode === "food") {
@@ -98,8 +101,7 @@ function handleGet(ctx: HandlerContext<unknown, ListQuery>): Promise<Response> {
   return listRooms(ctx);
 }
 
-// deno-lint-ignore no-explicit-any
-function handlePost(ctx: HandlerContext<any, ListQuery>): Promise<Response> {
+function handlePost(ctx: HandlerContext<PostBody, ListQuery>): Promise<Response> {
   if (ctx.query.mode === "food") {
     if (ctx.query.action === "message") {
       return foodSendMessage(ctx as HandlerContext<FoodSendMessageBody, ListQuery>);
@@ -112,8 +114,7 @@ function handlePost(ctx: HandlerContext<any, ListQuery>): Promise<Response> {
   return createRoom(ctx as HandlerContext<CreateRoomBody, ListQuery>);
 }
 
-// deno-lint-ignore no-explicit-any
-function handlePut(ctx: HandlerContext<any, ListQuery>): Promise<Response> {
+function handlePut(ctx: HandlerContext<PutBody, ListQuery>): Promise<Response> {
   if (ctx.query.mode === "food") {
     return foodUpdateRoom(ctx as HandlerContext<FoodUpdateRoomBody, ListQuery>);
   }
@@ -135,6 +136,7 @@ Deno.serve(createAPIHandler({
   service: "api-v1-chat",
   version: "2.0.0",
   requireAuth: true,
+  csrf: true,
   rateLimit: {
     limit: 60,
     windowMs: 60000,

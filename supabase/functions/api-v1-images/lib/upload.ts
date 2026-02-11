@@ -163,8 +163,14 @@ export async function handleBatchUpload(ctx: HandlerContext): Promise<Response> 
     }
   }
 
+  const MAX_BATCH_SIZE = 20;
+
   if (files.length === 0) {
     throw new ValidationError("No files provided");
+  }
+
+  if (files.length > MAX_BATCH_SIZE) {
+    throw new ValidationError(`Too many files. Maximum ${MAX_BATCH_SIZE} files per batch upload`);
   }
 
   const results: ImageUploadResponse[] = [];

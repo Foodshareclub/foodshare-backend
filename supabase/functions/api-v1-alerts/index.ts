@@ -26,6 +26,7 @@
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
+import { createHealthHandler } from "../_shared/health-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { ServerError, ValidationError } from "../_shared/errors.ts";
 import { CircuitBreakerError, withCircuitBreaker } from "../_shared/circuit-breaker.ts";
@@ -45,6 +46,8 @@ const CONFIG = {
     vaultFailuresPerHour: 5,
   },
 };
+
+const healthCheck = createHealthHandler("api-v1-alerts", CONFIG.version);
 
 // =============================================================================
 // Types
@@ -644,9 +647,7 @@ function handleGet(ctx: HandlerContext): Promise<Response> {
   const path = url.pathname;
 
   if (path.endsWith("/health")) {
-    return Promise.resolve(
-      ok({ status: "healthy", version: CONFIG.version, timestamp: new Date().toISOString() }, ctx),
-    );
+    return healthCheck(ctx);
   }
 
   // GET / — run alert checks (cron compat)

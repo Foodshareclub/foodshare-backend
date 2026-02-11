@@ -40,6 +40,7 @@
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
+import { createHealthHandler } from "../_shared/health-handler.ts";
 import { ValidationError } from "../_shared/errors.ts";
 
 // Thread handlers
@@ -79,6 +80,7 @@ import {
 } from "./lib/reactions.ts";
 
 const VERSION = "1.0.0";
+const healthCheck = createHealthHandler("api-v1-forum", VERSION);
 
 // =============================================================================
 // Query Schema
@@ -132,12 +134,7 @@ async function handleGet(ctx: HandlerContext<unknown, ForumQuery>): Promise<Resp
   // Health check
   const url = new URL(ctx.request.url);
   if (url.pathname.endsWith("/health")) {
-    return ok({
-      status: "healthy",
-      service: "api-v1-forum",
-      version: VERSION,
-      timestamp: new Date().toISOString(),
-    }, ctx);
+    return healthCheck(ctx);
   }
 
   const { query } = ctx;
@@ -247,6 +244,7 @@ Deno.serve(createAPIHandler({
   service: "api-v1-forum",
   version: VERSION,
   requireAuth: false, // GET is public, mutations require auth
+  csrf: true,
   rateLimit: {
     limit: 120,
     windowMs: 60000,

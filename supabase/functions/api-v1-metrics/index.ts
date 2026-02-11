@@ -25,10 +25,12 @@
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
+import { createHealthHandler } from "../_shared/health-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { ForbiddenError, ServerError } from "../_shared/errors.ts";
 
 const VERSION = "2.0.0";
+const healthCheck = createHealthHandler("api-v1-metrics", VERSION);
 
 // =============================================================================
 // Types
@@ -270,12 +272,7 @@ async function handleGetMetrics(ctx: HandlerContext<unknown, MetricsQuery>): Pro
   // Health check
   const url = new URL(ctx.request.url);
   if (url.pathname.endsWith("/health")) {
-    return ok({
-      status: "healthy",
-      service: "api-v1-metrics",
-      version: VERSION,
-      timestamp: new Date().toISOString(),
-    }, ctx);
+    return healthCheck(ctx);
   }
 
   const { supabase, userId, query, ctx: requestCtx } = ctx;

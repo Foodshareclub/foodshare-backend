@@ -29,7 +29,7 @@
  */
 
 import { createAPIHandler, type HandlerContext } from "../_shared/api-handler.ts";
-import { getPermissiveCorsHeaders } from "../_shared/cors.ts";
+import { getCorsHeaders } from "../_shared/cors.ts";
 import { logger } from "../_shared/logger.ts";
 import { AppError } from "../_shared/errors.ts";
 import { parseRoute } from "../_shared/routing.ts";
@@ -102,7 +102,7 @@ async function routeRequest(ctx: HandlerContext): Promise<Response> {
     authMode = "admin";
   }
 
-  const corsHeaders = usePermissiveCors ? getPermissiveCorsHeaders() : ctx.corsHeaders;
+  const corsHeaders = usePermissiveCors ? getCorsHeaders(ctx.request) : ctx.corsHeaders;
 
   const requestId = ctx.ctx.requestId;
 

@@ -1,0 +1,155 @@
+name: Detect Changes
+description: Categorize file changes into deployable groups
+
+inputs:
+  base-ref:
+    description: Base ref to diff against
+    default: ""
+
+outputs:
+  functions-changed:
+    description: Whether edge functions changed
+    value: ${{ steps.detect.outputs.functions-changed }}
+  functions-list:
+    description: JSON array of changed function directories
+    value: ${{ steps.detect.outputs.functions-list }}
+  shared-changed:
+    description: Whether _shared/ changed (affects all functions)
+    value: ${{ steps.detect.outputs.shared-changed }}
+  migrations-changed:
+    description: Whether migrations changed
+    value: ${{ steps.detect.outputs.migrations-changed }}
+  migrations-list:
+    description: JSON array of changed migration files
+    value: ${{ steps.detect.outputs.migrations-list }}
+  infrastructure-changed:
+    description: Whether infrastructure files changed
+    value: ${{ steps.detect.outputs.infrastructure-changed }}
+  config-changed:
+    description: Whether config.toml changed
+    value: ${{ steps.detect.outputs.config-changed }}
+  any-deployable:
+    description: Whether any deployable changes exist
+    value: ${{ steps.detect.outputs.any-deployable }}
+
+runs:
+  using: composite
+  steps:
+    - id: detect
+      shell: bash
+      env:
+        INPUT_BASE_REF: ${{ inputs.base-ref }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PUSH_BEFORE: ${{ github.event.before }}
+      run: |
+        # Determine base ref
+        BASE="$INPUT_BASE_REF"
+        if [ -z "$BASE" ]; then
+          if [ -n "$PR_BASE_SHA" ]; then
+            BASE="$PR_BASE_SHA"
+          elif [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            BASE="$PUSH_BEFORE"
+          else
+            BASE="HEAD~1"
+          fi
+        fi
+
+        echo "Comparing against: $BASE"
+        if ! CHANGED=$(git diff --name-only "$BASE" HEAD 2>&1); then
+          echo "::warning::git diff failed — treating as full deploy"
+          echo "git diff output: $CHANGED"
+          echo "functions-changed=true" >> "$GITHUB_OUTPUT"
+          echo "functions-list=[]" >> "$GITHUB_OUTPUT"
+          echo "shared-changed=true" >> "$GITHUB_OUTPUT"
+          echo "migrations-changed=false" >> "$GITHUB_OUTPUT"
+          echo "migrations-list=[]" >> "$GITHUB_OUTPUT"
+          echo "infrastructure-changed=true" >> "$GITHUB_OUTPUT"
+          echo "config-changed=true" >> "$GITHUB_OUTPUT"
+          echo "any-deployable=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if [ -z "$CHANGED" ]; then
+          echo "No changes detected — treating as full deploy"
+          echo "functions-changed=true" >> "$GITHUB_OUTPUT"
+          echo "functions-list=[]" >> "$GITHUB_OUTPUT"
+          echo "shared-changed=true" >> "$GITHUB_OUTPUT"
+          echo "migrations-changed=false" >> "$GITHUB_OUTPUT"
+          echo "migrations-list=[]" >> "$GITHUB_OUTPUT"
+          echo "infrastructure-changed=true" >> "$GITHUB_OUTPUT"
+          echo "config-changed=true" >> "$GITHUB_OUTPUT"
+          echo "any-deployable=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "Changed files:"
+        echo "$CHANGED"
+
+        # Functions
+        FN_CHANGED=$(echo "$CHANGED" | grep -E '^supabase/functions/(api-v1-|telegram-|whatsapp-|main/)' || true)
+        if [ -n "$FN_CHANGED" ]; then
+          echo "functions-changed=true" >> "$GITHUB_OUTPUT"
+          FN_DIRS=$(echo "$FN_CHANGED" | sed 's|supabase/functions/||' | cut -d/ -f1 | sort -u | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          echo "functions-list=$FN_DIRS" >> "$GITHUB_OUTPUT"
+        else
+          echo "functions-changed=false" >> "$GITHUB_OUTPUT"
+          echo "functions-list=[]" >> "$GITHUB_OUTPUT"
+        fi
+
+        # Shared
+        if echo "$CHANGED" | grep -qE '^supabase/functions/_shared/'; then
+          echo "shared-changed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "shared-changed=false" >> "$GITHUB_OUTPUT"
+        fi
+
+        # Migrations
+        MIG_CHANGED=$(echo "$CHANGED" | grep -E '^supabase/migrations/' || true)
+        if [ -n "$MIG_CHANGED" ]; then
+          echo "migrations-changed=true" >> "$GITHUB_OUTPUT"
+          MIG_LIST=$(echo "$MIG_CHANGED" | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          echo "migrations-list=$MIG_LIST" >> "$GITHUB_OUTPUT"
+        else
+          echo "migrations-changed=false" >> "$GITHUB_OUTPUT"
+          echo "migrations-list=[]" >> "$GITHUB_OUTPUT"
+        fi
+
+        # Infrastructure
+        if echo "$CHANGED" | grep -qE '^(docker-compose\.yml|volumes/|\.env\.example)'; then
+          echo "infrastructure-changed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "infrastructure-changed=false" >> "$GITHUB_OUTPUT"
+        fi
+
+        # Config
+        if echo "$CHANGED" | grep -qE '^supabase/config\.toml'; then
+          echo "config-changed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "config-changed=false" >> "$GITHUB_OUTPUT"
+        fi
+
+        # Any deployable
+        if echo "$CHANGED" | grep -qE '^(supabase/|docker-compose\.yml|volumes/|\.env\.example)'; then
+          echo "any-deployable=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "any-deployable=false" >> "$GITHUB_OUTPUT"
+        fi
+
+        # Step summary
+        {
+          echo "## Change Detection"
+          echo ""
+          echo "| Category | Changed | Details |"
+          echo "|----------|---------|---------|"
+          FN_COUNT=$(echo "$CHANGED" | { grep -cE '^supabase/functions/(api-v1-|telegram-|whatsapp-|main/)' || true; })
+          FN_PREVIEW=$(echo "$FN_CHANGED" | head -3 | tr '\n' ', ' || echo 'none')
+          SHARED_COUNT=$(echo "$CHANGED" | { grep -cE '^supabase/functions/_shared/' || true; })
+          MIG_COUNT=$(echo "$CHANGED" | { grep -cE '^supabase/migrations/' || true; })
+          INFRA_COUNT=$(echo "$CHANGED" | { grep -cE '^(docker-compose\.yml|volumes/)' || true; })
+          CFG_COUNT=$(echo "$CHANGED" | { grep -cE '^supabase/config\.toml' || true; })
+          echo "| Functions | ${FN_COUNT} files | ${FN_PREVIEW} |"
+          echo "| Shared | ${SHARED_COUNT} files | |"
+          echo "| Migrations | ${MIG_COUNT} files | |"
+          echo "| Infrastructure | ${INFRA_COUNT} files | |"
+          echo "| Config | ${CFG_COUNT} files | |"
+        } >> "$GITHUB_STEP_SUMMARY"

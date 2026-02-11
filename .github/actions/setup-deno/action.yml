@@ -1,0 +1,26 @@
+name: Setup Deno
+description: Install Deno and warm module cache
+
+inputs:
+  deno-version:
+    description: Deno version to install
+    default: "2.1.9"
+
+runs:
+  using: composite
+  steps:
+    - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2
+      with:
+        deno-version: ${{ inputs.deno-version }}
+
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: ~/.cache/deno
+        key: ${{ runner.os }}-deno-${{ inputs.deno-version }}
+        restore-keys: |
+          ${{ runner.os }}-deno-
+
+    - name: Warm module graph
+      shell: bash
+      working-directory: supabase/functions
+      run: deno cache _shared/api-handler.ts

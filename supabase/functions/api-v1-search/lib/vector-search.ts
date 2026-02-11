@@ -463,8 +463,13 @@ export async function handleBatchIndex(
   const { data: posts, error } = await query;
 
   if (error) {
+    logger.error("Failed to fetch posts for batch index", new Error(error.message), {
+      offset,
+      limit,
+      postIds: request.post_ids?.length,
+    });
     throw new AppError(
-      `Failed to fetch posts: ${error.message}`,
+      "Unable to fetch posts at this time",
       "DB_ERROR",
       500,
     );

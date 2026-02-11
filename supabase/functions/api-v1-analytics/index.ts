@@ -15,6 +15,7 @@
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
+import { createHealthHandler } from "../_shared/health-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { ServerError } from "../_shared/errors.ts";
 import { getSupabaseClient } from "../_shared/supabase.ts";
@@ -28,6 +29,8 @@ const CONFIG = {
   batchSize: 500,
   defaultIncrementalHours: 24,
 };
+
+const healthCheck = createHealthHandler("api-v1-analytics", CONFIG.version);
 
 // =============================================================================
 // Schemas
@@ -330,7 +333,7 @@ async function handleGetStatus(ctx: HandlerContext): Promise<Response> {
 
   // GET /health
   if (path.endsWith("/health")) {
-    return ok({ status: "ok", version: CONFIG.version }, ctx);
+    return healthCheck(ctx);
   }
 
   // GET / — return sync status, or trigger incremental sync for cron

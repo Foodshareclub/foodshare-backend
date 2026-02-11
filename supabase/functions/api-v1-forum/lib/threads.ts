@@ -63,6 +63,28 @@ export const featurePostSchema = z.object({
 });
 
 // =============================================================================
+// Helpers
+// =============================================================================
+
+const MODERATOR_ROLES = ["moderator", "admin", "superadmin"];
+
+// deno-lint-ignore no-explicit-any
+async function hasModeratorRole(supabase: any, userId: string): Promise<boolean> {
+  const { data: userRoles } = await supabase
+    .from("user_roles")
+    .select("roles!inner(name)")
+    .eq("profile_id", userId);
+
+  if (!userRoles || userRoles.length === 0) return false;
+
+  return userRoles.some((r: { roles: { name: string } | { name: string }[] }) => {
+    const roleData = r.roles as unknown as { name: string } | { name: string }[];
+    const name = Array.isArray(roleData) ? roleData[0]?.name : roleData?.name;
+    return name && MODERATOR_ROLES.includes(name);
+  });
+}
+
+// =============================================================================
 // GET Handlers
 // =============================================================================
 
@@ -347,7 +369,11 @@ export async function togglePin(ctx: HandlerContext): Promise<Response> {
   }
 
   if (post.profile_id !== userId) {
-    throw new AuthorizationError("Only the post author or a moderator can pin/unpin");
+    // Check moderator role
+    const isMod = await hasModeratorRole(supabase, userId);
+    if (!isMod) {
+      throw new AuthorizationError("Only the post author or a moderator can pin/unpin");
+    }
   }
 
   const { error } = await supabase
@@ -366,8 +392,17 @@ export async function togglePin(ctx: HandlerContext): Promise<Response> {
 }
 
 export async function toggleLock(ctx: HandlerContext): Promise<Response> {
-  const { supabase } = ctx;
+  const { supabase, userId } = ctx;
   const body = toggleLockSchema.parse(ctx.body);
+
+  if (!userId) {
+    throw new ValidationError("Authentication required");
+  }
+
+  const isMod = await hasModeratorRole(supabase, userId);
+  if (!isMod) {
+    throw new AuthorizationError("Moderator access required");
+  }
 
   const { data, error } = await supabase.rpc("moderate_toggle_post_lock", {
     p_forum_id: body.forumId,
@@ -385,8 +420,17 @@ export async function toggleLock(ctx: HandlerContext): Promise<Response> {
 }
 
 export async function removePost(ctx: HandlerContext): Promise<Response> {
-  const { supabase } = ctx;
+  const { supabase, userId } = ctx;
   const body = removePostSchema.parse(ctx.body);
+
+  if (!userId) {
+    throw new ValidationError("Authentication required");
+  }
+
+  const isMod = await hasModeratorRole(supabase, userId);
+  if (!isMod) {
+    throw new AuthorizationError("Moderator access required");
+  }
 
   const { data, error } = await supabase.rpc("moderate_remove_post", {
     p_forum_id: body.forumId,

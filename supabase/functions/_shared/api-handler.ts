@@ -37,11 +37,10 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
 import { clearContext, createContext, type RequestContext, setUserId } from "./context.ts";
 import { getCorsHeaders, handleCorsPreflight } from "./cors.ts";
-import { AppError, AuthenticationError, RateLimitError, ValidationError } from "./errors.ts";
+import { AppError, AuthenticationError, PayloadTooLargeError, RateLimitError, ValidationError } from "./errors.ts";
 import {
   buildErrorResponse,
   buildSuccessResponse,
-  shouldUseTransitionalFormat,
   type UIHints,
 } from "./response-adapter.ts";
 import { logger } from "./logger.ts";
@@ -91,6 +90,8 @@ export interface HandlerContext<TBody = unknown, TQuery = Record<string, string>
   idempotencyKey: string | null;
   /** CORS headers for response */
   corsHeaders: Record<string, string>;
+  /** Rate limit info (populated after rate limit check) */
+  rateLimitInfo?: { limit: number; remaining: number; reset: number };
 }
 
 /** Route handler function */
@@ -160,6 +161,8 @@ export interface APIHandlerConfig {
   deprecatedVersions?: DeprecatedVersion[];
   /** CSRF protection configuration (enabled by default for mutation requests) */
   csrf?: CsrfOptions | boolean;
+  /** Maximum request body size in bytes (default: 1MB) */
+  maxBodySize?: number;
 }
 
 // =============================================================================
@@ -248,14 +251,33 @@ async function storeIdempotencyKey(
 // Request Parsing
 // =============================================================================
 
-async function parseRequestBody(request: Request): Promise<unknown> {
+const DEFAULT_MAX_BODY_SIZE = 1024 * 1024; // 1MB
+
+async function parseRequestBody(request: Request, maxBodySize?: number): Promise<unknown> {
+  const limit = maxBodySize ?? DEFAULT_MAX_BODY_SIZE;
   const contentType = request.headers.get("content-type") || "";
+
+  // Check Content-Length header before reading body
+  const contentLength = request.headers.get("content-length");
+  if (contentLength && parseInt(contentLength, 10) > limit) {
+    throw new PayloadTooLargeError(
+      `Request body too large. Maximum size is ${Math.round(limit / 1024)}KB`,
+      limit,
+    );
+  }
 
   if (contentType.includes("application/json")) {
     try {
       const text = await request.text();
+      if (text.length > limit) {
+        throw new PayloadTooLargeError(
+          `Request body too large. Maximum size is ${Math.round(limit / 1024)}KB`,
+          limit,
+        );
+      }
       return text ? JSON.parse(text) : {};
-    } catch {
+    } catch (e) {
+      if (e instanceof PayloadTooLargeError) throw e;
       throw new ValidationError("Invalid JSON in request body");
     }
   }
@@ -460,6 +482,30 @@ function getClientIp(request: Request): string {
 }
 
 // =============================================================================
+// Standard Response Headers
+// =============================================================================
+
+/**
+ * Add X-Response-Time and rate limit headers to a response
+ */
+function addStandardHeaders(
+  response: Response,
+  ctx: RequestContext,
+  rateLimitInfo?: { limit: number; remaining: number; reset: number },
+): void {
+  // Response time
+  const elapsed = Math.round(performance.now() - ctx.startTime);
+  response.headers.set("X-Response-Time", `${elapsed}ms`);
+
+  // Rate limit headers
+  if (rateLimitInfo) {
+    response.headers.set("X-RateLimit-Limit", String(rateLimitInfo.limit));
+    response.headers.set("X-RateLimit-Remaining", String(Math.max(0, rateLimitInfo.remaining)));
+    response.headers.set("X-RateLimit-Reset", String(Math.ceil(rateLimitInfo.reset / 1000)));
+  }
+}
+
+// =============================================================================
 // Main Handler Factory
 // =============================================================================
 
@@ -479,13 +525,13 @@ export function createAPIHandler(config: APIHandlerConfig) {
     supportedVersions: _supportedVersions,
     deprecatedVersions,
     csrf = true, // CSRF protection enabled by default
+    maxBodySize,
   } = config;
 
   return async (request: Request): Promise<Response> => {
     // Initialize context
     const ctx = createContext(request, service);
     const corsHeaders = getCorsHeaders(request, additionalOrigins);
-    const useTransitional = shouldUseTransitionalFormat(request);
     const perfTracker = trackRequest(service);
 
     // Check memory usage periodically
@@ -510,7 +556,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
             405,
           ),
           corsHeaders,
-          { version, includeTransitional: useTransitional },
+          { version },
         );
       }
 
@@ -536,7 +582,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
               403,
             ),
             corsHeaders,
-            { version, includeTransitional: useTransitional },
+            { version },
           );
         }
       }
@@ -560,7 +606,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
           return buildErrorResponse(
             new AuthenticationError(),
             corsHeaders,
-            { version, includeTransitional: useTransitional },
+            { version },
           );
         }
 
@@ -586,7 +632,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
       // Parse and validate body for mutation methods
       let body: unknown = {};
       if (["POST", "PUT", "PATCH"].includes(method)) {
-        body = await parseRequestBody(request);
+        body = await parseRequestBody(request, maxBodySize);
 
         if (routeConfig.schema) {
           body = validateWithSchema(routeConfig.schema, body, "request body");
@@ -608,7 +654,6 @@ export function createAPIHandler(config: APIHandlerConfig) {
           logger.info("Returning cached idempotent response", { idempotencyKey });
           return buildSuccessResponse(idempotencyCheck.response, corsHeaders, {
             version,
-            includeTransitional: useTransitional,
           });
         }
       }
@@ -639,13 +684,22 @@ export function createAPIHandler(config: APIHandlerConfig) {
             rateLimit.windowMs,
           );
 
+          // Store rate limit info for response headers
+          handlerContext.rateLimitInfo = {
+            limit: rateLimit.limit,
+            remaining: rateLimitResult.remaining,
+            reset: rateLimitResult.resetAt,
+          };
+
           if (!rateLimitResult.allowed) {
             const retryAfterMs = rateLimitResult.resetAt - Date.now();
-            return buildErrorResponse(
+            const errorResponse = buildErrorResponse(
               new RateLimitError("Rate limit exceeded", retryAfterMs),
               corsHeaders,
-              { version, includeTransitional: useTransitional, retryAfterMs },
+              { version, retryAfterMs },
             );
+            addStandardHeaders(errorResponse, ctx, handlerContext.rateLimitInfo);
+            return errorResponse;
           }
         }
       }
@@ -683,7 +737,9 @@ export function createAPIHandler(config: APIHandlerConfig) {
         }
       }
 
-      // Add version header
+      // Add standard headers (response time, rate limit, version)
+      addStandardHeaders(response, ctx, handlerContext.rateLimitInfo);
+
       if (!response.headers.has("X-API-Version")) {
         response.headers.set("X-API-Version", version);
       }
@@ -707,11 +763,13 @@ export function createAPIHandler(config: APIHandlerConfig) {
       // Handle CSRF errors with 403 status
       if (error instanceof CsrfError) {
         perfTracker.end(403);
-        return buildErrorResponse(
+        const csrfResponse = buildErrorResponse(
           new AppError(error.message, "CSRF_VALIDATION_FAILED", 403),
           corsHeaders,
-          { version, includeTransitional: useTransitional },
+          { version },
         );
+        addStandardHeaders(csrfResponse, ctx);
+        return csrfResponse;
       }
 
       // Track error for monitoring
@@ -724,11 +782,13 @@ export function createAPIHandler(config: APIHandlerConfig) {
       const statusCode = error instanceof AppError ? error.statusCode : 500;
       perfTracker.end(statusCode);
 
-      return buildErrorResponse(
+      const errorResponse = buildErrorResponse(
         appError,
         corsHeaders,
-        { version, includeTransitional: useTransitional },
+        { version },
       );
+      addStandardHeaders(errorResponse, ctx);
+      return errorResponse;
     } finally {
       clearContext();
     }

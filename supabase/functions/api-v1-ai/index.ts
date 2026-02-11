@@ -16,6 +16,7 @@
 import { HfInference } from "https://esm.sh/@huggingface/inference@2.6.4";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
+import { createHealthHandler } from "../_shared/health-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { ServerError, ValidationError } from "../_shared/errors.ts";
 
@@ -27,6 +28,16 @@ const VERSION = "1.0.0";
 
 const GROQ_KEY = Deno.env.get("GROQ_API_KEY") || "";
 const ZAI_KEY = Deno.env.get("ZAI_API_KEY") || "";
+
+const healthCheck = createHealthHandler("api-v1-ai", VERSION, {
+  extra: () => ({
+    providers: {
+      groq: GROQ_KEY ? "configured" : "missing",
+      zai: ZAI_KEY ? "configured" : "missing",
+      huggingface: Deno.env.get("HUGGINGFACE_ACCESS_TOKEN") ? "configured" : "missing",
+    },
+  }),
+});
 
 const HF_CACHE_TTL = 3600000; // 1 hour
 
@@ -372,18 +383,7 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
 
   // GET /health
   if (subPath === "health" || subPath === "health/") {
-    return ok(
-      {
-        status: "ok",
-        version: VERSION,
-        providers: {
-          groq: GROQ_KEY ? "configured" : "missing",
-          zai: ZAI_KEY ? "configured" : "missing",
-          huggingface: Deno.env.get("HUGGINGFACE_ACCESS_TOKEN") ? "configured" : "missing",
-        },
-      },
-      ctx,
-    );
+    return healthCheck(ctx);
   }
 
   // GET /models

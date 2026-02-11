@@ -23,11 +23,13 @@ import {
   ok,
   paginated,
 } from "../_shared/api-handler.ts";
+import { createHealthHandler } from "../_shared/health-handler.ts";
 import { ConflictError, ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
 import { ERROR_MESSAGES, REVIEW } from "../_shared/validation-rules.ts";
 
 const VERSION = "1.0.0";
+const healthCheck = createHealthHandler("api-v1-reviews", VERSION);
 
 // =============================================================================
 // Schemas (using shared validation constants from Swift FoodshareCore)
@@ -215,12 +217,7 @@ function handleGet(ctx: HandlerContext<unknown, QueryParams>): Promise<Response>
   // Health check
   const url = new URL(ctx.request.url);
   if (url.pathname.endsWith("/health")) {
-    return ok({
-      status: "healthy",
-      service: "api-v1-reviews",
-      version: VERSION,
-      timestamp: new Date().toISOString(),
-    }, ctx);
+    return healthCheck(ctx);
   }
 
   return getReviews(ctx);
@@ -234,6 +231,7 @@ Deno.serve(createAPIHandler({
   service: "api-v1-reviews",
   version: "1.0.0",
   requireAuth: false, // GET is public, POST requires auth
+  csrf: true,
   rateLimit: {
     limit: 30,
     windowMs: 60000,

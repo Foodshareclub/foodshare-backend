@@ -23,7 +23,9 @@
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, type HandlerContext, noContent, ok } from "../_shared/api-handler.ts";
-import { NotFoundError, ValidationError } from "../_shared/errors.ts";
+import { NotFoundError, ServerError, ValidationError } from "../_shared/errors.ts";
+import { getAdminClient } from "../_shared/supabase.ts";
+import { createHealthHandler } from "../_shared/health-handler.ts";
 import { logger } from "../_shared/logger.ts";
 import { cache, CACHE_KEYS, invalidateProfileCache } from "../_shared/cache.ts";
 import { PROFILE, sanitizeHtml } from "../_shared/validation-rules.ts";
@@ -31,6 +33,7 @@ import { aggregateCounts, aggregateImpact, aggregateStats } from "../_shared/agg
 import { formatDisplayName, transformAddress } from "../_shared/transformers.ts";
 
 const VERSION = "1.0.0";
+const healthCheck = createHealthHandler("api-v1-profile", VERSION);
 
 // =============================================================================
 // Schemas (using shared validation constants from Swift FoodshareCore)
@@ -221,14 +224,19 @@ async function uploadAvatar(ctx: HandlerContext<UploadAvatarBody>): Promise<Resp
     throw new ValidationError("Authentication required");
   }
 
-  // Extract base64 data (strip data URL prefix if present)
-  const base64Data = body.imageData.includes(",") ? body.imageData.split(",")[1] : body.imageData;
-
-  // SECURITY: Check base64 string length BEFORE decoding to prevent memory exhaustion
+  // SECURITY: Check raw imageData length BEFORE any string operations to prevent memory exhaustion.
+  // A data URL prefix is at most ~40 chars, so checking the full string is safe.
   // Base64 has ~4:3 ratio (3 bytes become 4 base64 chars)
   // For 5MB limit, max base64 length is approximately 5 * 1024 * 1024 * 4 / 3 = ~6.67MB
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-  const MAX_BASE64_LENGTH = Math.ceil(MAX_FILE_SIZE * 4 / 3) + 4; // +4 for padding
+  const MAX_BASE64_LENGTH = Math.ceil(MAX_FILE_SIZE * 4 / 3) + 100; // +100 for data URL prefix + padding
+
+  if (body.imageData.length > MAX_BASE64_LENGTH) {
+    throw new ValidationError("File too large. Maximum size is 5MB");
+  }
+
+  // Extract base64 data (strip data URL prefix if present)
+  const base64Data = body.imageData.includes(",") ? body.imageData.split(",")[1] : body.imageData;
 
   if (base64Data.length > MAX_BASE64_LENGTH) {
     throw new ValidationError("File too large. Maximum size is 5MB");
@@ -380,10 +388,7 @@ async function deleteAccount(ctx: HandlerContext): Promise<Response> {
 
   logger.info("Deleting user", { userId });
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.43.4");
-  const supabaseAdmin = createClient(supabaseUrl, serviceKey);
+  const supabaseAdmin = getAdminClient();
 
   // Clean up avatars
   try {
@@ -575,12 +580,7 @@ function handleGet(ctx: HandlerContext<unknown, QueryParams>): Promise<Response>
   // Health check
   const url = new URL(ctx.request.url);
   if (url.pathname.endsWith("/health")) {
-    return ok({
-      status: "healthy",
-      service: "api-v1-profile",
-      version: VERSION,
-      timestamp: new Date().toISOString(),
-    }, ctx);
+    return healthCheck(ctx);
   }
 
   if (ctx.query.action === "session") {
@@ -632,7 +632,7 @@ async function getDashboard(ctx: HandlerContext<unknown, QueryParams>): Promise<
     impact,
     counts,
     recentListings,
-  });
+  }, ctx);
 }
 
 function handlePut(
@@ -669,6 +669,7 @@ Deno.serve(createAPIHandler({
   service: "api-v1-profile",
   version: "1.0.0",
   requireAuth: true,
+  csrf: true,
   rateLimit: {
     limit: 60,
     windowMs: 60000, // 60 requests per minute

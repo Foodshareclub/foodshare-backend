@@ -16,7 +16,8 @@
  * @version 1.0.0
  */
 
-import { createAPIHandler, type HandlerContext } from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
+import { AppError } from "../_shared/errors.ts";
 import { parseRoute } from "../_shared/routing.ts";
 import { FunctionHealthResult, getHealthService, HEALTH_VERSION } from "../_shared/health/index.ts";
 import { getHealthMetrics } from "../_shared/performance.ts";
@@ -30,7 +31,7 @@ const SERVICE = "api-v1-health";
 // Metrics Handler (from health-advanced)
 // =============================================================================
 
-async function handleMetrics(corsHeaders: Record<string, string>): Promise<Response> {
+async function handleMetrics(ctx: HandlerContext): Promise<Response> {
   const startTime = Date.now();
 
   const healthMetrics = getHealthMetrics();
@@ -66,8 +67,8 @@ async function handleMetrics(corsHeaders: Record<string, string>): Promise<Respo
   const responseTime = Date.now() - startTime;
   const httpStatus = status === "unhealthy" ? 503 : 200;
 
-  return new Response(
-    JSON.stringify({
+  return ok(
+    {
       status,
       timestamp: new Date().toISOString(),
       responseTimeMs: responseTime,
@@ -96,11 +97,9 @@ async function handleMetrics(corsHeaders: Record<string, string>): Promise<Respo
         totalRequests: cb.totalRequests,
         totalFailures: cb.totalFailures,
       })),
-    }),
-    {
-      status: httpStatus,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
     },
+    ctx,
+    { status: httpStatus },
   );
 }
 
@@ -113,12 +112,12 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
   const route = parseRoute(url, ctx.request.method, SERVICE);
   const service = getHealthService();
 
-  // GET /metrics — observability data (from health-advanced)
+  // GET /metrics -- observability data (from health-advanced)
   if (route.resource === "metrics") {
-    return await handleMetrics(ctx.corsHeaders);
+    return await handleMetrics(ctx);
   }
 
-  // GET /full or GET /?full=true — full health + observability merged
+  // GET /full or GET /?full=true -- full health + observability merged
   const isFull = route.resource === "full" || url.searchParams.get("full") === "true";
 
   if (isFull) {
@@ -134,8 +133,8 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
 
     const httpStatus = fullHealth.status === "unhealthy" ? 503 : 200;
 
-    return new Response(
-      JSON.stringify({
+    return ok(
+      {
         ...fullHealth,
         system: {
           uptime: metricsResponse.healthMetrics.uptime,
@@ -159,25 +158,16 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
           totalRequests: cb.totalRequests,
           totalFailures: cb.totalFailures,
         })),
-      }),
-      {
-        status: httpStatus,
-        headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
       },
+      ctx,
+      { status: httpStatus },
     );
   }
 
-  // GET / — quick health (DB ping)
+  // GET / -- quick health (DB ping)
   const result = await service.checkQuickHealth();
   const httpStatus = result.status === "ok" ? 200 : 503;
-  return new Response(JSON.stringify(result), {
-    status: httpStatus,
-    headers: {
-      ...ctx.corsHeaders,
-      "Content-Type": "application/json",
-      "Cache-Control": "public, max-age=10",
-    },
-  });
+  return ok(result, ctx, { status: httpStatus, cacheTTL: 10 });
 }
 
 async function handlePost(ctx: HandlerContext): Promise<Response> {
@@ -185,16 +175,17 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
   const route = parseRoute(url, ctx.request.method, SERVICE);
   const service = getHealthService();
 
-  // POST /functions/:name — check single function
+  // POST /functions/:name -- check single function
   if (route.resource === "functions" && route.subPath) {
     const functionName = route.subPath;
     const result = await service.checkSingleFunction(functionName);
 
     if ("error" in result && !("status" in result)) {
-      return new Response(JSON.stringify(result), {
-        status: 404,
-        headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
-      });
+      throw new AppError(
+        (result as { error: string }).error || "Function not found",
+        "NOT_FOUND",
+        404,
+      );
     }
 
     const healthResult = result as FunctionHealthResult;
@@ -203,27 +194,20 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
       : healthResult.status === "degraded"
       ? 200
       : 503;
-    return new Response(JSON.stringify(result), {
-      status: httpStatus,
-      headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
-    });
+    return ok(result, ctx, { status: httpStatus });
   }
 
-  // POST /functions — check all functions
+  // POST /functions -- check all functions
   if (route.resource === "functions" || route.segments.length === 0) {
     const quick = url.searchParams.get("quick") === "true";
     const result = await service.checkAllFunctions(quick);
     const httpStatus = result.status === "healthy" ? 200 : result.status === "degraded" ? 200 : 503;
-    return new Response(JSON.stringify(result), {
-      status: httpStatus,
-      headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
-    });
+    return ok(result, ctx, { status: httpStatus });
   }
 
   // 404
-  return new Response(
-    JSON.stringify({
-      error: "Not found",
+  throw new AppError("Not found", "NOT_FOUND", 404, {
+    details: {
       version: HEALTH_VERSION,
       availableEndpoints: [
         "GET  /                   Quick health (DB ping)",
@@ -234,12 +218,8 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
         "POST /functions?quick=true  Quick fleet check",
         "POST /functions/:name    Check single edge function",
       ],
-    }),
-    {
-      status: 404,
-      headers: { ...ctx.corsHeaders, "Content-Type": "application/json" },
     },
-  );
+  });
 }
 
 // =============================================================================

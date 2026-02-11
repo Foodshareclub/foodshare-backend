@@ -65,13 +65,8 @@ function isOriginAllowed(origin: string, allowedOrigins: string[]): boolean {
     return true;
   }
 
-  // Check mobile origins with scheme-only patterns (file://)
-  return MOBILE_ORIGINS.some((mobileOrigin) => {
-    if (mobileOrigin.endsWith("//")) {
-      return origin.startsWith(mobileOrigin);
-    }
-    return origin === mobileOrigin;
-  });
+  // Check mobile origins with exact matching (prevents file://evil.com bypasses)
+  return MOBILE_ORIGINS.some((mobileOrigin) => origin === mobileOrigin);
 }
 
 /**
@@ -98,7 +93,7 @@ export function validateCsrf(
   // Build allowed origins list
   const allowedOrigins = [
     ...DEFAULT_ALLOWED_ORIGINS,
-    ...MOBILE_ORIGINS.filter((o) => !o.endsWith("//")), // Exclude scheme-only patterns
+    ...MOBILE_ORIGINS,
     ...(opts.additionalOrigins || []),
   ];
 

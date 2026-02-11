@@ -22,11 +22,13 @@
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
+import { createHealthHandler } from "../_shared/health-handler.ts";
 import { ServerError, ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
 import { toggleRow } from "../_shared/toggle.ts";
 
 const VERSION = "1.0.0";
+const healthCheck = createHealthHandler("api-v1-engagement", VERSION);
 
 // =============================================================================
 // Schemas
@@ -418,12 +420,7 @@ function handleGet(ctx: HandlerContext<unknown, QueryParams>): Promise<Response>
   // Health check
   const url = new URL(ctx.request.url);
   if (url.pathname.endsWith("/health")) {
-    return ok({
-      status: "healthy",
-      service: "api-v1-engagement",
-      version: VERSION,
-      timestamp: new Date().toISOString(),
-    }, ctx);
+    return healthCheck(ctx);
   }
 
   if (ctx.query.action === "bookmarks") {
@@ -568,6 +565,7 @@ Deno.serve(createAPIHandler({
   service: "api-v1-engagement",
   version: "1.0.0",
   requireAuth: false, // GET is public, POST requires auth for most actions
+  csrf: true,
   rateLimit: {
     limit: 120,
     windowMs: 60000,

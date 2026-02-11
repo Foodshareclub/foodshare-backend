@@ -37,6 +37,9 @@ export function getSupabaseClient(): SupabaseClient {
   return supabaseClient;
 }
 
+/** Alias for getSupabaseClient — makes admin intent clear at call sites */
+export const getAdminClient = getSupabaseClient;
+
 // Reset connection (useful for testing)
 export function resetSupabaseClient(): void {
   supabaseClient = null;

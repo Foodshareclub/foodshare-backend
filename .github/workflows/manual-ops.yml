@@ -1,0 +1,120 @@
+name: Manual Operations
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Operation to perform
+        required: true
+        type: choice
+        options:
+          - health-check
+          - service-status
+          - restart-functions
+          - restart-all
+          - force-backup
+      confirm:
+        description: Type CONFIRM for destructive operations (restart-all)
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vps-operations
+  cancel-in-progress: false
+
+jobs:
+  operate:
+    name: ${{ inputs.operation }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_DEPLOY_CHAT_ID: ${{ secrets.TELEGRAM_DEPLOY_CHAT_ID }}
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Validate input
+        env:
+          OP: ${{ inputs.operation }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$OP" = "restart-all" ] && [ "$CONFIRM" != "CONFIRM" ]; then
+            echo "::error::restart-all requires CONFIRM input"
+            exit 1
+          fi
+
+      - name: Execute operation
+        id: op
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
+        env:
+          OP: ${{ inputs.operation }}
+        with:
+          host: vps.foodshare.club
+          username: organic
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 5m
+          envs: OP
+          script: |
+            set -eo pipefail
+            cd /home/organic/dev/foodshare-backend
+            chmod +x scripts/deploy.sh 2>/dev/null || true
+
+            case "$OP" in
+              health-check)
+                echo "=== Health Check ==="
+                ./scripts/deploy.sh smoke
+                ;;
+              service-status)
+                echo "=== Service Status ==="
+                ./scripts/deploy.sh status
+                ;;
+              restart-functions)
+                echo "=== Restarting Edge Functions ==="
+                ./scripts/deploy.sh restart functions
+                sleep 5
+                ./scripts/deploy.sh smoke
+                ;;
+              restart-all)
+                echo "=== Full Stack Restart ==="
+                ./scripts/deploy.sh restart full
+                sleep 10
+                ./scripts/deploy.sh smoke
+                ;;
+              force-backup)
+                echo "=== Force Backup ==="
+                ./scripts/deploy.sh backup
+                ;;
+            esac
+
+      - name: Operation summary
+        if: always()
+        env:
+          OP: ${{ inputs.operation }}
+          OP_OUTCOME: ${{ steps.op.outcome }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          {
+            echo "## Manual Operation: \`${OP}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Operation** | ${OP} |"
+            echo "| **Actor** | ${ACTOR} |"
+            echo "| **Status** | ${OP_OUTCOME} |"
+            echo "| **Time** | $(date -u +%Y-%m-%dT%H:%M:%SZ) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Telegram — operation result
+        if: always()
+        uses: ./.github/actions/telegram-notify
+        with:
+          bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_DEPLOY_CHAT_ID }}
+          message: |
+            🔧 *Manual op*: `${{ inputs.operation }}` — ${{ steps.op.outcome }}
+            by ${{ github.actor }}
