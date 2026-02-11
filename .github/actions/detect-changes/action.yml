@@ -42,6 +42,7 @@ runs:
         PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         PUSH_BEFORE: ${{ github.event.before }}
       run: |
+        set -eo pipefail
         # Determine base ref
         BASE="$INPUT_BASE_REF"
         if [ -z "$BASE" ]; then

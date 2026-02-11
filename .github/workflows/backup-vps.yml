@@ -68,7 +68,7 @@ jobs:
             # 1. Database dump (compressed, custom format for selective restore)
             echo "--- Database dump ---"
             DB_FILE="$BACKUP_DIR/db/foodshare-$DATE.sql.gz"
-            docker exec supabase-db pg_dump -U supabase_admin -d postgres \
+            timeout 120 docker exec supabase-db pg_dump -U supabase_admin -d postgres \
               --no-owner --no-privileges --clean --if-exists \
               -N _analytics -N _realtime -N supabase_functions \
               | gzip > "$DB_FILE"
@@ -128,8 +128,11 @@ jobs:
                 fi
 
                 git update-ref refs/heads/backup/vps "$COMMIT"
-                git push origin backup/vps --force --quiet
-                echo "Pushed backup/vps: $(git rev-parse --short "$COMMIT")"
+                if git push origin backup/vps --force-with-lease --quiet 2>/dev/null; then
+                  echo "Pushed backup/vps: $(git rev-parse --short "$COMMIT")"
+                else
+                  echo "WARNING: Could not push backup branch (read-only key?) — local ref updated"
+                fi
               fi
             fi
 

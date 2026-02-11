@@ -12,6 +12,13 @@
 
 set -eo pipefail
 
+# ── Deploy lock (prevent concurrent deploys) ─────────────────────────────
+exec 9>/tmp/deploy.lock
+if ! flock -n 9; then
+  echo "[deploy] ERROR: Another deploy is already running" >&2
+  exit 1
+fi
+
 DEPLOY_DIR="/home/organic/dev/foodshare-backend"
 STATE_FILE="/tmp/deploy-state.json"
 BACKUP_DIR="/home/organic/backups"
@@ -99,8 +106,9 @@ do_backup() {
     exit 1
   fi
 
-  # Save copy for fast rollback
+  # Save copy for fast rollback (restricted permissions — contains PII)
   cp backups/db.sql.gz /tmp/pre-deploy-db.sql.gz
+  chmod 600 /tmp/pre-deploy-db.sql.gz
 
   # Secrets snapshot
   log "Secrets snapshot..."
@@ -128,7 +136,7 @@ do_backup() {
       COMMIT=$(echo "$MSG" | git commit-tree "$TREE")
     fi
     git update-ref refs/heads/backup/pre-deploy "$COMMIT"
-    if git push origin backup/pre-deploy --force --quiet 2>/dev/null; then
+    if git push origin backup/pre-deploy --force-with-lease --quiet 2>/dev/null; then
       log "Pushed backup/pre-deploy: $(git rev-parse --short "$COMMIT")"
     else
       log "WARNING: Could not push backup branch (read-only key?) — local ref updated"
@@ -196,16 +204,20 @@ do_migrate() {
           FAILED=1
           break
         fi
+        # CONCURRENT migrations can't run in a transaction — track version separately
+        if ! timeout 30 docker exec supabase-db psql -U supabase_admin -d postgres -c \
+          "INSERT INTO supabase_migrations.schema_migrations (version) VALUES ('$VERSION');"; then
+          err "Migration applied but version tracking FAILED: $VERSION"
+          FAILED=1
+          break
+        fi
       else
-        if ! (echo "BEGIN;" && cat "$f" && echo "COMMIT;") | timeout 60 docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1; then
+        if ! (echo "BEGIN;" && cat "$f" && echo "INSERT INTO supabase_migrations.schema_migrations (version) VALUES ('$VERSION');" && echo "COMMIT;") | timeout 60 docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1; then
           err "Migration FAILED (rolled back): $(basename "$f")"
           FAILED=1
           break
         fi
       fi
-
-      timeout 30 docker exec supabase-db psql -U supabase_admin -d postgres -c \
-        "INSERT INTO supabase_migrations.schema_migrations (version) VALUES ('$VERSION');"
       APPLIED=$((APPLIED + 1))
     fi
   done
@@ -345,6 +357,9 @@ do_smoke() {
   fi
 
   log "All smoke tests passed"
+
+  rm -f /tmp/pre-deploy-db.sql.gz
+  log "Cleaned up pre-deploy backup"
 }
 
 # ── Stage: rollback ─────────────────────────────────────────────────────
