@@ -20,7 +20,6 @@ import {
   createAPIHandler,
   created,
   type HandlerContext,
-  ok,
   paginated,
 } from "../_shared/api-handler.ts";
 import { createHealthHandler } from "../_shared/health-handler.ts";

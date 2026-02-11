@@ -28,7 +28,7 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
+import { createAPIHandler, type HandlerContext } from "../_shared/api-handler.ts";
 import { createHealthHandler } from "../_shared/health-handler.ts";
 
 // Generic chat handlers

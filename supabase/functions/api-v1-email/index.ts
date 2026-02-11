@@ -18,11 +18,8 @@
  */
 
 import { createAPIHandler, type HandlerContext } from "../_shared/api-handler.ts";
-import { createHealthHandler } from "../_shared/health-handler.ts";
 import { AppError } from "../_shared/errors.ts";
 import { VERSION } from "./lib/utils.ts";
-
-const healthCheck = createHealthHandler("api-v1-email", VERSION);
 
 // Schemas (used for route-level validation)
 import {
