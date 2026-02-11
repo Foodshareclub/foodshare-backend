@@ -37,12 +37,14 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
 import { clearContext, createContext, type RequestContext, setUserId } from "./context.ts";
 import { getCorsHeaders, handleCorsPreflight } from "./cors.ts";
-import { AppError, AuthenticationError, PayloadTooLargeError, RateLimitError, ValidationError } from "./errors.ts";
 import {
-  buildErrorResponse,
-  buildSuccessResponse,
-  type UIHints,
-} from "./response-adapter.ts";
+  AppError,
+  AuthenticationError,
+  PayloadTooLargeError,
+  RateLimitError,
+  ValidationError,
+} from "./errors.ts";
+import { buildErrorResponse, buildSuccessResponse, type UIHints } from "./response-adapter.ts";
 import { logger } from "./logger.ts";
 import { trackError } from "./error-tracking.ts";
 import { checkMemoryUsage, trackRequest } from "./performance.ts";

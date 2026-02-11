@@ -152,9 +152,7 @@ export function buildErrorResponse(
   if ("code" in error && typeof error.code === "string") {
     const rawDetails = "details" in error ? error.details : undefined;
     // In production, only expose details for validation errors
-    const details = isProduction && error.code !== "VALIDATION_ERROR"
-      ? undefined
-      : rawDetails;
+    const details = isProduction && error.code !== "VALIDATION_ERROR" ? undefined : rawDetails;
 
     errorBody = {
       code: error.code,

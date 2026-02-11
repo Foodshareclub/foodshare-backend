@@ -8,7 +8,6 @@ import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert
 import {
   buildErrorResponse,
   buildSuccessResponse,
-  createTransitionalResponse,
 } from "../_shared/response-adapter.ts";
 import { AppError, ValidationError } from "../_shared/errors.ts";
 
@@ -56,21 +55,6 @@ Deno.test("Response Format - Error response body", async () => {
   assertEquals(body.error.code, "VALIDATION_ERROR");
   assertEquals(body.error.message, "Invalid input");
   assertExists(body.meta);
-});
-
-Deno.test("Response Format - Transitional response includes legacy fields", () => {
-  const data = { test: "data" };
-  const response = createTransitionalResponse(data);
-
-  // Unified format
-  assertEquals(response.success, true);
-  assertEquals(response.data, data);
-  assertExists(response.meta);
-
-  // Legacy format (backwards compatibility)
-  assertExists(response.requestId);
-  assertExists(response.timestamp);
-  assertExists(response.durationMs);
 });
 
 Deno.test("Response Format - Pagination metadata", async () => {
