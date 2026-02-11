@@ -128,8 +128,11 @@ do_backup() {
       COMMIT=$(echo "$MSG" | git commit-tree "$TREE")
     fi
     git update-ref refs/heads/backup/pre-deploy "$COMMIT"
-    git push origin backup/pre-deploy --force --quiet
-    log "Pushed backup/pre-deploy: $(git rev-parse --short "$COMMIT")"
+    if git push origin backup/pre-deploy --force --quiet 2>/dev/null; then
+      log "Pushed backup/pre-deploy: $(git rev-parse --short "$COMMIT")"
+    else
+      log "WARNING: Could not push backup branch (read-only key?) — local ref updated"
+    fi
   fi
 
   rm -rf backups/
