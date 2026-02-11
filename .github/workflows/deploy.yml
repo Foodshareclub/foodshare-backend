@@ -312,8 +312,12 @@ jobs:
             set -eo pipefail
             cd /home/organic/dev/foodshare-backend
 
-            # Make deploy script available and executable
-            chmod +x scripts/deploy.sh 2>/dev/null || true
+            # ── Stage 0: Pull code first (ensures deploy script exists) ──
+            echo "=== Stage: pull ==="
+            PREV_HEAD=$(git rev-parse HEAD)
+            git pull --ff-only
+            NEW_HEAD=$(git rev-parse HEAD)
+            chmod +x scripts/deploy.sh
 
             # ── Stage 1: Backup ──
             if [ "$SKIP_BACKUP" != "true" ]; then
@@ -323,9 +327,17 @@ jobs:
               echo "=== Skipping backup (skip-backup=true) ==="
             fi
 
-            # ── Stage 2: Pull ──
-            echo "=== Stage: pull ==="
-            ./scripts/deploy.sh pull
+            # ── Stage 2: Record pull state ──
+            echo "=== Recording pull state ==="
+            # Write state that deploy.sh pull would have written
+            echo '{}' > /tmp/deploy-state.json
+            jq -n --arg started "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                  --arg stage "pull" \
+                  --arg prev "$PREV_HEAD" \
+                  --arg new "$NEW_HEAD" \
+                  --arg changed "$(git diff --name-only "$PREV_HEAD" "$NEW_HEAD" | tr '\n' ',')" \
+                  '{started_at: $started, stage: $stage, prev_head: $prev, new_head: $new, changed_files: $changed}' \
+              > /tmp/deploy-state.json
 
             # ── Stage 3: Migrate ──
             if [ "$MIGRATIONS_CHANGED" = "true" ]; then
