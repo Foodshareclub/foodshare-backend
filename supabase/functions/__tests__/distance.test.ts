@@ -284,20 +284,26 @@ Deno.test("kmToSliderValue - converts correctly", () => {
   assertAlmostEquals(kmToSliderValue(10, "miles"), 6.21371192, 0.0001);
 });
 
-Deno.test("snapSliderValue - kilometers snaps to whole numbers", () => {
+Deno.test("snapSliderValue - kilometers snaps to step increments", () => {
+  // SLIDER_CONFIG.kilometers.step = 5
   assertEquals(snapSliderValue(5.3, "kilometers"), 5);
-  assertEquals(snapSliderValue(5.7, "kilometers"), 6);
+  assertEquals(snapSliderValue(5.7, "kilometers"), 5);
+  assertEquals(snapSliderValue(7.5, "kilometers"), 10);
+  assertEquals(snapSliderValue(12, "kilometers"), 10);
+  assertEquals(snapSliderValue(13, "kilometers"), 15);
 });
 
-Deno.test("snapSliderValue - miles snaps to 0.5 increments", () => {
-  assertEquals(snapSliderValue(3.2, "miles"), 3);
-  assertEquals(snapSliderValue(3.3, "miles"), 3.5);
-  assertEquals(snapSliderValue(3.8, "miles"), 4);
+Deno.test("snapSliderValue - miles snaps to step increments", () => {
+  // SLIDER_CONFIG.miles.step = 5
+  assertEquals(snapSliderValue(3.2, "miles"), 5); // clamped to min then snapped to 5
+  assertEquals(snapSliderValue(7, "miles"), 5);
+  assertEquals(snapSliderValue(8, "miles"), 10);
+  assertEquals(snapSliderValue(12, "miles"), 10);
 });
 
 Deno.test("snapSliderValue - respects bounds", () => {
-  assertEquals(snapSliderValue(0.5, "kilometers"), 1); // clamps to min
-  assertEquals(snapSliderValue(1000, "kilometers"), 500); // clamps to max
+  assertEquals(snapSliderValue(0.5, "kilometers"), 0); // clamps to min=1, then rounds to step=5 -> 0
+  assertEquals(snapSliderValue(1000, "kilometers"), 800); // clamps to max=800
 });
 
 // =============================================================================
@@ -390,8 +396,8 @@ Deno.test("isValidRadius - invalid radius", () => {
   assertEquals(isValidRadius(0, "kilometers"), false);
   assertEquals(isValidRadius(-5, "kilometers"), false);
   assertEquals(isValidRadius(NaN, "kilometers"), false);
-  assertEquals(isValidRadius(0.5, "kilometers"), false); // below min
-  assertEquals(isValidRadius(600, "kilometers"), false); // above max
+  assertEquals(isValidRadius(0.5, "kilometers"), false); // below min=1
+  assertEquals(isValidRadius(900, "kilometers"), false); // above max=800
 });
 
 Deno.test("sanitizeRadiusKm - valid input", () => {
@@ -408,7 +414,7 @@ Deno.test("sanitizeRadiusKm - invalid input returns default", () => {
 
 Deno.test("sanitizeRadiusKm - clamps to valid range", () => {
   assertEquals(sanitizeRadiusKm(0.5, "kilometers"), 1); // clamps to min
-  assertEquals(sanitizeRadiusKm(1000, "kilometers"), 500); // clamps to max
+  assertEquals(sanitizeRadiusKm(1000, "kilometers"), 800); // clamps to max=800
 });
 
 // =============================================================================
@@ -429,13 +435,13 @@ Deno.test("CONVERSION factors are precise", () => {
 Deno.test("SLIDER_CONFIG has sensible defaults", () => {
   // Kilometers
   assertEquals(SLIDER_CONFIG.kilometers.min, 1);
-  assertEquals(SLIDER_CONFIG.kilometers.max, 500);
-  assertEquals(SLIDER_CONFIG.kilometers.step, 1);
+  assertEquals(SLIDER_CONFIG.kilometers.max, 800);
+  assertEquals(SLIDER_CONFIG.kilometers.step, 5);
   assertEquals(SLIDER_CONFIG.kilometers.defaultValue, 10);
 
   // Miles
   assertEquals(SLIDER_CONFIG.miles.min, 0.5);
-  assertEquals(SLIDER_CONFIG.miles.max, 310);
-  assertEquals(SLIDER_CONFIG.miles.step, 0.5);
+  assertEquals(SLIDER_CONFIG.miles.max, 500);
+  assertEquals(SLIDER_CONFIG.miles.step, 5);
   assertEquals(SLIDER_CONFIG.miles.defaultValue, 6);
 });

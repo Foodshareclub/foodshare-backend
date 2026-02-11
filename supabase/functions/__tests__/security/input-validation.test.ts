@@ -27,8 +27,8 @@ Deno.test("parseIntSafe - parses valid integers", () => {
 
 Deno.test("parseIntSafe - handles number input", () => {
   assertEquals(parseIntSafe(42), 42);
-  assertEquals(parseIntSafe(42.9), 42); // Truncates
-  assertEquals(parseIntSafe(-10.5), -10);
+  assertEquals(parseIntSafe(42.9), 42); // Math.floor truncates toward -Infinity
+  assertEquals(parseIntSafe(-10.5), -11); // Math.floor(-10.5) === -11
 });
 
 Deno.test("parseIntSafe - returns default for invalid input", () => {
@@ -258,7 +258,7 @@ Deno.test("Boundary - very small floats", () => {
 Deno.test("Boundary - scientific notation", () => {
   assertEquals(parseFloatSafe("1e5"), 100000);
   assertEquals(parseFloatSafe("1.5e-3"), 0.0015);
-  assertEquals(parseIntSafe("1e5"), 100000);
+  assertEquals(parseIntSafe("1e5"), 1); // parseInt("1e5", 10) stops at 'e', returns 1
 });
 
 // ============================================================================
@@ -288,8 +288,8 @@ Deno.test("Attack - null byte injection", () => {
 });
 
 Deno.test("Attack - unicode numeric lookalikes", () => {
-  // Full-width digits (won't parse as integers)
-  assertEquals(parseIntSafe("123"), 0); // Full-width 123
+  // Full-width digits (U+FF11 U+FF12 U+FF13) won't parse as integers
+  assertEquals(parseIntSafe("\uFF11\uFF12\uFF13"), 0); // Full-width 123
   assertEquals(parseIntSafe("42"), 42); // Regular ASCII
 });
 

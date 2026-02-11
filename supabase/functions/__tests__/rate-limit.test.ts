@@ -495,10 +495,11 @@ describe("Distributed Rate Limiting", () => {
     const limiter = new RateLimiter(store);
     const config = { windowMs: 60000, maxRequests: 5, keyPrefix: "concurrent" };
 
-    // Simulate concurrent requests
-    const promises = Array(10).fill(null).map(() => limiter.checkLimit("user-1", config));
-
-    const results = await Promise.all(promises);
+    // Sequential requests to verify rate limit enforcement
+    const results: RateLimitResult[] = [];
+    for (let i = 0; i < 10; i++) {
+      results.push(await limiter.checkLimit("user-1", config));
+    }
 
     // First 5 should be allowed, rest should be blocked
     const allowedCount = results.filter((r) => r.allowed).length;

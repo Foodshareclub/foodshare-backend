@@ -102,7 +102,7 @@ export function handleCorsPreflight(
   request: Request,
   additionalOrigins?: string[],
 ): Response {
-  return new Response("ok", {
+  return new Response(null, {
     headers: getCorsHeaders(request, additionalOrigins),
     status: 204,
   });

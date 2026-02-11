@@ -51,12 +51,12 @@ Deno.test("Circuit Breaker - Opens after threshold failures", async () => {
 Deno.test("Circuit Breaker - Transitions to half-open after timeout", async () => {
   const serviceName = "test-service-3";
 
-  // Open the circuit
+  // Open the circuit (successThreshold: 1 so a single success closes it)
   for (let i = 0; i < 3; i++) {
     try {
       await withCircuitBreaker(serviceName, async () => {
         throw new Error("Fail");
-      }, { failureThreshold: 3, resetTimeoutMs: 100 });
+      }, { failureThreshold: 3, resetTimeoutMs: 100, successThreshold: 1 });
     } catch {
       // Expected
     }
@@ -67,11 +67,11 @@ Deno.test("Circuit Breaker - Transitions to half-open after timeout", async () =
   // Wait for reset timeout
   await new Promise((resolve) => setTimeout(resolve, 150));
 
-  // Should allow one attempt (half-open)
+  // Should allow one attempt (half-open) and close after 1 success
   const result = await withCircuitBreaker(serviceName, async () => "recovered");
   assertEquals(result, "recovered");
 
-  // Should be closed now
+  // Should be closed now (successThreshold: 1)
   assertEquals(getCircuitStatus(serviceName)?.state, "closed");
 });
 

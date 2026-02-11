@@ -5,10 +5,7 @@
  */
 
 import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import {
-  buildErrorResponse,
-  buildSuccessResponse,
-} from "../_shared/response-adapter.ts";
+import { buildErrorResponse, buildSuccessResponse } from "../_shared/response-adapter.ts";
 import { AppError, ValidationError } from "../_shared/errors.ts";
 
 const mockCorsHeaders = {

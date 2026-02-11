@@ -378,7 +378,10 @@ export function stripDangerousContent(input: string | null | undefined): string 
 export function containsXssPatterns(input: string | null | undefined): boolean {
   if (!input) return false;
 
-  return XSS_PATTERNS.some((pattern) => pattern.test(input));
+  return XSS_PATTERNS.some((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(input);
+  });
 }
 
 /**
