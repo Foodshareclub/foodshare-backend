@@ -14,61 +14,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Change detection ──────────────────────────────────────────────────
-  detect-changes:
-    name: Detect changes
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    outputs:
-      functions-changed: ${{ steps.changes.outputs.functions-changed }}
-      functions-list: ${{ steps.changes.outputs.functions-list }}
-      shared-changed: ${{ steps.changes.outputs.shared-changed }}
-      migrations-changed: ${{ steps.changes.outputs.migrations-changed }}
-      migrations-list: ${{ steps.changes.outputs.migrations-list }}
-      infrastructure-changed: ${{ steps.changes.outputs.infrastructure-changed }}
-      config-changed: ${{ steps.changes.outputs.config-changed }}
-      any-deployable: ${{ steps.changes.outputs.any-deployable }}
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          fetch-depth: 0
+  # ── Shared CI checks ─────────────────────────────────────────────────
+  ci:
+    uses: ./.github/workflows/ci-checks.yml
+    with:
+      scan-dangerous-patterns: true
 
-      - id: changes
-        uses: ./.github/actions/detect-changes
-
-  # ── Lint ──────────────────────────────────────────────────────────────
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    timeout-minutes: 3
-    defaults:
-      run:
-        working-directory: supabase/functions
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: ./.github/actions/setup-deno
-
-      - name: deno lint
-        run: deno lint
-
-      - name: deno fmt --check
-        run: deno fmt --check
-
-      - name: Check for problematic JSR imports
-        run: |
-          if grep -r "jsr:@supabase/functions-js" .; then
-            echo "::error::Problematic JSR import detected! This import causes cold start timeouts."
-            echo "::error::Remove: import \"jsr:@supabase/functions-js/edge-runtime.d.ts\";"
-            exit 1
-          fi
-          echo "No problematic JSR imports found."
-
-  # ── Type-check ───────────────────────────────────────────────────────
+  # ── Type-check (PR-only) ─────────────────────────────────────────────
   typecheck:
     name: Type-check
     runs-on: ubuntu-latest
-    needs: detect-changes
+    needs: ci
     timeout-minutes: 5
     continue-on-error: true
     defaults:
@@ -109,222 +65,12 @@ jobs:
 
           exit $EXIT_CODE
 
-  # ── Test ─────────────────────────────────────────────────────────────
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    timeout-minutes: 5
-    defaults:
-      run:
-        working-directory: supabase/functions
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: ./.github/actions/setup-deno
-
-      - name: deno test
-        id: test
-        run: |
-          set +e
-          OUTPUT=$(deno test --allow-all 2>&1)
-          EXIT_CODE=$?
-          echo "$OUTPUT"
-
-          PASS=$(echo "$OUTPUT" | grep -oP '\d+ passed' | grep -oP '\d+' || echo "0")
-          FAIL=$(echo "$OUTPUT" | grep -oP '\d+ failed' | grep -oP '\d+' || echo "0")
-
-          {
-            echo "## Tests"
-            echo ""
-            echo "| Passed | Failed |"
-            echo "|--------|--------|"
-            echo "| $PASS | $FAIL |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          exit $EXIT_CODE
-
-  # ── Security ─────────────────────────────────────────────────────────
-  security:
-    name: Security scan
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    timeout-minutes: 3
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          fetch-depth: 0
-
-      - name: Scan for leaked secrets
-        uses: trufflesecurity/trufflehog@7635b24fd512a2e817dd3e9dd661caaf035a079d # v3.93.1
-        with:
-          extra_args: --only-verified --results=verified
-
-  # ── Validate migrations (conditional) ────────────────────────────────
-  validate-migrations:
-    name: Validate migrations
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    if: needs.detect-changes.outputs.migrations-changed == 'true'
-    timeout-minutes: 5
-
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: supabase_admin
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U supabase_admin"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Install PostgreSQL client
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client
-
-      - name: Create schema_migrations table
-        run: |
-          psql -h localhost -U supabase_admin -d postgres -c "
-            CREATE SCHEMA IF NOT EXISTS supabase_migrations;
-            CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
-              version text PRIMARY KEY,
-              statements text,
-              name text
-            );
-          "
-        env:
-          PGPASSWORD: postgres
-
-      - name: Apply baseline (best-effort)
-        run: |
-          echo "Applying baseline migration (best-effort — warnings expected)..."
-          psql -h localhost -U supabase_admin -d postgres \
-            -f supabase/migrations/20260128195318_baseline.sql \
-            2>&1 || true
-          echo "Baseline applied (errors from \\restrict, pg_cron, pg_net are expected)"
-        env:
-          PGPASSWORD: postgres
-
-      - name: Apply incremental migrations (strict)
-        run: |
-          FAILED=0
-          for f in supabase/migrations/*.sql; do
-            [ -f "$f" ] || continue
-            BASENAME=$(basename "$f")
-
-            if [ "$BASENAME" = "20260128195318_baseline.sql" ]; then
-              continue
-            fi
-
-            if grep -qE '(cron\.(schedule|unschedule)|net\.http_(post|get))' "$f"; then
-              echo "--- Skipping: $BASENAME (requires pg_cron/pg_net) ---"
-              continue
-            fi
-
-            if grep -qE '(ALTER TABLE|CREATE INDEX|COMMENT ON|INSERT INTO|FROM)\s+(public\.)?(posts|profiles|community_fridges|blocked_users)|extensions\.(st_|geometry)|auth\.(uid|jwt|users)' "$f"; then
-              echo "--- Skipping: $BASENAME (depends on baseline tables/extensions) ---"
-              continue
-            fi
-
-            VERSION=$(echo "$BASENAME" | grep -oE '^[0-9]+')
-            echo "--- Applying: $BASENAME ---"
-
-            if ! psql -h localhost -U supabase_admin -d postgres \
-              -v ON_ERROR_STOP=1 -f "$f"; then
-              echo "::error::Migration failed: $BASENAME"
-              FAILED=1
-              break
-            fi
-
-            psql -h localhost -U supabase_admin -d postgres -c \
-              "INSERT INTO supabase_migrations.schema_migrations (version) VALUES ('$VERSION') ON CONFLICT DO NOTHING;"
-          done
-
-          if [ "$FAILED" -ne 0 ]; then
-            echo "::error::Migration validation failed — deploy blocked"
-            exit 1
-          fi
-          echo "All incremental migrations applied successfully."
-        env:
-          PGPASSWORD: postgres
-
-      - name: Scan for dangerous patterns
-        run: |
-          WARNINGS=0
-          {
-            echo "## Migration Safety Scan"
-            echo ""
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          for f in supabase/migrations/*.sql; do
-            [ -f "$f" ] || continue
-            BASENAME=$(basename "$f")
-
-            ISSUES=""
-            if grep -qiE 'DROP\s+TABLE' "$f"; then
-              ISSUES="$ISSUES DROP TABLE;"
-            fi
-            if grep -qiE 'DROP\s+COLUMN' "$f"; then
-              ISSUES="$ISSUES DROP COLUMN;"
-            fi
-            if grep -qiE 'TRUNCATE' "$f"; then
-              ISSUES="$ISSUES TRUNCATE;"
-            fi
-            if grep -qiE 'CREATE\s+INDEX' "$f" && ! grep -qiE 'CONCURRENTLY' "$f"; then
-              ISSUES="$ISSUES INDEX without CONCURRENTLY;"
-            fi
-            if grep -qiE 'DROP\s+(TABLE|INDEX|VIEW)' "$f" && ! grep -qiE 'IF\s+EXISTS' "$f"; then
-              ISSUES="$ISSUES DROP without IF EXISTS;"
-            fi
-
-            if [ -n "$ISSUES" ]; then
-              WARNINGS=$((WARNINGS + 1))
-              echo "::warning file=$f::Dangerous pattern detected:$ISSUES"
-              echo "- **$BASENAME**: $ISSUES" >> "$GITHUB_STEP_SUMMARY"
-            fi
-          done
-
-          if [ "$WARNINGS" -eq 0 ]; then
-            echo "No dangerous patterns found." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - name: Migration diff summary
-        if: always()
-        run: |
-          {
-            echo ""
-            echo "<details>"
-            echo "<summary>Migration SQL diffs</summary>"
-            echo ""
-            echo '```sql'
-            for f in supabase/migrations/*.sql; do
-              [ -f "$f" ] || continue
-              BASENAME=$(basename "$f")
-              if [ "$BASENAME" = "20260128195318_baseline.sql" ]; then
-                continue
-              fi
-              echo "-- $BASENAME"
-              head -50 "$f"
-              echo ""
-            done
-            echo '```'
-            echo "</details>"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # ── Validate functions (conditional) ─────────────────────────────────
+  # ── Validate functions (PR-only, conditional) ────────────────────────
   validate-functions:
     name: Validate functions
     runs-on: ubuntu-latest
-    needs: detect-changes
-    if: needs.detect-changes.outputs.functions-changed == 'true' || needs.detect-changes.outputs.shared-changed == 'true'
+    needs: ci
+    if: needs.ci.outputs.functions-changed == 'true' || needs.ci.outputs.shared-changed == 'true'
     timeout-minutes: 5
     defaults:
       run:
@@ -335,8 +81,8 @@ jobs:
 
       - name: Validate changed functions
         env:
-          FUNCTIONS_LIST: ${{ needs.detect-changes.outputs.functions-list }}
-          SHARED: ${{ needs.detect-changes.outputs.shared-changed }}
+          FUNCTIONS_LIST: ${{ needs.ci.outputs.functions-list }}
+          SHARED: ${{ needs.ci.outputs.shared-changed }}
         run: |
           # If shared changed, validate all function dirs
           if [ "$SHARED" = "true" ]; then
@@ -415,17 +161,17 @@ jobs:
   pr-summary:
     name: PR Summary
     runs-on: ubuntu-latest
-    needs: [detect-changes, lint, typecheck, test, security, validate-migrations, validate-functions]
+    needs: [ci, typecheck, validate-functions]
     if: always()
     timeout-minutes: 2
     steps:
       - name: Aggregate results
         env:
-          LINT_RESULT: ${{ needs.lint.result }}
+          LINT_RESULT: ${{ needs.ci.outputs.lint-result }}
           TYPECHECK_RESULT: ${{ needs.typecheck.result }}
-          TEST_RESULT: ${{ needs.test.result }}
-          SECURITY_RESULT: ${{ needs.security.result }}
-          MIGRATIONS_RESULT: ${{ needs.validate-migrations.result }}
+          TEST_RESULT: ${{ needs.ci.outputs.test-result }}
+          SECURITY_RESULT: ${{ needs.ci.outputs.security-result }}
+          MIGRATIONS_RESULT: ${{ needs.ci.outputs.migrations-result }}
           FUNCTIONS_RESULT: ${{ needs.validate-functions.result }}
         run: |
           {
@@ -443,31 +189,17 @@ jobs:
 
       - name: Gate
         env:
-          LINT_RESULT: ${{ needs.lint.result }}
-          TEST_RESULT: ${{ needs.test.result }}
-          SECURITY_RESULT: ${{ needs.security.result }}
-          MIGRATIONS_RESULT: ${{ needs.validate-migrations.result }}
+          LINT_RESULT: ${{ needs.ci.outputs.lint-result }}
+          TEST_RESULT: ${{ needs.ci.outputs.test-result }}
+          SECURITY_RESULT: ${{ needs.ci.outputs.security-result }}
+          MIGRATIONS_RESULT: ${{ needs.ci.outputs.migrations-result }}
           FUNCTIONS_RESULT: ${{ needs.validate-functions.result }}
         run: |
-          # Fail if any required job failed (typecheck is continue-on-error so we allow failure)
-          if [ "$LINT_RESULT" = "failure" ]; then
-            echo "::error::Lint failed"
-            exit 1
-          fi
-          if [ "$TEST_RESULT" = "failure" ]; then
-            echo "::error::Tests failed"
-            exit 1
-          fi
-          if [ "$SECURITY_RESULT" = "failure" ]; then
-            echo "::error::Security scan failed"
-            exit 1
-          fi
-          if [ "$MIGRATIONS_RESULT" = "failure" ]; then
-            echo "::error::Migration validation failed"
-            exit 1
-          fi
-          if [ "$FUNCTIONS_RESULT" = "failure" ]; then
-            echo "::error::Function validation failed"
-            exit 1
-          fi
+          for job in LINT TEST SECURITY MIGRATIONS FUNCTIONS; do
+            eval "RESULT=\$${job}_RESULT"
+            if [ "$RESULT" = "failure" ]; then
+              echo "::error::${job,,} failed"
+              exit 1
+            fi
+          done
           echo "All checks passed"

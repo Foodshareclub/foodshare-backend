@@ -18,10 +18,15 @@ if ! flock -n 9; then
   echo "[deploy] ERROR: Another deploy is already running" >&2
   exit 1
 fi
+cleanup() { exec 9>&-; rm -f /tmp/deploy.lock; }
+trap cleanup EXIT
 
 DEPLOY_DIR="/home/organic/dev/foodshare-backend"
 STATE_FILE="/tmp/deploy-state.json"
 BACKUP_DIR="/home/organic/backups"
+DB_CONTAINER="${DB_CONTAINER:-supabase-db}"
+DB_USER="${DB_USER:-supabase_admin}"
+DB_NAME="${DB_NAME:-postgres}"
 
 # ── Dependency check ────────────────────────────────────────────────────
 
@@ -45,7 +50,7 @@ state_read() {
 state_write() {
   if [ -f "$STATE_FILE" ]; then
     TEMP=$(mktemp)
-    jq ".$1 = \"$2\"" "$STATE_FILE" > "$TEMP" && mv "$TEMP" "$STATE_FILE"
+    jq ".$1 = \"$2\"" "$STATE_FILE" > "$TEMP" && mv "$TEMP" "$STATE_FILE" || { rm -f "$TEMP"; return 1; }
   else
     echo "{\"$1\": \"$2\"}" > "$STATE_FILE"
   fi
@@ -65,19 +70,24 @@ require_dir() {
   cd "$DEPLOY_DIR"
 }
 
-get_anon_key() {
-  grep '^ANON_KEY=' .env | cut -d= -f2
+get_env_value() {
+  local key="$1"
+  sed -n "s/^${key}=//p" .env | head -1
 }
 
-get_service_key() {
-  grep '^SERVICE_ROLE_KEY=' .env | cut -d= -f2
-}
+get_anon_key()    { get_env_value "ANON_KEY"; }
+get_service_key() { get_env_value "SERVICE_ROLE_KEY"; }
 
 # ── Stage: backup ───────────────────────────────────────────────────────
 
 do_backup() {
   require_dir
   state_init "backup"
+
+  DAILY=false
+  for arg in "$@"; do
+    [ "$arg" = "--daily" ] && DAILY=true
+  done
 
   # Disk space check (<1GB = abort)
   AVAIL_KB=$(df /home | tail -1 | awk '{print $4}')
@@ -86,42 +96,63 @@ do_backup() {
     exit 1
   fi
 
-  log "Pre-deploy backup"
-
   TIMESTAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
-  mkdir -p backups
+  DATE=$(date -u +%Y-%m-%d)
+
+  if [ "$DAILY" = true ]; then
+    log "Daily backup"
+    mkdir -p "$BACKUP_DIR/daily" "$BACKUP_DIR/db"
+    DB_TARGET="$BACKUP_DIR/db/foodshare-$DATE.sql.gz"
+  else
+    log "Pre-deploy backup"
+    mkdir -p backups
+    DB_TARGET="backups/db.sql.gz"
+  fi
 
   # Database dump
   log "Database dump..."
-  timeout 120 docker exec supabase-db pg_dump -U supabase_admin -d postgres \
+  timeout 120 docker exec "$DB_CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" \
     --no-owner --no-privileges --clean --if-exists \
     -N _analytics -N _realtime -N supabase_functions \
-    | gzip > backups/db.sql.gz
-  DB_SIZE=$(du -h backups/db.sql.gz | cut -f1)
+    | gzip > "$DB_TARGET"
+  DB_SIZE=$(du -h "$DB_TARGET" | cut -f1)
   log "DB dump: $DB_SIZE"
 
   # Verify dump is non-empty
-  if [ ! -s backups/db.sql.gz ]; then
+  if [ ! -s "$DB_TARGET" ]; then
     err "Database dump is empty!"
     exit 1
   fi
 
-  # Save copy for fast rollback (restricted permissions — contains PII)
-  cp backups/db.sql.gz /tmp/pre-deploy-db.sql.gz
-  chmod 600 /tmp/pre-deploy-db.sql.gz
-
   # Secrets snapshot
   log "Secrets snapshot..."
-  cp .env backups/.env 2>/dev/null || true
-  cp .env.functions backups/.env.functions 2>/dev/null || true
-  cp docker-compose.override.yml backups/docker-compose.override.yml 2>/dev/null || true
+  if [ "$DAILY" = true ]; then
+    SECRETS_FILE="$BACKUP_DIR/daily/secrets-$DATE.tar.gz"
+    tar czf "$SECRETS_FILE" \
+      .env \
+      .env.functions \
+      docker-compose.override.yml \
+      2>/dev/null || tar czf "$SECRETS_FILE" .env .env.functions 2>/dev/null || true
+    log "Secrets: $(du -h "$SECRETS_FILE" | cut -f1)"
+  else
+    cp .env backups/.env 2>/dev/null || true
+    cp .env.functions backups/.env.functions 2>/dev/null || true
+    cp docker-compose.override.yml backups/docker-compose.override.yml 2>/dev/null || true
 
-  # Git snapshot to backup/pre-deploy branch
+    # Save copy for fast rollback (restricted permissions — contains PII)
+    cp "$DB_TARGET" /tmp/pre-deploy-db.sql.gz
+    chmod 600 /tmp/pre-deploy-db.sql.gz
+  fi
+
+  # Git snapshot
+  BRANCH_NAME="backup/pre-deploy"
+  [ "$DAILY" = true ] && BRANCH_NAME="backup/vps"
+
   git add -A
-  git add -f backups/
+  [ "$DAILY" != true ] && git add -f backups/
   TREE=$(git write-tree)
   git reset HEAD --quiet
-  PARENT=$(git rev-parse --verify refs/heads/backup/pre-deploy 2>/dev/null || echo "")
+  PARENT=$(git rev-parse --verify "refs/heads/$BRANCH_NAME" 2>/dev/null || echo "")
   SKIP=false
   if [ -n "$PARENT" ]; then
     [ "$TREE" = "$(git rev-parse "$PARENT^{tree}")" ] && SKIP=true
@@ -129,21 +160,35 @@ do_backup() {
   if [ "$SKIP" = true ]; then
     log "No changes since last backup — skipped git snapshot"
   else
-    MSG="pre-deploy: $TIMESTAMP ($(git rev-parse --short HEAD))"
+    if [ "$DAILY" = true ]; then
+      MSG="backup: $DATE ($TIMESTAMP)
+main: $(git rev-parse --short HEAD)
+dirty: $(git status --porcelain | wc -l | tr -d ' ') files"
+    else
+      MSG="pre-deploy: $TIMESTAMP ($(git rev-parse --short HEAD))"
+    fi
     if [ -n "$PARENT" ]; then
       COMMIT=$(echo "$MSG" | git commit-tree "$TREE" -p "$PARENT")
     else
       COMMIT=$(echo "$MSG" | git commit-tree "$TREE")
     fi
-    git update-ref refs/heads/backup/pre-deploy "$COMMIT"
-    if git push origin backup/pre-deploy --force-with-lease --quiet 2>/dev/null; then
-      log "Pushed backup/pre-deploy: $(git rev-parse --short "$COMMIT")"
+    git update-ref "refs/heads/$BRANCH_NAME" "$COMMIT"
+    if git push origin "$BRANCH_NAME" --force-with-lease --quiet 2>/dev/null; then
+      log "Pushed $BRANCH_NAME: $(git rev-parse --short "$COMMIT")"
     else
       log "WARNING: Could not push backup branch (read-only key?) — local ref updated"
     fi
   fi
 
-  rm -rf backups/
+  # Cleanup
+  if [ "$DAILY" = true ]; then
+    # Rotate (keep 14 days)
+    find "$BACKUP_DIR/db" -name "*.sql.gz" -mtime +14 -delete 2>/dev/null || true
+    find "$BACKUP_DIR/daily" -name "*.tar.gz" -mtime +14 -delete 2>/dev/null || true
+    log "Rotated backups older than 14 days"
+  else
+    rm -rf backups/
+  fi
 
   state_write "backup" "done"
   state_write "db_size" "$DB_SIZE"
@@ -184,7 +229,7 @@ do_migrate() {
   require_dir
   state_write "stage" "migrate"
 
-  LATEST_APPLIED=$(timeout 30 docker exec supabase-db psql -U supabase_admin -d postgres -t -c \
+  LATEST_APPLIED=$(timeout 30 docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -c \
     "SELECT COALESCE(MAX(version), '0') FROM supabase_migrations.schema_migrations;" 2>/dev/null | tr -d ' ' || echo "0")
   log "Latest applied migration: $LATEST_APPLIED"
 
@@ -199,20 +244,20 @@ do_migrate() {
       log "Applying: $(basename "$f")"
 
       if grep -qi "CONCURRENTLY" "$f"; then
-        if ! timeout 60 docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < "$f"; then
+        if ! timeout 60 docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 < "$f"; then
           err "Migration FAILED: $(basename "$f")"
           FAILED=1
           break
         fi
         # CONCURRENT migrations can't run in a transaction — track version separately
-        if ! timeout 30 docker exec supabase-db psql -U supabase_admin -d postgres -c \
+        if ! timeout 30 docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c \
           "INSERT INTO supabase_migrations.schema_migrations (version) VALUES ('$VERSION');"; then
           err "Migration applied but version tracking FAILED: $VERSION"
           FAILED=1
           break
         fi
       else
-        if ! (echo "BEGIN;" && cat "$f" && echo "INSERT INTO supabase_migrations.schema_migrations (version) VALUES ('$VERSION');" && echo "COMMIT;") | timeout 60 docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1; then
+        if ! (echo "BEGIN;" && cat "$f" && echo "INSERT INTO supabase_migrations.schema_migrations (version) VALUES ('$VERSION');" && echo "COMMIT;") | timeout 60 docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1; then
           err "Migration FAILED (rolled back): $(basename "$f")"
           FAILED=1
           break
@@ -283,6 +328,24 @@ do_restart() {
   log "Restart complete"
 }
 
+# ── Smoke test helper ──────────────────────────────────────────────────
+
+check_endpoint() {
+  local name="$1" url="$2" headers="$3" retries="${4:-1}" delay="${5:-0}"
+  local code
+  for i in $(seq 1 "$retries"); do
+    [ "$delay" -gt 0 ] && sleep "$delay"
+    code=$(curl -s -o /dev/null -w "%{http_code}" "$url" $headers || echo "000")
+    log "  $name attempt $i: HTTP $code"
+    if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
+      log "PASS: $name (HTTP $code)"
+      return 0
+    fi
+  done
+  err "FAIL: $name (HTTP $code)"
+  return 1
+}
+
 # ── Stage: smoke ────────────────────────────────────────────────────────
 
 do_smoke() {
@@ -293,60 +356,21 @@ do_smoke() {
   SERVICE_KEY=$(get_service_key)
   SMOKE_PASS=true
 
-  # 1. Kong REST API (retry loop)
-  log "Smoke: Kong REST API"
-  HEALTHY=false
-  for i in 1 2 3 4 5; do
-    sleep 5
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:54321/rest/v1/ -H "apikey: $ANON_KEY" || echo "000")
-    log "  attempt $i: HTTP $HTTP_CODE"
-    if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 500 ]; then
-      HEALTHY=true
-      break
-    fi
-  done
-  if [ "$HEALTHY" != "true" ]; then
-    err "FAIL: Kong not responding"
-    SMOKE_PASS=false
-  else
-    log "PASS: Kong REST API (HTTP $HTTP_CODE)"
-  fi
-
-  # 2. Auth service
-  log "Smoke: Auth service"
-  AUTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:54321/auth/v1/health -H "apikey: $ANON_KEY" || echo "000")
-  if [ "$AUTH_CODE" -ge 200 ] && [ "$AUTH_CODE" -lt 400 ]; then
-    log "PASS: Auth service (HTTP $AUTH_CODE)"
-  else
-    err "FAIL: Auth service (HTTP $AUTH_CODE)"
-    SMOKE_PASS=false
-  fi
-
-  # 3. Edge functions
-  log "Smoke: Edge functions"
-  sleep 3
-  FN_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-    http://localhost:54321/functions/v1/api-v1-health \
-    -H "apikey: $ANON_KEY" || echo "000")
-  if [ "$FN_CODE" -ge 200 ] && [ "$FN_CODE" -lt 400 ]; then
-    log "PASS: Edge functions (HTTP $FN_CODE)"
-  else
-    err "FAIL: Edge functions (HTTP $FN_CODE)"
-    SMOKE_PASS=false
-  fi
-
-  # 4. DB connectivity via PostgREST
-  log "Smoke: DB connectivity"
-  DB_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  check_endpoint "Kong REST API" \
     "http://localhost:54321/rest/v1/" \
-    -H "apikey: $SERVICE_KEY" \
-    -H "Authorization: Bearer $SERVICE_KEY" || echo "000")
-  if [ "$DB_CODE" -ge 200 ] && [ "$DB_CODE" -lt 400 ]; then
-    log "PASS: DB connectivity (HTTP $DB_CODE)"
-  else
-    err "FAIL: DB connectivity (HTTP $DB_CODE)"
-    SMOKE_PASS=false
-  fi
+    "-H 'apikey: $ANON_KEY'" 5 5 || SMOKE_PASS=false
+
+  check_endpoint "Auth service" \
+    "http://localhost:54321/auth/v1/health" \
+    "-H 'apikey: $ANON_KEY'" 1 3 || SMOKE_PASS=false
+
+  check_endpoint "Edge functions" \
+    "http://localhost:54321/functions/v1/api-v1-health" \
+    "-H 'apikey: $ANON_KEY'" 3 3 || SMOKE_PASS=false
+
+  check_endpoint "DB connectivity" \
+    "http://localhost:54321/rest/v1/" \
+    "-H 'apikey: $SERVICE_KEY' -H 'Authorization: Bearer $SERVICE_KEY'" 1 0 || SMOKE_PASS=false
 
   state_write "smoke" "$SMOKE_PASS"
 
@@ -375,14 +399,14 @@ do_rollback() {
   MIGRATIONS_APPLIED=$(state_read "migrations_applied" "0")
 
   if [ -n "$PREV_HEAD" ]; then
-    git checkout "$PREV_HEAD" --force
+    git reset --hard "$PREV_HEAD"
     log "Rolled back code to $PREV_HEAD"
   fi
 
   if [ "$MIGRATIONS_APPLIED" -gt 0 ] 2>/dev/null && [ -s /tmp/pre-deploy-db.sql.gz ]; then
     log "Restoring pre-deploy database..."
     gunzip -c /tmp/pre-deploy-db.sql.gz \
-      | docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=0
+      | docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=0
     if [ $? -eq 0 ]; then
       log "Database restored"
     else
@@ -394,19 +418,16 @@ do_rollback() {
   log "Services restarted with rolled-back code"
 
   # Verify rollback health (inline, no recursive rollback)
-  sleep 10
   ANON_KEY=$(get_anon_key)
-  for endpoint in \
+  check_endpoint "Rollback: Kong" \
     "http://localhost:54321/rest/v1/" \
+    "-H 'apikey: $ANON_KEY'" 3 5 || err "Rollback health check failed for Kong"
+  check_endpoint "Rollback: Auth" \
     "http://localhost:54321/auth/v1/health" \
-    "http://localhost:54321/functions/v1/api-v1-health"; do
-    CODE=$(curl -s -o /dev/null -w "%{http_code}" "$endpoint" -H "apikey: $ANON_KEY" || echo "000")
-    if [ "$CODE" -ge 200 ] && [ "$CODE" -lt 500 ]; then
-      log "  Rollback check OK: $endpoint (HTTP $CODE)"
-    else
-      err "  Rollback check FAIL: $endpoint (HTTP $CODE)"
-    fi
-  done
+    "-H 'apikey: $ANON_KEY'" 3 5 || err "Rollback health check failed for Auth"
+  check_endpoint "Rollback: Functions" \
+    "http://localhost:54321/functions/v1/api-v1-health" \
+    "-H 'apikey: $ANON_KEY'" 3 5 || err "Rollback health check failed for Functions"
 
   state_write "rollback" "done"
   log "=== ROLLBACK COMPLETE ==="

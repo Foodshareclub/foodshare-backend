@@ -42,15 +42,17 @@ run_sql() {
   docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "$1"
 }
 
-# Check if a vault secret exists
+# Check if a vault secret exists (parameterized to prevent SQL injection)
 secret_exists() {
   local name="$1"
   local result
-  result=$(run_sql "SELECT COUNT(*) FROM vault.secrets WHERE name = '${name}';")
+  result=$(docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
+    -v "secret_name=$name" \
+    "SELECT COUNT(*) FROM vault.secrets WHERE name = :'secret_name';")
   [ "$result" -gt 0 ]
 }
 
-# Create a vault secret (value is single-quote-escaped for SQL)
+# Create a vault secret (parameterized to prevent SQL injection)
 create_secret() {
   local value="$1"
   local name="$2"
@@ -61,10 +63,10 @@ create_secret() {
     return 0
   fi
 
-  # Escape single quotes in value for SQL
-  local escaped_value="${value//\'/\'\'}"
-
-  run_sql "SELECT vault.create_secret('${escaped_value}', '${name}', '${description}');" >/dev/null
+  docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" \
+    -v "secret_value=$value" -v "secret_name=$name" -v "secret_desc=$description" <<'SQL' >/dev/null
+    SELECT vault.create_secret(:'secret_value', :'secret_name', :'secret_desc');
+SQL
   log_info "Created vault secret: $name"
 }
 

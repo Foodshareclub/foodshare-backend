@@ -55,31 +55,25 @@ runs:
           fi
         fi
 
+        emit_full_deploy() {
+          for kv in "functions-changed=true" "functions-list=[]" "shared-changed=true" \
+                    "migrations-changed=false" "migrations-list=[]" "infrastructure-changed=true" \
+                    "config-changed=true" "any-deployable=true"; do
+            echo "$kv" >> "$GITHUB_OUTPUT"
+          done
+        }
+
         echo "Comparing against: $BASE"
         if ! CHANGED=$(git diff --name-only "$BASE" HEAD 2>&1); then
           echo "::warning::git diff failed — treating as full deploy"
           echo "git diff output: $CHANGED"
-          echo "functions-changed=true" >> "$GITHUB_OUTPUT"
-          echo "functions-list=[]" >> "$GITHUB_OUTPUT"
-          echo "shared-changed=true" >> "$GITHUB_OUTPUT"
-          echo "migrations-changed=false" >> "$GITHUB_OUTPUT"
-          echo "migrations-list=[]" >> "$GITHUB_OUTPUT"
-          echo "infrastructure-changed=true" >> "$GITHUB_OUTPUT"
-          echo "config-changed=true" >> "$GITHUB_OUTPUT"
-          echo "any-deployable=true" >> "$GITHUB_OUTPUT"
+          emit_full_deploy
           exit 0
         fi
 
         if [ -z "$CHANGED" ]; then
           echo "No changes detected — treating as full deploy"
-          echo "functions-changed=true" >> "$GITHUB_OUTPUT"
-          echo "functions-list=[]" >> "$GITHUB_OUTPUT"
-          echo "shared-changed=true" >> "$GITHUB_OUTPUT"
-          echo "migrations-changed=false" >> "$GITHUB_OUTPUT"
-          echo "migrations-list=[]" >> "$GITHUB_OUTPUT"
-          echo "infrastructure-changed=true" >> "$GITHUB_OUTPUT"
-          echo "config-changed=true" >> "$GITHUB_OUTPUT"
-          echo "any-deployable=true" >> "$GITHUB_OUTPUT"
+          emit_full_deploy
           exit 0
         fi
 
@@ -130,7 +124,7 @@ runs:
         fi
 
         # Any deployable
-        if echo "$CHANGED" | grep -qE '^(supabase/|docker-compose\.yml|volumes/|\.env\.example)'; then
+        if echo "$CHANGED" | grep -qE '^(supabase/|docker-compose\.yml|volumes/|\.env\.example|scripts/|\.github/)'; then
           echo "any-deployable=true" >> "$GITHUB_OUTPUT"
         else
           echo "any-deployable=false" >> "$GITHUB_OUTPUT"

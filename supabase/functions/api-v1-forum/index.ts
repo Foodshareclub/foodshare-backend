@@ -13,6 +13,7 @@
  * - GET    /api-v1-forum?action=bookmarks         - User bookmarks (auth)
  * - GET    /api-v1-forum?action=unread            - Unread posts (auth)
  * - GET    /api-v1-forum?action=series&id=<id>    - Series detail
+ * - GET    /api-v1-forum?action=comments&id=<id>  - List comments for post
  * - POST   /api-v1-forum?action=create            - Create post
  * - POST   /api-v1-forum?action=comment           - Add comment
  * - POST   /api-v1-forum?action=like              - Toggle like
@@ -62,7 +63,7 @@ import {
 } from "./lib/threads.ts";
 
 // Comment handlers
-import { createComment, deleteComment, markBestAnswer, updateComment } from "./lib/comments.ts";
+import { createComment, deleteComment, getComments, markBestAnswer, updateComment } from "./lib/comments.ts";
 
 // Reaction/engagement handlers
 import {
@@ -94,6 +95,7 @@ const forumQuerySchema = z.object({
     "bookmarks",
     "unread",
     "series",
+    "comments",
     "create",
     "comment",
     "like",
@@ -157,6 +159,8 @@ async function handleGet(ctx: HandlerContext<unknown, ForumQuery>): Promise<Resp
       return getUnread(ctx);
     case "series":
       return getSeries(ctx);
+    case "comments":
+      return getComments(ctx);
     default:
       return getFeed(ctx);
   }

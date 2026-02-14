@@ -102,16 +102,16 @@ jobs:
           if [ -f tools/motherduck-sync/sync-result.json ]; then
             echo "## Sync Results" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            
+
             SUCCESS=$(jq -r '.success' tools/motherduck-sync/sync-result.json)
             DURATION=$(jq -r '.duration_ms' tools/motherduck-sync/sync-result.json)
-            
+
             if [ "$SUCCESS" = "true" ]; then
               echo "✅ **Sync completed successfully**" >> $GITHUB_STEP_SUMMARY
             else
               echo "❌ **Sync completed with errors**" >> $GITHUB_STEP_SUMMARY
             fi
-            
+
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "- Duration: ${DURATION}ms" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
@@ -119,7 +119,7 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "| Source | Target | Records | Duration | Status |" >> $GITHUB_STEP_SUMMARY
             echo "|--------|--------|---------|----------|--------|" >> $GITHUB_STEP_SUMMARY
-            
+
             jq -r '.tables | to_entries[] | "| \(.value.source_table) | \(.value.target_table) | \(.value.records_synced) | \(.value.duration_ms)ms | \(if .value.success then "✅" else "❌" end) |"' tools/motherduck-sync/sync-result.json >> $GITHUB_STEP_SUMMARY
           fi
 
@@ -129,7 +129,16 @@ jobs:
     needs: sync
     if: failure()
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
       - name: Send failure notification
         run: |
           echo "::error::MotherDuck sync failed. Check the workflow logs for details."
-          # Add Slack/Discord/email notification here if needed
+
+      - uses: ./.github/actions/telegram-notify
+        with:
+          bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_DEPLOY_CHAT_ID }}
+          message: |
+            ❌ *MotherDuck sync failed*
+            Check: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

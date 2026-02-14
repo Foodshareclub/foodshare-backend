@@ -89,6 +89,10 @@ jobs:
                 echo "=== Force Backup ==="
                 ./scripts/deploy.sh backup
                 ;;
+              *)
+                echo "ERROR: Unknown operation: $OP"
+                exit 1
+                ;;
             esac
 
       - name: Operation summary

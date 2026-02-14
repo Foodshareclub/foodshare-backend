@@ -13,11 +13,11 @@ import {
   type HandlerContext,
   noContent,
   ok,
-  paginated,
 } from "../../_shared/api-handler.ts";
 import { ValidationError } from "../../_shared/errors.ts";
 import { logger } from "../../_shared/logger.ts";
 import type { ForumQuery } from "../index.ts";
+import { EngagementService } from "./engagement-service.ts";
 
 // =============================================================================
 // Schemas
@@ -143,71 +143,50 @@ export async function getBookmarks(ctx: HandlerContext<unknown, ForumQuery>): Pr
 // =============================================================================
 
 export async function toggleLike(ctx: HandlerContext): Promise<Response> {
-  const { supabase } = ctx;
+  const { supabase, userId } = ctx;
   const body = toggleLikeSchema.parse(ctx.body);
 
-  const { data, error } = await supabase.rpc("toggle_forum_like", {
-    p_forum_id: body.forumId,
-  });
+  if (!userId) throw new ValidationError("Authentication required");
 
-  if (error) {
-    logger.error("Toggle like failed", new Error(error.message));
-    throw new ValidationError(`Failed to toggle like: ${error.message}`);
-  }
+  const service = new EngagementService(supabase, userId);
+  const data = await service.toggleLike(body.forumId);
 
   return ok(data, ctx);
 }
 
 export async function toggleBookmark(ctx: HandlerContext): Promise<Response> {
-  const { supabase } = ctx;
+  const { supabase, userId } = ctx;
   const body = toggleBookmarkSchema.parse(ctx.body);
 
-  const { data, error } = await supabase.rpc("toggle_forum_bookmark", {
-    p_forum_id: body.forumId,
-  });
+  if (!userId) throw new ValidationError("Authentication required");
 
-  if (error) {
-    logger.error("Toggle bookmark failed", new Error(error.message));
-    throw new ValidationError(`Failed to toggle bookmark: ${error.message}`);
-  }
+  const service = new EngagementService(supabase, userId);
+  const data = await service.toggleBookmark(body.forumId);
 
   return ok(data, ctx);
 }
 
 export async function toggleReaction(ctx: HandlerContext): Promise<Response> {
-  const { supabase } = ctx;
+  const { supabase, userId } = ctx;
   const body = toggleReactionSchema.parse(ctx.body);
 
-  const { data, error } = await supabase.rpc("toggle_forum_reaction", {
-    p_forum_id: body.forumId,
-    p_reaction_type: body.reactionType,
-  });
+  if (!userId) throw new ValidationError("Authentication required");
 
-  if (error) {
-    logger.error("Toggle reaction failed", new Error(error.message));
-    throw new ValidationError(`Failed to toggle reaction: ${error.message}`);
-  }
+  const service = new EngagementService(supabase, userId);
+  const data = await service.toggleReaction(body.forumId, body.reactionType);
 
   return ok(data, ctx);
 }
 
 export async function toggleSubscription(ctx: HandlerContext): Promise<Response> {
-  const { supabase } = ctx;
+  const { supabase, userId } = ctx;
   const body = toggleSubscriptionSchema.parse(ctx.body);
 
-  if (!body.forumId && !body.categoryId) {
-    throw new ValidationError("Either forumId or categoryId is required");
-  }
+  if (!userId) throw new ValidationError("Authentication required");
+  if (!body.forumId) throw new ValidationError("forumId is required");
 
-  const { data, error } = await supabase.rpc("toggle_forum_subscription", {
-    p_forum_id: body.forumId || null,
-    p_category_id: body.categoryId || null,
-  });
-
-  if (error) {
-    logger.error("Toggle subscription failed", new Error(error.message));
-    throw new ValidationError(`Failed to toggle subscription: ${error.message}`);
-  }
+  const service = new EngagementService(supabase, userId);
+  const data = await service.toggleSubscription(body.forumId);
 
   return ok(data, ctx);
 }

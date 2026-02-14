@@ -44,13 +44,9 @@ jobs:
           script: |
             set -eo pipefail
             cd /home/organic/dev/foodshare-backend
+            chmod +x scripts/deploy.sh
 
-            BACKUP_DIR="/home/organic/backups"
-            DATE=$(date -u +%Y-%m-%d)
             TIMESTAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
-
-            mkdir -p "$BACKUP_DIR/daily" "$BACKUP_DIR/db"
-
             echo "=== VPS Backup: $TIMESTAMP ==="
 
             # 0. Health check — verify services are running
@@ -59,86 +55,18 @@ jobs:
             if [ -n "$UNHEALTHY" ]; then
               echo "WARNING: Unhealthy services detected:"
               echo "$UNHEALTHY"
-              echo "HEALTH_WARNING=true"
             else
               echo "All services healthy"
-              echo "HEALTH_WARNING=false"
             fi
 
-            # 1. Database dump (compressed, custom format for selective restore)
-            echo "--- Database dump ---"
-            DB_FILE="$BACKUP_DIR/db/foodshare-$DATE.sql.gz"
-            timeout 120 docker exec supabase-db pg_dump -U supabase_admin -d postgres \
-              --no-owner --no-privileges --clean --if-exists \
-              -N _analytics -N _realtime -N supabase_functions \
-              | gzip > "$DB_FILE"
-            DB_SIZE=$(du -h "$DB_FILE" | cut -f1)
-            echo "DB dump: $DB_SIZE"
+            # 1. Core backup (DB, secrets, git state, rotation)
+            ./scripts/deploy.sh backup --daily
 
-            # Verify dump is non-empty
-            if [ ! -s "$DB_FILE" ]; then
-              echo "ERROR: Database dump is empty!"
-              exit 1
-            fi
-
-            # 2. Secrets snapshot (env files that are gitignored)
-            echo "--- Secrets snapshot ---"
-            SECRETS_FILE="$BACKUP_DIR/daily/secrets-$DATE.tar.gz"
-            tar czf "$SECRETS_FILE" \
-              .env \
-              .env.functions \
-              docker-compose.override.yml \
-              2>/dev/null || tar czf "$SECRETS_FILE" .env .env.functions 2>/dev/null || true
-            SECRETS_SIZE=$(du -h "$SECRETS_FILE" | cut -f1)
-            echo "Secrets: $SECRETS_SIZE"
-
-            # 3. Git state snapshot (push to backup/vps branch without switching)
-            echo "--- Git state snapshot ---"
-            CURRENT_BRANCH=$(git branch --show-current)
-            MAIN_HEAD=$(git rev-parse --short HEAD)
-            GIT_STATE="clean"
-
-            if git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
-              echo "Working tree clean — git backup skipped (main is the truth)"
-            else
-              GIT_STATE="dirty"
-              git add -A
-              TREE=$(git write-tree)
-              git reset HEAD --quiet
-
-              PARENT=$(git rev-parse --verify refs/heads/backup/vps 2>/dev/null || echo "")
-              SKIP=false
-              if [ -n "$PARENT" ]; then
-                PARENT_TREE=$(git rev-parse "$PARENT^{tree}")
-                [ "$TREE" = "$PARENT_TREE" ] && SKIP=true
-              fi
-
-              if [ "$SKIP" = true ]; then
-                echo "No changes since last git backup — skipped"
-              else
-                MSG="backup: $DATE ($TIMESTAMP)
-            main: $MAIN_HEAD
-            branch: $CURRENT_BRANCH
-            dirty: $(git status --porcelain | wc -l | tr -d ' ') files"
-
-                if [ -n "$PARENT" ]; then
-                  COMMIT=$(echo "$MSG" | git commit-tree "$TREE" -p "$PARENT")
-                else
-                  COMMIT=$(echo "$MSG" | git commit-tree "$TREE")
-                fi
-
-                git update-ref refs/heads/backup/vps "$COMMIT"
-                if git push origin backup/vps --force-with-lease --quiet 2>/dev/null; then
-                  echo "Pushed backup/vps: $(git rev-parse --short "$COMMIT")"
-                else
-                  echo "WARNING: Could not push backup branch (read-only key?) — local ref updated"
-                fi
-              fi
-            fi
-
-            # 4. Full backup (Docker volumes, if requested)
+            # 2. Full backup (Docker volumes, if requested)
             if [ "$FULL_BACKUP" = "true" ]; then
               echo "--- Docker volumes backup ---"
+              BACKUP_DIR="/home/organic/backups"
+              DATE=$(date -u +%Y-%m-%d)
               VOLUMES_FILE="$BACKUP_DIR/daily/volumes-$DATE.tar.gz"
               tar czf "$VOLUMES_FILE" \
                 --exclude='volumes/db/data' \
@@ -146,13 +74,6 @@ jobs:
                 volumes/ 2>/dev/null || true
               echo "Volumes: $(du -h "$VOLUMES_FILE" | cut -f1)"
             fi
-
-            # 5. Rotate old backups (keep 14 days)
-            echo "--- Cleanup ---"
-            ROTATED_DB=$(find "$BACKUP_DIR/db" -name "*.sql.gz" -mtime +14 -delete -print 2>/dev/null | wc -l | tr -d ' ')
-            ROTATED_DAILY=$(find "$BACKUP_DIR/daily" -name "*.tar.gz" -mtime +14 -delete -print 2>/dev/null | wc -l | tr -d ' ')
-            echo "Rotated: $ROTATED_DB DB dumps, $ROTATED_DAILY daily archives"
-            echo "Kept last 14 days of backups"
 
             echo "=== Backup complete ==="
 

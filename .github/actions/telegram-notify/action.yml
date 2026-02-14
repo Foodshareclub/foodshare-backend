@@ -25,7 +25,10 @@ runs:
         TG_MSG: ${{ inputs.message }}
         TG_SILENT: ${{ inputs.silent }}
       run: |
-        [ -z "$TG_TOKEN" ] && exit 0
+        if [ -z "$TG_TOKEN" ]; then
+          echo "::debug::Telegram notification skipped (no bot token)"
+          exit 0
+        fi
         curl -sf -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
           --data-urlencode "chat_id=${TG_CHAT}" \
           --data-urlencode "text=${TG_MSG}" \

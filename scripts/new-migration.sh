@@ -49,4 +49,6 @@ echo "Created: supabase/migrations/${FILENAME}"
 # Open in editor if set
 if [ -n "${EDITOR:-}" ]; then
   exec "$EDITOR" "$FILEPATH"
+elif [ -n "${VISUAL:-}" ]; then
+  exec "$VISUAL" "$FILEPATH"
 fi

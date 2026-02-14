@@ -26,222 +26,45 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ── Change detection ──────────────────────────────────────────────────
-  detect-changes:
-    name: Detect changes
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    outputs:
-      functions-changed: ${{ steps.changes.outputs.functions-changed }}
-      functions-list: ${{ steps.changes.outputs.functions-list }}
-      shared-changed: ${{ steps.changes.outputs.shared-changed }}
-      migrations-changed: ${{ steps.changes.outputs.migrations-changed }}
-      migrations-list: ${{ steps.changes.outputs.migrations-list }}
-      infrastructure-changed: ${{ steps.changes.outputs.infrastructure-changed }}
-      config-changed: ${{ steps.changes.outputs.config-changed }}
-      any-deployable: ${{ steps.changes.outputs.any-deployable }}
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          fetch-depth: 0
-
-      - id: changes
-        uses: ./.github/actions/detect-changes
-
-  # ── Lint ──────────────────────────────────────────────────────────────
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    timeout-minutes: 3
-    defaults:
-      run:
-        working-directory: supabase/functions
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: ./.github/actions/setup-deno
-
-      - name: deno lint
-        run: deno lint
-
-      - name: deno fmt --check
-        run: deno fmt --check
-
-      - name: Check for problematic JSR imports
-        run: |
-          if grep -r "jsr:@supabase/functions-js" .; then
-            echo "::error::Problematic JSR import detected!"
-            exit 1
-          fi
-
-  # ── Test ─────────────────────────────────────────────────────────────
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    timeout-minutes: 5
-    defaults:
-      run:
-        working-directory: supabase/functions
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: ./.github/actions/setup-deno
-
-      - name: deno test
-        run: deno test --allow-all
-
-  # ── Security ─────────────────────────────────────────────────────────
-  security:
-    name: Security scan
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    timeout-minutes: 3
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          fetch-depth: 0
-
-      - name: Scan for leaked secrets
-        uses: trufflesecurity/trufflehog@7635b24fd512a2e817dd3e9dd661caaf035a079d # v3.93.1
-        with:
-          extra_args: --only-verified --results=verified
-
-  # ── Validate migrations (conditional) ────────────────────────────────
-  validate-migrations:
-    name: Validate migrations
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    if: needs.detect-changes.outputs.migrations-changed == 'true'
-    timeout-minutes: 5
-
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: supabase_admin
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U supabase_admin"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Install PostgreSQL client
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client
-
-      - name: Create schema_migrations table
-        run: |
-          psql -h localhost -U supabase_admin -d postgres -c "
-            CREATE SCHEMA IF NOT EXISTS supabase_migrations;
-            CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
-              version text PRIMARY KEY,
-              statements text,
-              name text
-            );
-          "
-        env:
-          PGPASSWORD: postgres
-
-      - name: Apply baseline (best-effort)
-        run: |
-          psql -h localhost -U supabase_admin -d postgres \
-            -f supabase/migrations/20260128195318_baseline.sql \
-            2>&1 || true
-        env:
-          PGPASSWORD: postgres
-
-      - name: Apply incremental migrations (strict)
-        run: |
-          FAILED=0
-          for f in supabase/migrations/*.sql; do
-            [ -f "$f" ] || continue
-            BASENAME=$(basename "$f")
-
-            if [ "$BASENAME" = "20260128195318_baseline.sql" ]; then
-              continue
-            fi
-
-            if grep -qE '(cron\.(schedule|unschedule)|net\.http_(post|get))' "$f"; then
-              echo "--- Skipping: $BASENAME (requires pg_cron/pg_net) ---"
-              continue
-            fi
-
-            if grep -qE '(ALTER TABLE|CREATE INDEX|COMMENT ON|INSERT INTO|FROM)\s+(public\.)?(posts|profiles|community_fridges|blocked_users)|extensions\.(st_|geometry)|auth\.(uid|jwt|users)' "$f"; then
-              echo "--- Skipping: $BASENAME (depends on baseline tables/extensions) ---"
-              continue
-            fi
-
-            VERSION=$(echo "$BASENAME" | grep -oE '^[0-9]+')
-            echo "--- Applying: $BASENAME ---"
-
-            if ! psql -h localhost -U supabase_admin -d postgres \
-              -v ON_ERROR_STOP=1 -f "$f"; then
-              echo "::error::Migration failed: $BASENAME"
-              FAILED=1
-              break
-            fi
-
-            psql -h localhost -U supabase_admin -d postgres -c \
-              "INSERT INTO supabase_migrations.schema_migrations (version) VALUES ('$VERSION') ON CONFLICT DO NOTHING;"
-          done
-
-          if [ "$FAILED" -ne 0 ]; then
-            exit 1
-          fi
-        env:
-          PGPASSWORD: postgres
+  # ── Shared CI checks ─────────────────────────────────────────────────
+  ci:
+    uses: ./.github/workflows/ci-checks.yml
 
   # ── Deploy gate ──────────────────────────────────────────────────────
   deploy-gate:
     name: Deploy gate
     runs-on: ubuntu-latest
-    needs: [detect-changes, lint, test, security, validate-migrations]
+    needs: ci
     if: always() && !cancelled()
     timeout-minutes: 1
     steps:
       - name: Go / no-go
         env:
-          LINT_RESULT: ${{ needs.lint.result }}
-          TEST_RESULT: ${{ needs.test.result }}
-          SECURITY_RESULT: ${{ needs.security.result }}
-          MIGRATIONS_RESULT: ${{ needs.validate-migrations.result }}
+          LINT_RESULT: ${{ needs.ci.outputs.lint-result }}
+          TEST_RESULT: ${{ needs.ci.outputs.test-result }}
+          SECURITY_RESULT: ${{ needs.ci.outputs.security-result }}
+          MIGRATIONS_RESULT: ${{ needs.ci.outputs.migrations-result }}
         run: |
-          if [ "$LINT_RESULT" = "failure" ]; then
-            echo "::error::Lint failed — deploy blocked"
-            exit 1
-          fi
-          if [ "$TEST_RESULT" = "failure" ]; then
-            echo "::error::Tests failed — deploy blocked"
-            exit 1
-          fi
-          if [ "$SECURITY_RESULT" = "failure" ]; then
-            echo "::error::Security scan failed — deploy blocked"
-            exit 1
-          fi
-          if [ "$MIGRATIONS_RESULT" = "failure" ]; then
-            echo "::error::Migration validation failed — deploy blocked"
-            exit 1
-          fi
+          for job in LINT TEST SECURITY MIGRATIONS; do
+            eval "RESULT=\$${job}_RESULT"
+            if [ "$RESULT" = "failure" ]; then
+              echo "::error::${job,,} failed — deploy blocked"
+              exit 1
+            fi
+          done
           echo "All gates passed"
 
   # ── Deploy ───────────────────────────────────────────────────────────
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
-    needs: [detect-changes, deploy-gate]
+    needs: [ci, deploy-gate]
     if: |
       !cancelled() &&
       needs.deploy-gate.result == 'success' &&
-      needs.detect-changes.result == 'success' &&
-      inputs.dry-run != true
+      needs.ci.result == 'success' &&
+      inputs.dry-run != true &&
+      (github.event_name == 'workflow_dispatch' || needs.ci.outputs.any-deployable == 'true')
     timeout-minutes: 10
     environment: production
     env:
@@ -256,28 +79,19 @@ jobs:
       - name: Build change summary
         id: summary
         env:
-          FN_CHANGED: ${{ needs.detect-changes.outputs.functions-changed }}
-          SHARED_CHANGED: ${{ needs.detect-changes.outputs.shared-changed }}
-          MIG_CHANGED: ${{ needs.detect-changes.outputs.migrations-changed }}
-          INFRA_CHANGED: ${{ needs.detect-changes.outputs.infrastructure-changed }}
-          CFG_CHANGED: ${{ needs.detect-changes.outputs.config-changed }}
+          FN_CHANGED: ${{ needs.ci.outputs.functions-changed }}
+          SHARED_CHANGED: ${{ needs.ci.outputs.shared-changed }}
+          MIG_CHANGED: ${{ needs.ci.outputs.migrations-changed }}
+          INFRA_CHANGED: ${{ needs.ci.outputs.infrastructure-changed }}
+          CFG_CHANGED: ${{ needs.ci.outputs.config-changed }}
         run: |
           PARTS=""
-          if [ "$FN_CHANGED" = "true" ]; then
-            PARTS="$PARTS functions"
-          fi
-          if [ "$SHARED_CHANGED" = "true" ]; then
-            PARTS="$PARTS shared"
-          fi
-          if [ "$MIG_CHANGED" = "true" ]; then
-            PARTS="$PARTS migrations"
-          fi
-          if [ "$INFRA_CHANGED" = "true" ]; then
-            PARTS="$PARTS infra"
-          fi
-          if [ "$CFG_CHANGED" = "true" ]; then
-            PARTS="$PARTS config"
-          fi
+          for pair in "FN_CHANGED:functions" "SHARED_CHANGED:shared" "MIG_CHANGED:migrations" \
+                      "INFRA_CHANGED:infra" "CFG_CHANGED:config"; do
+            KEY="${pair%%:*}"; LABEL="${pair##*:}"
+            eval "VAL=\$$KEY"
+            [ "$VAL" = "true" ] && PARTS="$PARTS $LABEL"
+          done
           PARTS=$(echo "$PARTS" | xargs | tr ' ' ', ')
           echo "changes=${PARTS:-none}" >> "$GITHUB_OUTPUT"
 
@@ -297,11 +111,11 @@ jobs:
         env:
           FORCE_RESTART: ${{ inputs.force-restart }}
           SKIP_BACKUP: ${{ inputs.skip-backup }}
-          FUNCTIONS_CHANGED: ${{ needs.detect-changes.outputs.functions-changed }}
-          SHARED_CHANGED: ${{ needs.detect-changes.outputs.shared-changed }}
-          MIGRATIONS_CHANGED: ${{ needs.detect-changes.outputs.migrations-changed }}
-          INFRASTRUCTURE_CHANGED: ${{ needs.detect-changes.outputs.infrastructure-changed }}
-          CONFIG_CHANGED: ${{ needs.detect-changes.outputs.config-changed }}
+          FUNCTIONS_CHANGED: ${{ needs.ci.outputs.functions-changed }}
+          SHARED_CHANGED: ${{ needs.ci.outputs.shared-changed }}
+          MIGRATIONS_CHANGED: ${{ needs.ci.outputs.migrations-changed }}
+          INFRASTRUCTURE_CHANGED: ${{ needs.ci.outputs.infrastructure-changed }}
+          CONFIG_CHANGED: ${{ needs.ci.outputs.config-changed }}
         with:
           host: vps.foodshare.club
           username: organic
@@ -329,7 +143,9 @@ jobs:
 
             # ── Stage 2: Record pull state ──
             echo "=== Recording pull state ==="
-            # Write state that deploy.sh pull would have written
+            # NOTE: State is written inline (not via deploy.sh pull) because
+            # git pull at Stage 0 must run BEFORE deploy.sh exists on disk.
+            # Calling deploy.sh pull after would no-op and miss PREV_HEAD.
             echo '{}' > /tmp/deploy-state.json
             jq -n --arg started "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
                   --arg stage "pull" \
@@ -412,17 +228,17 @@ jobs:
   dry-run-summary:
     name: Dry-run summary
     runs-on: ubuntu-latest
-    needs: [detect-changes, deploy-gate]
+    needs: [ci, deploy-gate]
     if: inputs.dry-run == true && needs.deploy-gate.result == 'success'
     timeout-minutes: 1
     steps:
       - name: Summary
         env:
-          FN_CHANGED: ${{ needs.detect-changes.outputs.functions-changed }}
-          SHARED_CHANGED: ${{ needs.detect-changes.outputs.shared-changed }}
-          MIG_CHANGED: ${{ needs.detect-changes.outputs.migrations-changed }}
-          INFRA_CHANGED: ${{ needs.detect-changes.outputs.infrastructure-changed }}
-          CFG_CHANGED: ${{ needs.detect-changes.outputs.config-changed }}
+          FN_CHANGED: ${{ needs.ci.outputs.functions-changed }}
+          SHARED_CHANGED: ${{ needs.ci.outputs.shared-changed }}
+          MIG_CHANGED: ${{ needs.ci.outputs.migrations-changed }}
+          INFRA_CHANGED: ${{ needs.ci.outputs.infrastructure-changed }}
+          CFG_CHANGED: ${{ needs.ci.outputs.config-changed }}
         run: |
           {
             echo "## Dry Run — Validation Passed"
