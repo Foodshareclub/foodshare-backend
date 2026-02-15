@@ -13,7 +13,7 @@
  * @module api-v1-ai
  */
 
-import { HfInference } from "https://esm.sh/@huggingface/inference@2.6.4";
+// HfInference loaded lazily only when inference routes are hit (saves ~100-200ms cold start)
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
 import { createHealthHandler } from "../_shared/health-handler.ts";
@@ -82,6 +82,7 @@ function getSubPath(url: URL): string {
 // HF Inference Cache (memory + database)
 // =============================================================================
 
+const MAX_INFERENCE_CACHE_SIZE = 200;
 const inferenceCache = new Map<string, { result: unknown; timestamp: number; hits: number }>();
 
 setInterval(() => {
@@ -125,6 +126,11 @@ async function getCachedResult(
 
 // deno-lint-ignore no-explicit-any
 async function setCachedResult(cacheKey: string, result: unknown, supabase: any): Promise<void> {
+  // Evict oldest if cache is full
+  if (inferenceCache.size >= MAX_INFERENCE_CACHE_SIZE) {
+    const firstKey = inferenceCache.keys().next().value;
+    if (firstKey) inferenceCache.delete(firstKey);
+  }
   inferenceCache.set(cacheKey, { result, timestamp: Date.now(), hits: 1 });
   supabase
     .from("inference_cache")
@@ -229,6 +235,7 @@ async function runHfInference(
     };
   }
 
+  const { HfInference } = await import("https://esm.sh/@huggingface/inference@2.6.4");
   const hf = new HfInference(hfToken);
   let result: unknown;
   let contentType = "application/json";

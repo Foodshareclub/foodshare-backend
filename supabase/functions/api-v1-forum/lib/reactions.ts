@@ -7,7 +7,7 @@
  * @module api-v1-forum/lib/reactions
  */
 
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { datetimeSchema, positiveIntSchema, uuidSchema, z } from "../../_shared/schemas/common.ts";
 import {
   created,
   type HandlerContext,
@@ -24,55 +24,55 @@ import { EngagementService } from "./engagement-service.ts";
 // =============================================================================
 
 export const toggleLikeSchema = z.object({
-  forumId: z.number().int().positive(),
+  forumId: positiveIntSchema,
 });
 
 export const toggleBookmarkSchema = z.object({
-  forumId: z.number().int().positive(),
+  forumId: positiveIntSchema,
 });
 
 export const toggleReactionSchema = z.object({
-  forumId: z.number().int().positive(),
+  forumId: positiveIntSchema,
   reactionType: z.string().min(1).max(50),
 });
 
 export const toggleSubscriptionSchema = z.object({
-  forumId: z.number().int().positive().optional(),
-  categoryId: z.number().int().positive().optional(),
+  forumId: positiveIntSchema.optional(),
+  categoryId: positiveIntSchema.optional(),
 });
 
 export const submitReportSchema = z.object({
-  forumId: z.number().int().positive().optional(),
-  commentId: z.number().int().positive().optional(),
+  forumId: positiveIntSchema.optional(),
+  commentId: positiveIntSchema.optional(),
   reason: z.string().min(1).max(100),
   description: z.string().max(1000).optional(),
 });
 
 export const saveDraftSchema = z.object({
-  draftId: z.string().uuid().optional(),
+  draftId: uuidSchema.optional(),
   title: z.string().max(200).optional(),
   description: z.string().max(10000).optional(),
   richContent: z.record(z.unknown()).optional(),
-  categoryId: z.number().int().positive().optional(),
+  categoryId: positiveIntSchema.optional(),
   postType: z.enum(["discussion", "question", "announcement", "guide"]).optional(),
-  tags: z.array(z.number().int().positive()).max(5).optional(),
+  tags: z.array(positiveIntSchema).max(5).optional(),
   imageUrl: z.string().url().optional(),
   pollData: z.record(z.unknown()).optional(),
 });
 
 export const createPollSchema = z.object({
-  forumId: z.number().int().positive(),
+  forumId: positiveIntSchema,
   question: z.string().min(1).max(500),
   options: z.array(z.string().min(1).max(200)).min(2).max(20),
   pollType: z.enum(["single", "multiple"]).default("single"),
-  endsAt: z.string().datetime().optional(),
+  endsAt: datetimeSchema.optional(),
   isAnonymous: z.boolean().default(false),
   showResultsBeforeVote: z.boolean().default(false),
 });
 
 export const votePollSchema = z.object({
-  pollId: z.string().uuid(),
-  optionId: z.string().uuid(),
+  pollId: uuidSchema,
+  optionId: uuidSchema,
 });
 
 // =============================================================================

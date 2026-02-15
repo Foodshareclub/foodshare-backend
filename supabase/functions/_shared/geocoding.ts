@@ -5,6 +5,7 @@
 
 import { CircuitBreakerError, withCircuitBreaker } from "./circuit-breaker.ts";
 import { logger } from "./logger.ts";
+import { getSupabaseClient } from "./supabase.ts";
 
 // Types
 export interface Coordinates {
@@ -32,7 +33,8 @@ const RATE_LIMIT_DELAY_MS = 1000; // Nominatim requires 1 request per second
 const REQUEST_TIMEOUT_MS = 10000; // 10 seconds
 const MAX_RETRIES = 3;
 
-// In-memory cache
+// In-memory cache (bounded to prevent OOM)
+const MAX_GEOCODE_CACHE_SIZE = 500;
 const geocodeCache = new Map<string, CacheEntry>();
 let lastRequestTime = 0;
 
@@ -56,9 +58,9 @@ function isCacheValid(entry: CacheEntry): boolean {
 }
 
 /**
- * Get coordinates from cache
+ * Get coordinates from in-memory cache
  */
-function getFromCache(address: string): Coordinates | null {
+function getFromMemoryCache(address: string): Coordinates | null {
   const normalized = normalizeAddress(address);
   const entry = geocodeCache.get(normalized);
 
@@ -74,10 +76,62 @@ function getFromCache(address: string): Coordinates | null {
 }
 
 /**
- * Save coordinates to cache
+ * Get coordinates from persistent DB cache (survives cold starts)
  */
-function saveToCache(address: string, coordinates: Coordinates): void {
+async function getFromDbCache(address: string): Promise<Coordinates | null> {
   const normalized = normalizeAddress(address);
+  try {
+    const supabase = getSupabaseClient();
+    const { data } = await supabase
+      .from("geocoding_cache")
+      .select("latitude,longitude")
+      .eq("address", normalized)
+      .gte("cached_at", new Date(Date.now() - CACHE_TTL_MS).toISOString())
+      .maybeSingle();
+
+    if (data) {
+      // Promote to in-memory cache for faster subsequent lookups
+      saveToMemoryCache(normalized, { latitude: data.latitude, longitude: data.longitude });
+      return { latitude: data.latitude, longitude: data.longitude };
+    }
+  } catch (err) {
+    logger.warn("DB geocode cache lookup failed", { error: String(err) });
+  }
+  return null;
+}
+
+/**
+ * Save coordinates to persistent DB cache
+ */
+async function saveToDbCache(address: string, coordinates: Coordinates): Promise<void> {
+  const normalized = normalizeAddress(address);
+  try {
+    const supabase = getSupabaseClient();
+    await supabase
+      .from("geocoding_cache")
+      .upsert({
+        address: normalized,
+        latitude: coordinates.latitude,
+        longitude: coordinates.longitude,
+        cached_at: new Date().toISOString(),
+      }, { onConflict: "address" });
+  } catch (err) {
+    logger.warn("DB geocode cache write failed", { error: String(err) });
+  }
+}
+
+/**
+ * Save coordinates to in-memory cache
+ */
+function saveToMemoryCache(address: string, coordinates: Coordinates): void {
+  const normalized = normalizeAddress(address);
+
+  // Evict oldest entry if cache is full
+  if (geocodeCache.size >= MAX_GEOCODE_CACHE_SIZE) {
+    const firstKey = geocodeCache.keys().next().value;
+    if (firstKey) geocodeCache.delete(firstKey);
+  }
+
   geocodeCache.set(normalized, {
     coordinates,
     timestamp: Date.now(),
@@ -237,11 +291,18 @@ export async function geocodeAddress(address: string): Promise<Coordinates | nul
     return null;
   }
 
-  // Check cache first
-  const cached = getFromCache(address);
-  if (cached) {
-    logger.debug("Geocode cache hit", { address });
-    return cached;
+  // Check in-memory cache first (fastest)
+  const memoryCached = getFromMemoryCache(address);
+  if (memoryCached) {
+    logger.debug("Geocode memory cache hit", { address });
+    return memoryCached;
+  }
+
+  // Check persistent DB cache (survives cold starts)
+  const dbCached = await getFromDbCache(address);
+  if (dbCached) {
+    logger.debug("Geocode DB cache hit", { address });
+    return dbCached;
   }
 
   logger.debug("Geocoding address", { address });
@@ -257,7 +318,9 @@ export async function geocodeAddress(address: string): Promise<Coordinates | nul
     );
 
     if (coordinates) {
-      saveToCache(address, coordinates);
+      saveToMemoryCache(address, coordinates);
+      // Persist to DB cache in background (fire-and-forget)
+      saveToDbCache(address, coordinates).catch(() => {});
       logger.debug("Geocoded successfully", { address, coordinates });
       return coordinates;
     }

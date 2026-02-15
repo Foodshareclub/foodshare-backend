@@ -12,7 +12,8 @@
  * @module api-v1-geocoding/lib/geocoding
  */
 
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { z } from "../../_shared/schemas/common.ts";
+import { latitudeSchema, longitudeSchema } from "../../_shared/schemas/geo.ts";
 import { Webhook } from "https://esm.sh/standardwebhooks@1.0.0";
 import { logger } from "../../_shared/logger.ts";
 import { type Coordinates, geocodeAddress } from "../../_shared/geocoding.ts";
@@ -422,8 +423,8 @@ export function generateTileUrls(
 // =============================================================================
 
 export const matchUsersSchema = z.object({
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
+  latitude: latitudeSchema,
+  longitude: longitudeSchema,
   dietaryPreferences: z.array(z.string()).default([]),
   radiusKm: z.number().min(1).max(1000).default(10),
   limit: z.number().int().min(1).max(50).default(20),

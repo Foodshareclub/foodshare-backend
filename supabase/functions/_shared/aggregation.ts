@@ -6,25 +6,40 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.43.4";
 
 export async function aggregateCounts(supabase: SupabaseClient, userId: string) {
-  const [notifications, messages, requests] = await Promise.all([
-    supabase.from("notifications").select("id", { count: "exact", head: true }).eq(
-      "user_id",
-      userId,
-    ).eq("read", false),
-    supabase.from("chat_messages").select("id", { count: "exact", head: true }).eq(
-      "recipient_id",
-      userId,
-    ).eq("read", false),
-    supabase.from("listing_requests").select("id", { count: "exact", head: true }).eq(
-      "owner_id",
-      userId,
-    ).eq("status", "pending"),
-  ]);
+  // Single RPC call replaces 3 sequential COUNT queries
+  const { data, error } = await supabase.rpc("get_user_unread_counts", {
+    p_user_id: userId,
+  });
 
+  if (error || !data || data.length === 0) {
+    // Fallback to individual queries if RPC fails
+    const [notifications, messages, requests] = await Promise.all([
+      supabase.from("notifications").select("id", { count: "exact", head: true }).eq(
+        "user_id",
+        userId,
+      ).eq("read", false),
+      supabase.from("chat_messages").select("id", { count: "exact", head: true }).eq(
+        "recipient_id",
+        userId,
+      ).eq("read", false),
+      supabase.from("listing_requests").select("id", { count: "exact", head: true }).eq(
+        "owner_id",
+        userId,
+      ).eq("status", "pending"),
+    ]);
+
+    return {
+      notifications: notifications.count || 0,
+      messages: messages.count || 0,
+      requests: requests.count || 0,
+    };
+  }
+
+  const row = data[0];
   return {
-    notifications: notifications.count || 0,
-    messages: messages.count || 0,
-    requests: requests.count || 0,
+    notifications: row.unread_notifications || 0,
+    messages: row.unread_messages || 0,
+    requests: row.pending_requests || 0,
   };
 }
 

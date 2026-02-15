@@ -20,12 +20,13 @@
  * @module api-v1-engagement
  */
 
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { positiveIntSchema, uuidSchema, z } from "../_shared/schemas/common.ts";
 import { createAPIHandler, type HandlerContext, ok } from "../_shared/api-handler.ts";
 import { createHealthHandler } from "../_shared/health-handler.ts";
 import { ServerError, ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
 import { toggleRow } from "../_shared/toggle.ts";
+import { cache, CACHE_KEYS, CACHE_TTLS } from "../_shared/cache.ts";
 
 const VERSION = "1.0.0";
 const healthCheck = createHealthHandler("api-v1-engagement", VERSION);
@@ -35,16 +36,16 @@ const healthCheck = createHealthHandler("api-v1-engagement", VERSION);
 // =============================================================================
 
 const toggleEngagementSchema = z.object({
-  postId: z.number().int().positive(),
+  postId: positiveIntSchema,
 });
 
 const shareSchema = z.object({
-  postId: z.number().int().positive(),
+  postId: positiveIntSchema,
   method: z.enum(["link", "social", "email", "other"]).default("link"),
 });
 
 const batchOperationSchema = z.object({
-  correlationId: z.string().uuid(),
+  correlationId: uuidSchema,
   type: z.enum(["toggle_favorite", "toggle_like", "toggle_bookmark", "mark_read", "archive_room"]),
   entityId: z.string(),
   payload: z.record(z.unknown()).optional(),
@@ -88,7 +89,33 @@ async function getEngagement(ctx: HandlerContext<unknown, QueryParams>): Promise
       throw new ValidationError("Invalid postIds (1-100 required)");
     }
 
-    // Get like counts
+    // Check cache first
+    const cacheKey = CACHE_KEYS.engagement(postIds, userId);
+    const cached = cache.get<Record<number, { isLiked: boolean; isBookmarked: boolean; likeCount: number }>>(cacheKey);
+    if (cached) {
+      return ok(cached, ctx);
+    }
+
+    // Single RPC call replaces 3 separate queries
+    const { data: rpcResult, error: rpcError } = await supabase.rpc("get_batch_engagement", {
+      p_post_ids: postIds,
+      p_user_id: userId || null,
+    });
+
+    if (!rpcError && rpcResult) {
+      // RPC returns JSONB with string keys — normalize to number keys
+      const result: Record<number, { isLiked: boolean; isBookmarked: boolean; likeCount: number }> = {};
+      for (const postId of postIds) {
+        const entry = rpcResult[String(postId)];
+        result[postId] = entry || { isLiked: false, isBookmarked: false, likeCount: 0 };
+      }
+      cache.set(cacheKey, result, CACHE_TTLS.engagement);
+      return ok(result, ctx);
+    }
+
+    // Fallback to individual queries if RPC fails
+    logger.warn("Batch engagement RPC failed, falling back", { error: rpcError?.message });
+
     const { data: likes } = await supabase
       .from("post_likes")
       .select("post_id")
@@ -99,7 +126,6 @@ async function getEngagement(ctx: HandlerContext<unknown, QueryParams>): Promise
       likeCountMap[like.post_id] = (likeCountMap[like.post_id] || 0) + 1;
     }
 
-    // Get user's likes and bookmarks if authenticated
     let userLikes: number[] = [];
     let userBookmarks: number[] = [];
 
@@ -121,7 +147,6 @@ async function getEngagement(ctx: HandlerContext<unknown, QueryParams>): Promise
       userBookmarks = (bookmarksResult.data || []).map((b) => b.post_id);
     }
 
-    // Build result
     const result: Record<number, { isLiked: boolean; isBookmarked: boolean; likeCount: number }> =
       {};
     for (const postId of postIds) {
@@ -132,6 +157,7 @@ async function getEngagement(ctx: HandlerContext<unknown, QueryParams>): Promise
       };
     }
 
+    cache.set(cacheKey, result, CACHE_TTLS.engagement);
     return ok(result, ctx);
   }
 

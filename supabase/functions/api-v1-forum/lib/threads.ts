@@ -7,7 +7,7 @@
  * @module api-v1-forum/lib/threads
  */
 
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { positiveIntSchema, z } from "../../_shared/schemas/common.ts";
 import { created, type HandlerContext, noContent, ok } from "../../_shared/api-handler.ts";
 import { AuthorizationError, NotFoundError, ValidationError } from "../../_shared/errors.ts";
 import { logger } from "../../_shared/logger.ts";
@@ -22,9 +22,9 @@ import { ForumService } from "./forum-service.ts";
 export const createPostSchema = z.object({
   title: z.string().min(3).max(200),
   description: z.string().min(1).max(10000),
-  categoryId: z.number().int().positive().optional(),
+  categoryId: positiveIntSchema.optional(),
   postType: z.enum(["discussion", "question", "announcement", "guide"]).default("discussion"),
-  tags: z.array(z.number().int().positive()).max(5).optional(),
+  tags: z.array(positiveIntSchema).max(5).optional(),
   imageUrl: z.string().url().optional(),
   richContent: z.record(z.unknown()).optional(),
 });
@@ -32,19 +32,19 @@ export const createPostSchema = z.object({
 export const updatePostSchema = z.object({
   title: z.string().min(3).max(200).optional(),
   description: z.string().min(1).max(10000).optional(),
-  categoryId: z.number().int().positive().optional(),
+  categoryId: positiveIntSchema.optional(),
   postType: z.enum(["discussion", "question", "announcement", "guide"]).optional(),
-  tags: z.array(z.number().int().positive()).max(5).optional(),
+  tags: z.array(positiveIntSchema).max(5).optional(),
   imageUrl: z.string().url().nullable().optional(),
   richContent: z.record(z.unknown()).nullable().optional(),
 });
 
 export const recordViewSchema = z.object({
-  forumId: z.number().int().positive(),
+  forumId: positiveIntSchema,
 });
 
 export const togglePinSchema = z.object({
-  forumId: z.number().int().positive(),
+  forumId: positiveIntSchema,
 });
 
 export const toggleLockSchema = z.object({

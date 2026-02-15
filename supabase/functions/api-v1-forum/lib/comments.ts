@@ -7,7 +7,7 @@
  * @module api-v1-forum/lib/comments
  */
 
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { positiveIntSchema, z } from "../../_shared/schemas/common.ts";
 import { created, type HandlerContext, noContent, ok } from "../../_shared/api-handler.ts";
 import { AuthorizationError, NotFoundError, ValidationError } from "../../_shared/errors.ts";
 import { logger } from "../../_shared/logger.ts";
@@ -19,9 +19,9 @@ import { CommentService } from "./comment-service.ts";
 // =============================================================================
 
 export const createCommentSchema = z.object({
-  forumId: z.number().int().positive(),
+  forumId: positiveIntSchema,
   content: z.string().min(1).max(5000),
-  parentId: z.number().int().positive().optional(),
+  parentId: positiveIntSchema.optional(),
   richContent: z.record(z.unknown()).optional(),
 });
 
@@ -31,8 +31,8 @@ export const updateCommentSchema = z.object({
 });
 
 export const markBestAnswerSchema = z.object({
-  forumId: z.number().int().positive(),
-  commentId: z.number().int().positive(),
+  forumId: positiveIntSchema,
+  commentId: positiveIntSchema,
 });
 
 // =============================================================================

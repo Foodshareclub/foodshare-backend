@@ -5,7 +5,7 @@
  * Uses `chat_rooms`, `room_members`, and `messages` tables.
  */
 
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { uuidSchema, z } from "../../_shared/schemas/common.ts";
 import {
   created,
   type HandlerContext,
@@ -22,15 +22,15 @@ import { transformMessage, transformRoom, transformRoomDetail } from "./transfor
 // =============================================================================
 
 export const createRoomSchema = z.object({
-  participantIds: z.array(z.string().uuid()).min(1).max(50),
+  participantIds: z.array(uuidSchema).min(1).max(50),
   name: z.string().max(100).optional(),
   roomType: z.enum(["direct", "group"]).default("direct"),
 });
 
 export const sendMessageSchema = z.object({
-  roomId: z.string().uuid(),
+  roomId: uuidSchema,
   content: z.string().min(1).max(5000),
-  replyToId: z.string().uuid().optional(),
+  replyToId: uuidSchema.optional(),
   attachments: z.array(z.object({
     type: z.enum(["image", "file", "voice"]),
     url: z.string().url(),

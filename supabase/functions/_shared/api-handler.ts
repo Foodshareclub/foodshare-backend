@@ -47,8 +47,9 @@ import {
 import { buildErrorResponse, buildSuccessResponse, type UIHints } from "./response-adapter.ts";
 import { logger } from "./logger.ts";
 import { trackError } from "./error-tracking.ts";
-import { checkMemoryUsage, trackRequest } from "./performance.ts";
+import { checkMemoryUsage, clearSpans, getSpans, type Span, trackRequest } from "./performance.ts";
 import { CsrfError, type CsrfOptions, validateCsrf } from "./csrf.ts";
+import { checkDistributedRateLimit } from "./rate-limiter.ts";
 
 // =============================================================================
 // Types
@@ -410,7 +411,9 @@ function extractPathParams(url: URL, pattern: string): Record<string, string> {
 // In-Memory Rate Limiting (for non-distributed mode)
 // =============================================================================
 
+const MAX_RATE_LIMIT_ENTRIES = 10_000;
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+let lastMemoryCheckTime = 0;
 
 function checkInMemoryRateLimit(
   key: string,
@@ -421,6 +424,11 @@ function checkInMemoryRateLimit(
   const existing = rateLimitStore.get(key);
 
   if (!existing || existing.resetAt < now) {
+    // Evict oldest if store is full
+    if (rateLimitStore.size >= MAX_RATE_LIMIT_ENTRIES) {
+      const firstKey = rateLimitStore.keys().next().value;
+      if (firstKey) rateLimitStore.delete(firstKey);
+    }
     // Window expired or first request
     rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
     return { allowed: true, remaining: limit - 1, resetAt: now + windowMs };
@@ -536,8 +544,12 @@ export function createAPIHandler(config: APIHandlerConfig) {
     const corsHeaders = getCorsHeaders(request, additionalOrigins);
     const perfTracker = trackRequest(service);
 
-    // Check memory usage periodically
-    checkMemoryUsage();
+    // Check memory usage at most once per 60 seconds (avoid syscall overhead)
+    const now = Date.now();
+    if (now - lastMemoryCheckTime > 60_000) {
+      checkMemoryUsage();
+      lastMemoryCheckTime = now;
+    }
 
     try {
       // Handle preflight
@@ -680,11 +692,29 @@ export function createAPIHandler(config: APIHandlerConfig) {
 
         if (!shouldSkip) {
           const rateLimitKey = getRateLimitKey(handlerContext, rateLimit.keyBy, service);
-          const rateLimitResult = checkInMemoryRateLimit(
-            rateLimitKey,
-            rateLimit.limit,
-            rateLimit.windowMs,
-          );
+
+          let rateLimitResult: { allowed: boolean; remaining: number; resetAt: number };
+
+          if (rateLimit.distributed) {
+            // Use database-backed distributed rate limiting
+            const distributed = await checkDistributedRateLimit(rateLimitKey, {
+              limit: rateLimit.limit,
+              windowMs: rateLimit.windowMs,
+              distributed: true,
+              keyPrefix: service,
+            });
+            rateLimitResult = {
+              allowed: distributed.allowed,
+              remaining: distributed.remaining,
+              resetAt: distributed.resetAt,
+            };
+          } else {
+            rateLimitResult = checkInMemoryRateLimit(
+              rateLimitKey,
+              rateLimit.limit,
+              rateLimit.windowMs,
+            );
+          }
 
           // Store rate limit info for response headers
           handlerContext.rateLimitInfo = {
@@ -792,6 +822,23 @@ export function createAPIHandler(config: APIHandlerConfig) {
       addStandardHeaders(errorResponse, ctx);
       return errorResponse;
     } finally {
+      // Collect spans BEFORE clearing context
+      const spans = getSpans();
+      const totalMs = Math.round(performance.now() - ctx.startTime);
+      if (spans.length > 0) {
+        logger.info("Request spans", {
+          handler: service,
+          requestId: ctx.requestId,
+          totalMs,
+          spanCount: spans.length,
+          spans: spans.map((s: Span) => ({
+            op: s.operation,
+            ms: s.durationMs,
+            status: s.status,
+          })),
+        });
+      }
+      clearSpans();
       clearContext();
     }
   };

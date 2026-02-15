@@ -21,7 +21,8 @@
  * @module api-v1-profile
  */
 
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { z } from "../_shared/schemas/common.ts";
+import { latitudeSchema, longitudeSchema } from "../_shared/schemas/geo.ts";
 import { createAPIHandler, type HandlerContext, noContent, ok } from "../_shared/api-handler.ts";
 import { NotFoundError, ServerError, ValidationError } from "../_shared/errors.ts";
 import { getAdminClient } from "../_shared/supabase.ts";
@@ -55,8 +56,8 @@ const updateAddressSchema = z.object({
   stateProvince: z.string().max(100).optional(),
   postalCode: z.string().max(20).optional(),
   country: z.string().min(1).max(100),
-  lat: z.number().min(-90).max(90).optional(),
-  lng: z.number().min(-180).max(180).optional(),
+  lat: latitudeSchema.optional(),
+  lng: longitudeSchema.optional(),
   radiusMeters: z.number().positive().optional(),
 });
 

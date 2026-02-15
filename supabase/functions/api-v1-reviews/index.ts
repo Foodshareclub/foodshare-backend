@@ -15,17 +15,19 @@
  * @module api-v1-reviews
  */
 
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { positiveIntSchema, uuidSchema, z } from "../_shared/schemas/common.ts";
 import {
   createAPIHandler,
   created,
   type HandlerContext,
+  ok,
   paginated,
 } from "../_shared/api-handler.ts";
 import { createHealthHandler } from "../_shared/health-handler.ts";
 import { ConflictError, ValidationError } from "../_shared/errors.ts";
 import { logger } from "../_shared/logger.ts";
 import { ERROR_MESSAGES, REVIEW } from "../_shared/validation-rules.ts";
+import { cache, CACHE_KEYS, CACHE_TTLS } from "../_shared/cache.ts";
 
 const VERSION = "1.0.0";
 const healthCheck = createHealthHandler("api-v1-reviews", VERSION);
@@ -35,14 +37,14 @@ const healthCheck = createHealthHandler("api-v1-reviews", VERSION);
 // =============================================================================
 
 const submitReviewSchema = z.object({
-  revieweeId: z.string().uuid(), // Profile being reviewed
-  postId: z.number().int().positive(),
+  revieweeId: uuidSchema, // Profile being reviewed
+  postId: positiveIntSchema,
   rating: z.number().int().min(REVIEW.rating.min).max(REVIEW.rating.max),
   feedback: z.string().max(REVIEW.comment.maxLength).optional(),
 });
 
 const querySchema = z.object({
-  userId: z.string().uuid().optional(),
+  userId: uuidSchema.optional(),
   postId: z.string().optional(),
   cursor: z.string().optional(),
   limit: z.string().optional(),
@@ -63,6 +65,15 @@ async function getReviews(ctx: HandlerContext<unknown, QueryParams>): Promise<Re
 
   const limit = Math.min(parseInt(query.limit || "20"), 50);
   const cursor = query.cursor;
+
+  // Check cache for user review queries (most common pattern)
+  if (query.userId && !cursor) {
+    const cacheKey = CACHE_KEYS.reviews(query.userId, limit);
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return ok(cached, ctx);
+    }
+  }
 
   let dbQuery = supabase
     .from("reviews")
@@ -102,6 +113,15 @@ async function getReviews(ctx: HandlerContext<unknown, QueryParams>): Promise<Re
   const items = data || [];
   const hasMore = items.length > limit;
   const resultItems = hasMore ? items.slice(0, -1) : items;
+
+  // Cache user review results (first page only, no cursor)
+  if (query.userId && !cursor) {
+    const cacheKey = CACHE_KEYS.reviews(query.userId, limit);
+    cache.set(cacheKey, {
+      items: resultItems.map(transformReview),
+      total: count || resultItems.length,
+    }, CACHE_TTLS.reviews);
+  }
 
   return paginated(
     resultItems.map(transformReview),
@@ -180,6 +200,10 @@ async function submitReview(ctx: HandlerContext<SubmitReviewBody>): Promise<Resp
       })
       .eq("id", body.revieweeId);
   }
+
+  // Invalidate review cache for the reviewee
+  cache.delete(CACHE_KEYS.reviews(body.revieweeId, 20));
+  cache.delete(CACHE_KEYS.reviews(body.revieweeId, 50));
 
   logger.info("Review submitted", {
     reviewId: data.id,

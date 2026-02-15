@@ -21,7 +21,8 @@
  * @module api-v1-products
  */
 
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { datetimeSchema, positiveIntSchema, uuidSchema, z } from "../_shared/schemas/common.ts";
+import { latitudeSchema, longitudeSchema } from "../_shared/schemas/geo.ts";
 import {
   createAPIHandler,
   created,
@@ -58,12 +59,12 @@ const createProductSchema = z.object({
   description: z.string().max(LISTING.description.maxLength).optional(),
   images: z.array(z.string().url()).min(1).max(5),
   postType: z.enum(["food", "non-food", "request", "fridge"]),
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
+  latitude: latitudeSchema,
+  longitude: longitudeSchema,
   pickupAddress: z.string().max(500).optional(),
   pickupTime: z.string().max(200).optional(),
-  categoryId: z.number().int().positive().optional(),
-  expiresAt: z.string().datetime().optional(),
+  categoryId: positiveIntSchema.optional(),
+  expiresAt: datetimeSchema.optional(),
 });
 
 const updateProductSchema = z.object({
@@ -72,10 +73,10 @@ const updateProductSchema = z.object({
   images: z.array(z.string().url()).min(1).max(5).optional(),
   pickupAddress: z.string().max(500).optional(),
   pickupTime: z.string().max(200).optional(),
-  categoryId: z.number().int().positive().optional(),
-  expiresAt: z.string().datetime().optional(),
+  categoryId: positiveIntSchema.optional(),
+  expiresAt: datetimeSchema.optional(),
   isActive: z.boolean().optional(),
-  version: z.number().int().positive(), // Required for optimistic locking
+  version: positiveIntSchema, // Required for optimistic locking
 });
 
 const listQuerySchema = z.object({
@@ -90,7 +91,7 @@ const listQuerySchema = z.object({
   radiusKm: z.string().optional(), // alias for radius (feed compat)
   cursor: z.string().optional(),
   limit: z.string().optional(),
-  userId: z.string().uuid().optional(),
+  userId: uuidSchema.optional(),
 });
 
 type CreateProductBody = z.infer<typeof createProductSchema>;

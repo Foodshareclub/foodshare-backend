@@ -39,7 +39,7 @@
  * @module api-v1-forum
  */
 
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { uuidSchema, z } from "../_shared/schemas/common.ts";
 import { createAPIHandler, type HandlerContext } from "../_shared/api-handler.ts";
 import { createHealthHandler } from "../_shared/health-handler.ts";
 import { ValidationError } from "../_shared/errors.ts";
@@ -118,7 +118,7 @@ const forumQuerySchema = z.object({
   categoryId: z.string().optional(),
   postType: z.enum(["discussion", "question", "announcement", "guide"]).optional(),
   sortBy: z.enum(["recent", "popular", "trending", "unanswered"]).optional(),
-  authorId: z.string().uuid().optional(),
+  authorId: uuidSchema.optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
   tags: z.string().optional(), // comma-separated tag IDs

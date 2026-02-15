@@ -10,12 +10,15 @@ interface CacheEntry<T> {
   expires: number;
 }
 
+const MAX_CACHE_SIZE = 1000;
+
 class EdgeCache {
   private cache = new Map<string, CacheEntry<any>>();
   private stats = {
     hits: 0,
     misses: 0,
     sets: 0,
+    evictions: 0,
   };
 
   get<T>(key: string): T | null {
@@ -37,6 +40,17 @@ class EdgeCache {
   }
 
   set<T>(key: string, data: T, ttlMs: number = 300000): void {
+    // Evict oldest entries if cache is full (LRU-style via Map insertion order)
+    while (this.cache.size >= MAX_CACHE_SIZE) {
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey) {
+        this.cache.delete(firstKey);
+        this.stats.evictions++;
+      } else {
+        break;
+      }
+    }
+
     this.cache.set(key, {
       data,
       expires: Date.now() + ttlMs,
@@ -59,6 +73,7 @@ class EdgeCache {
     return {
       ...this.stats,
       size: this.cache.size,
+      maxSize: MAX_CACHE_SIZE,
       hitRate: hitRate.toFixed(2) + "%",
     };
   }
@@ -112,6 +127,11 @@ export const CACHE_KEYS = {
   displayName: (userId: string) => `display_name:${userId}`,
   /** Display name admin override by user ID */
   displayNameOverride: (userId: string) => `display_name:override:${userId}`,
+  /** Batch engagement by post IDs + user */
+  engagement: (postIds: number[], userId: string | null) =>
+    `engagement:${postIds.sort().join(",")}:${userId || "anon"}`,
+  /** Reviews for a user */
+  reviews: (userId: string, limit: number) => `reviews:${userId}:${limit}`,
 } as const;
 
 /**
@@ -144,6 +164,10 @@ export const CACHE_TTLS = {
   listing: 5 * 60 * 1000,
   /** Display name - 10 minutes */
   displayName: 10 * 60 * 1000,
+  /** Engagement data - 60 seconds (changes frequently) */
+  engagement: 60 * 1000,
+  /** Reviews - 5 minutes */
+  reviews: 5 * 60 * 1000,
 } as const;
 
 // =============================================================================

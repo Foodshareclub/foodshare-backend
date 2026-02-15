@@ -6,7 +6,7 @@
  * Uses `rooms` + `room_participants` tables for food sharing exchanges.
  */
 
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { positiveIntSchema, uuidSchema, z } from "../../_shared/schemas/common.ts";
 import {
   created,
   type HandlerContext,
@@ -32,13 +32,13 @@ import {
 // =============================================================================
 
 export const foodCreateRoomSchema = z.object({
-  postId: z.number().int().positive(),
-  sharerId: z.string().uuid(),
+  postId: positiveIntSchema,
+  sharerId: uuidSchema,
   initialMessage: z.string().max(5000).optional(),
 });
 
 export const foodSendMessageSchema = z.object({
-  roomId: z.string().uuid(),
+  roomId: uuidSchema,
   text: z.string().min(1).max(5000),
   image: z.string().url().optional().nullable(),
 });

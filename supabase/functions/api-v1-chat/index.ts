@@ -27,7 +27,7 @@
  * @module api-v1-chat
  */
 
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { uuidSchema, z } from "../_shared/schemas/common.ts";
 import { createAPIHandler, type HandlerContext } from "../_shared/api-handler.ts";
 import { createHealthHandler } from "../_shared/health-handler.ts";
 
@@ -65,7 +65,7 @@ const healthCheck = createHealthHandler("api-v1-chat", VERSION);
 // =============================================================================
 
 const listQuerySchema = z.object({
-  roomId: z.string().uuid().optional(),
+  roomId: uuidSchema.optional(),
   action: z.enum(["message"]).optional(),
   mode: z.enum(["food"]).optional(),
   cursor: z.string().optional(),
