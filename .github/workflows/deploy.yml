@@ -33,7 +33,7 @@ jobs:
   # ── Deploy gate ──────────────────────────────────────────────────────
   deploy-gate:
     name: Deploy gate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ubuntu-latest]
     needs: ci
     if: always() && !cancelled()
     timeout-minutes: 1
@@ -57,7 +57,7 @@ jobs:
   # ── Deploy ───────────────────────────────────────────────────────────
   deploy:
     name: Deploy
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ubuntu-latest]
     needs: [ci, deploy-gate]
     if: |
       !cancelled() &&
@@ -227,7 +227,7 @@ jobs:
   # ── Post-deploy (dry-run summary) ────────────────────────────────────
   dry-run-summary:
     name: Dry-run summary
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ubuntu-latest]
     needs: [ci, deploy-gate]
     if: inputs.dry-run == true && needs.deploy-gate.result == 'success'
     timeout-minutes: 1

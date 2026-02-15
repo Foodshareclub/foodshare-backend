@@ -29,7 +29,7 @@ concurrency:
 jobs:
   operate:
     name: ${{ inputs.operation }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ubuntu-latest]
     timeout-minutes: 10
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

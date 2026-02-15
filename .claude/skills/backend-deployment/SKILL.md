@@ -1,11 +1,11 @@
 ---
 name: backend-deployment
-description: Deploy Foodshare backend to self-hosted VPS. Use for SSH deployment, Docker Compose restarts, and production verification. Covers the complete deploy workflow.
+description: Deploy Foodshare backend to self-hosted VPS via CI/CD only. Use for monitoring deployments and production verification. Manual SSH deployment is NOT allowed.
 disable-model-invocation: true
 ---
 
 <objective>
-Deploy backend changes safely to the self-hosted Supabase instance with minimal downtime and proper verification.
+Deploy backend changes safely to the self-hosted Supabase instance via automated CI/CD pipeline with minimal downtime and proper verification.
 </objective>
 
 <essential_principles>
@@ -19,7 +19,48 @@ Deploy backend changes safely to the self-hosted Supabase instance with minimal 
 
 ## Deployment Workflow
 
-### 1. SSH into VPS
+**⚠️ CRITICAL: All deployments MUST go through CI/CD pipeline. Manual SSH deployment is NOT allowed.**
+
+### 1. Trigger Deployment
+
+```bash
+# Automatic: Push to main branch
+git push origin main
+
+# Manual: Trigger via GitHub Actions
+gh workflow run deploy.yml
+
+# With options:
+gh workflow run deploy.yml -f force-restart=true
+gh workflow run deploy.yml -f skip-backup=true
+gh workflow run deploy.yml -f dry-run=true
+```
+
+### 2. Monitor Deployment
+
+```bash
+# Watch workflow status
+gh run watch
+
+# View logs
+gh run view --log
+
+# Check Telegram notifications (deploy channel)
+```
+
+### 3. Verify Deployment
+
+```bash
+# Test health endpoint
+curl -s https://api.foodshare.club/functions/v1/api-v1-health | jq .
+
+# Check specific function
+curl -s https://api.foodshare.club/functions/v1/{function-name}
+```
+
+### 4. SSH Access (Debugging Only)
+
+SSH access is for debugging and verification ONLY, not deployment:
 
 ```bash
 autossh -M 0 \
@@ -31,97 +72,95 @@ autossh -M 0 \
   organic@vps.foodshare.club
 ```
 
-### 2. Update code
+**Allowed SSH operations:**
+- View logs: `docker compose logs -f functions --tail=50`
+- Check status: `docker compose ps`
+- Debug issues: `docker compose logs <service>`
 
-```bash
-cd /home/organic/dev/foodshare-backend
-git pull
-```
+**NOT allowed:**
+- `git pull` (CI/CD handles this)
+- `docker compose restart` (CI/CD handles this)
+- Manual deployments
 
-### 3. Restart services
+## CI/CD Pipeline Details
 
-```bash
-# Full restart (if docker-compose.yml or configs changed)
-docker compose up -d
+The deployment pipeline (`.github/workflows/deploy.yml`) handles:
 
-# Edge functions only (after function code changes)
-docker compose restart functions
+1. **CI Checks**: Lint, test, security scan, migration validation
+2. **Deploy Gate**: Blocks deployment if any check fails
+3. **Change Detection**: Determines what needs restarting
+4. **Backup**: Pre-deploy backup (unless `skip-backup=true`)
+5. **Deploy**: SSH to VPS, pull code, run migrations, restart services
+6. **Smoke Tests**: Verify deployment health
+7. **Notifications**: Telegram alerts for success/failure
 
-# Specific service
-docker compose restart <service-name>
-```
-
-### 4. Verify deployment
-
-```bash
-# Check all services healthy
-docker compose ps
-
-# Check edge function logs
-docker compose logs -f functions --tail=50
-
-# Test health endpoint
-curl -s https://api.foodshare.club/functions/v1/api-v1-health | jq .
-
-# Check specific function
-docker compose logs functions 2>&1 | grep "api-v1-{name}"
-```
+**Workflow inputs:**
+- `force-restart`: Full restart regardless of changes
+- `skip-backup`: Skip pre-deploy backup (faster, less safe)
+- `dry-run`: Validate only, don't deploy
 
 ## Adding New Secrets
 
+Secrets must be added via SSH, then commit code changes to trigger deployment:
+
 ```bash
-# Edit on VPS
+# 1. SSH to VPS
+ssh organic@vps.foodshare.club
+
+# 2. Edit secrets file
 nano /home/organic/dev/foodshare-backend/.env.functions
 
-# Add new secret
+# 3. Add new secret
 NEW_SECRET=value
 
-# Restart functions to pick up changes
-docker compose restart functions
+# 4. Exit SSH, commit code that uses the secret, push to trigger deploy
 ```
 
 Secrets go in `.env.functions`, NOT vault. Vault encryption keys are per-DB-instance.
 
 ## Database Migrations (Production)
 
-```bash
-# Apply migration directly
-docker exec supabase-db psql -U postgres -f /docker-entrypoint-initdb.d/migration.sql
+Migrations are applied automatically by CI/CD when changes are detected in `supabase/migrations/`.
 
-# Or enter psql shell
-docker exec -it supabase-db psql -U postgres
+**Manual migration (emergency only):**
+```bash
+ssh organic@vps.foodshare.club
+docker exec supabase-db psql -U postgres -f /docker-entrypoint-initdb.d/migration.sql
 ```
 
 ## Rollback
 
 ```bash
-# Revert to previous code
-cd /home/organic/dev/foodshare-backend
-git log --oneline -5  # Find commit to revert to
-git checkout <commit>
-docker compose restart functions
+# Revert commit and push to trigger rollback deployment
+git revert <commit-sha>
+git push origin main
 
-# Database rollback (manual)
-docker exec -it supabase-db psql -U postgres
-# Run rollback SQL
+# Emergency manual rollback (if CI/CD is broken)
+ssh organic@vps.foodshare.club
+cd /home/organic/dev/foodshare-backend
+git checkout <previous-commit>
+./scripts/deploy.sh restart functions
 ```
 
 ## Common Issues
 
 | Problem | Solution |
 |---------|----------|
-| Edge function not loading | `docker compose logs functions`. Check for JSR imports, missing index.ts |
-| 502 Bad Gateway | `docker compose ps` - check if Kong is running |
-| Database connection refused | `docker compose restart db supavisor` |
-| Out of disk space | `docker system prune -f` |
+| Deployment blocked | Check CI logs: `gh run view --log`. Fix failing checks |
+| Edge function not loading | Check deploy logs for JSR imports, missing index.ts |
+| 502 Bad Gateway | SSH to check Kong: `docker compose ps` |
+| Database connection refused | Trigger restart: `gh workflow run deploy.yml -f force-restart=true` |
+| Out of disk space | SSH and run: `docker system prune -f` |
 | Supavisor connection issues | Username format: `postgres.foodshare` (not just `postgres`) |
+| CI/CD pipeline broken | Emergency manual deploy via SSH (document incident) |
 </essential_principles>
 
 <success_criteria>
 Deployment is successful when:
-- [ ] `docker compose ps` shows all services healthy
-- [ ] Health endpoint returns 200
-- [ ] No errors in function logs
+- [ ] CI/CD pipeline completes without errors
+- [ ] Telegram notification shows success
+- [ ] Health endpoint returns 200: `curl https://api.foodshare.club/functions/v1/api-v1-health`
+- [ ] No errors in function logs (check via SSH if needed)
 - [ ] Client apps can connect
 - [ ] New features accessible via API
 </success_criteria>
