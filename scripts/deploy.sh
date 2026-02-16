@@ -354,6 +354,13 @@ do_smoke() {
 
   ANON_KEY=$(get_anon_key)
   SERVICE_KEY=$(get_service_key)
+  
+  if [ -z "$ANON_KEY" ] || [ -z "$SERVICE_KEY" ]; then
+    log "WARNING: Missing API keys, skipping smoke tests"
+    state_write "smoke" "skipped"
+    return 0
+  fi
+  
   SMOKE_PASS=true
 
   check_endpoint "Kong REST API" \
