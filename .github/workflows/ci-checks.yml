@@ -90,7 +90,7 @@ jobs:
   test:
     name: Test
     runs-on: self-hosted
-    needs: lint
+    needs: detect-changes
     timeout-minutes: 2
     defaults:
       run:
@@ -124,7 +124,7 @@ jobs:
   security:
     name: Security scan
     runs-on: self-hosted
-    needs: test
+    needs: detect-changes
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -140,7 +140,7 @@ jobs:
   validate-migrations:
     name: Validate migrations
     runs-on: self-hosted
-    needs: security
+    needs: detect-changes
     if: needs.detect-changes.outputs.migrations-changed == 'true'
     timeout-minutes: 2
 
