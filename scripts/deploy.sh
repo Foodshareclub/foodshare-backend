@@ -335,9 +335,9 @@ check_endpoint() {
   local code
   for i in $(seq 1 "$retries"); do
     [ "$delay" -gt 0 ] && sleep "$delay"
-    code=$(curl -s -o /dev/null -w "%{http_code}" "$url" $headers || echo "000")
+    code=$(eval "curl -s -o /dev/null -w '%{http_code}' '$url' $headers" 2>/dev/null || echo "000")
     log "  $name attempt $i: HTTP $code"
-    if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
+    if [ "$code" = "200" ] || [ "$code" = "204" ]; then
       log "PASS: $name (HTTP $code)"
       return 0
     fi
