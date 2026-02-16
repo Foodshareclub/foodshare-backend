@@ -23,7 +23,6 @@
 
 import { datetimeSchema, positiveIntSchema, uuidSchema, z } from "../_shared/schemas/common.ts";
 import { latitudeSchema, longitudeSchema } from "../_shared/schemas/geo.ts";
-import { isFeatureEnabled } from "../_shared/feature-flags.ts";
 import {
   createAPIHandler,
   created,
