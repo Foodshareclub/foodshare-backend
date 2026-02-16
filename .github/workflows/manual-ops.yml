@@ -24,7 +24,7 @@ permissions:
 
 concurrency:
   group: vps-operations
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   operate:

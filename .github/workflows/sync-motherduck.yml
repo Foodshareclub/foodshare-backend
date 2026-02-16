@@ -28,6 +28,10 @@ on:
         default: 'info'
         type: choice
         options:
+
+concurrency:
+  group: sync-motherduck
+  cancel-in-progress: true
           - trace
           - debug
           - info
