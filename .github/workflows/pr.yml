@@ -23,7 +23,7 @@ jobs:
   # ── Type-check (PR-only) ─────────────────────────────────────────────
   typecheck:
     name: Type-check
-    runs-on: self-hosted
+    runs-on: [self-hosted, ubuntu-latest]
     needs: ci
     timeout-minutes: 5
     continue-on-error: true
@@ -68,7 +68,7 @@ jobs:
   # ── Validate functions (PR-only, conditional) ────────────────────────
   validate-functions:
     name: Validate functions
-    runs-on: self-hosted
+    runs-on: [self-hosted, ubuntu-latest]
     needs: ci
     if: needs.ci.outputs.functions-changed == 'true' || needs.ci.outputs.shared-changed == 'true'
     timeout-minutes: 5
@@ -160,7 +160,7 @@ jobs:
   # ── PR Summary (required status check) ──────────────────────────────
   pr-summary:
     name: PR Summary
-    runs-on: self-hosted
+    runs-on: [self-hosted, ubuntu-latest]
     needs: [ci, typecheck, validate-functions]
     if: always()
     timeout-minutes: 2
