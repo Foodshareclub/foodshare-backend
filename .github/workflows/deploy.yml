@@ -23,7 +23,7 @@ permissions:
 
 concurrency:
   group: deploy
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   # ── Shared CI checks ─────────────────────────────────────────────────
