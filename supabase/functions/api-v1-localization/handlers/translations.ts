@@ -124,6 +124,31 @@ function generateETag(content: string): string {
 }
 
 /**
+ * Fetch the user's A/B experiment variant from user_experiments table.
+ * Returns null gracefully if the table doesn't exist or no experiment is assigned.
+ */
+async function fetchExperimentVariant(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from("user_experiments")
+      .select("variant")
+      .eq("user_id", userId)
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return data.variant ?? null;
+  } catch {
+    // Table may not exist yet — graceful fallback
+    return null;
+  }
+}
+
+/**
  * Get user context from auth token
  */
 async function getUserContext(
@@ -155,7 +180,7 @@ async function getUserContext(
       userId: user.id,
       preferredLocale: profile?.preferred_locale ?? null,
       featureFlags: profile?.feature_flags ?? [],
-      experimentVariant: null, // TODO: Fetch from experiments table
+      experimentVariant: await fetchExperimentVariant(supabase, user.id),
       isPremium: profile?.is_premium ?? false,
     };
   } catch {

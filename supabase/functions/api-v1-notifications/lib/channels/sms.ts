@@ -1,8 +1,8 @@
 /**
  * SMS Channel Adapter
  *
- * SMS notifications via Twilio (or other SMS providers).
- * Currently placeholder for future implementation.
+ * SMS notifications via Twilio REST API.
+ * Includes circuit breaker protection and traced fetch for observability.
  *
  * @module api-v1-notifications/channels/sms
  */
@@ -14,6 +14,32 @@ import type {
   SmsPayload,
 } from "../types.ts";
 import { logger } from "../../../_shared/logger.ts";
+import { withCircuitBreaker } from "../../../_shared/circuit-breaker.ts";
+import { tracedFetch } from "../../../_shared/traced-fetch.ts";
+
+// =============================================================================
+// Configuration
+// =============================================================================
+
+function getTwilioConfig(): {
+  accountSid: string;
+  authToken: string;
+  phoneNumber: string;
+} | null {
+  const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
+  const authToken = Deno.env.get("TWILIO_AUTH_TOKEN");
+  const phoneNumber = Deno.env.get("TWILIO_PHONE_NUMBER");
+
+  if (!accountSid || !authToken || !phoneNumber) {
+    return null;
+  }
+
+  return { accountSid, authToken, phoneNumber };
+}
+
+// =============================================================================
+// SMS Channel Adapter
+// =============================================================================
 
 export class SmsChannelAdapter implements ChannelAdapter {
   name = "sms";
@@ -24,23 +50,73 @@ export class SmsChannelAdapter implements ChannelAdapter {
     context: NotificationContext,
   ): Promise<ChannelDeliveryResult> {
     try {
-      logger.info("Sending SMS notification", {
+      const config = getTwilioConfig();
+
+      if (!config) {
+        logger.warn("SMS not configured: missing Twilio credentials", {
+          requestId: context.requestId,
+        });
+        return {
+          channel: "sms",
+          success: false,
+          error: "SMS not configured",
+          attemptedAt: new Date().toISOString(),
+        };
+      }
+
+      logger.info("Sending SMS notification via Twilio", {
         requestId: context.requestId,
         to: payload.to,
       });
 
-      // TODO: Implement SMS sending via Twilio or other provider
-      // For now, return not implemented
+      const result = await withCircuitBreaker(
+        "twilio-sms",
+        async () => {
+          const twilioUrl =
+            `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Messages.json`;
 
-      logger.warn("SMS notifications not yet implemented", {
+          const body = new URLSearchParams({
+            To: payload.to,
+            From: payload.from || config.phoneNumber,
+            Body: payload.body,
+          });
+
+          const response = await tracedFetch(
+            twilioUrl,
+            {
+              method: "POST",
+              headers: {
+                "Authorization": `Basic ${btoa(`${config.accountSid}:${config.authToken}`)}`,
+                "Content-Type": "application/x-www-form-urlencoded",
+              },
+              body: body.toString(),
+            },
+            "twilio.sms.send",
+          );
+
+          if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(`Twilio API error ${response.status}: ${errorBody}`);
+          }
+
+          const data = await response.json();
+          return data;
+        },
+        { failureThreshold: 3, resetTimeoutMs: 60000 },
+      );
+
+      logger.info("SMS sent successfully", {
         requestId: context.requestId,
+        sid: result.sid,
       });
 
       return {
         channel: "sms",
-        success: false,
-        error: "SMS notifications not yet implemented",
+        success: true,
+        provider: "twilio",
+        deliveredTo: [payload.to],
         attemptedAt: new Date().toISOString(),
+        deliveredAt: new Date().toISOString(),
       };
     } catch (error) {
       logger.error("SMS channel error", error as Error, {
@@ -51,6 +127,7 @@ export class SmsChannelAdapter implements ChannelAdapter {
       return {
         channel: "sms",
         success: false,
+        provider: "twilio",
         error: (error as Error).message,
         attemptedAt: new Date().toISOString(),
       };
@@ -62,11 +139,46 @@ export class SmsChannelAdapter implements ChannelAdapter {
     latencyMs?: number;
     error?: string;
   }> {
-    // SMS not yet implemented
-    return {
-      healthy: false,
-      error: "SMS not yet implemented",
-    };
+    const config = getTwilioConfig();
+
+    if (!config) {
+      return {
+        healthy: false,
+        error: "SMS not configured: missing Twilio credentials",
+      };
+    }
+
+    const start = Date.now();
+    try {
+      const response = await tracedFetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}.json`,
+        {
+          method: "GET",
+          headers: {
+            "Authorization": `Basic ${btoa(`${config.accountSid}:${config.authToken}`)}`,
+          },
+        },
+        "twilio.healthcheck",
+      );
+
+      const latencyMs = Date.now() - start;
+
+      if (!response.ok) {
+        return {
+          healthy: false,
+          latencyMs,
+          error: `Twilio health check failed: ${response.status}`,
+        };
+      }
+
+      return { healthy: true, latencyMs };
+    } catch (error) {
+      return {
+        healthy: false,
+        latencyMs: Date.now() - start,
+        error: (error as Error).message,
+      };
+    }
   }
 }
 

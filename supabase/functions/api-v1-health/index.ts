@@ -24,6 +24,7 @@ import { getHealthMetrics } from "../_shared/performance.ts";
 import { getErrorStats, getRecentAlerts } from "../_shared/error-tracking.ts";
 import { getAllCircuitStatuses } from "../_shared/circuit-breaker.ts";
 import { getSupabaseClient } from "../_shared/supabase.ts";
+import { formatPrometheusMetrics } from "../_shared/prometheus.ts";
 
 const SERVICE = "api-v1-health";
 
@@ -32,6 +33,19 @@ const SERVICE = "api-v1-health";
 // =============================================================================
 
 async function handleMetrics(ctx: HandlerContext): Promise<Response> {
+  // Check for Prometheus format
+  const url = new URL(ctx.request.url);
+  if (url.searchParams.get("format") === "prometheus") {
+    const metricsText = formatPrometheusMetrics();
+    return new Response(metricsText, {
+      status: 200,
+      headers: {
+        ...ctx.corsHeaders,
+        "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
+      },
+    });
+  }
+
   const startTime = Date.now();
 
   const healthMetrics = getHealthMetrics();
