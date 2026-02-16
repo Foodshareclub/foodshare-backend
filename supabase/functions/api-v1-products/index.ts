@@ -46,6 +46,7 @@ import { validateProductImageUrls } from "../_shared/storage-urls.ts";
 import { decodeCursor, encodeCursor, normalizeLimit } from "../_shared/pagination.ts";
 import { aggregateCounts } from "../_shared/aggregation.ts";
 import { transformCategory, transformProfileSummary } from "../_shared/transformers.ts";
+import { fuzzProductCoordinates, fuzzProductListCoordinates } from "./lib/location-fuzzer.ts";
 
 const VERSION = "2.0.0";
 const healthCheck = createHealthHandler("api-v1-products", VERSION);
@@ -133,7 +134,8 @@ async function getFeed(ctx: HandlerContext<unknown, ListQuery>): Promise<Respons
     throw listings.error;
   }
 
-  return ok({ listings: listings.data || [], counts }, ctx);
+  const fuzzedListings = fuzzProductListCoordinates(listings.data || [], userId);
+  return ok({ listings: fuzzedListings, counts }, ctx);
 }
 
 /**
@@ -153,7 +155,8 @@ async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Re
   }
   const cached = cache.get<CachedListResult>(cacheKey);
   if (cached) {
-    return paginated(cached.items, ctx, {
+    const fuzzedCachedItems = fuzzProductListCoordinates(cached.items, ctx.userId);
+    return paginated(fuzzedCachedItems, ctx, {
       offset: 0,
       limit: cached.limit,
       total: cached.total,
@@ -242,7 +245,7 @@ async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Re
 
   const transformedItems = resultItems.map(transformProduct);
 
-  // Cache the result for 60 seconds
+  // Cache unfuzzed items — fuzzing is applied per-request based on userId
   cache.set(cacheKey, {
     items: transformedItems,
     total: count || resultItems.length,
@@ -250,8 +253,11 @@ async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Re
     limit,
   }, 60_000);
 
+  // Apply coordinate fuzzing per requesting user
+  const fuzzedItems = fuzzProductListCoordinates(transformedItems, ctx.userId);
+
   return paginated(
-    transformedItems,
+    fuzzedItems,
     ctx,
     {
       offset: 0,
@@ -297,25 +303,26 @@ async function getProduct(ctx: HandlerContext<unknown, ListQuery>): Promise<Resp
     throw new NotFoundError("Product", productId);
   }
 
-  const result: any = transformProductDetail(data);
+  const result: any = fuzzProductCoordinates(transformProductDetail(data), userId);
 
   // Add related listings if requested
   if (includeRelated && data.latitude && data.longitude) {
     const { data: related } = await supabase
       .from("posts_with_location")
-      .select("id, title, images, post_type, created_at, latitude, longitude")
+      .select("id, title, images, post_type, created_at, latitude, longitude, profile_id")
       .neq("id", productId)
       .eq("status", "active")
       .or(`category_id.eq.${data.category_id},post_type.eq.${data.post_type}`)
       .limit(6);
 
     if (related) {
-      result.relatedListings = related.map((r) => ({
+      result.relatedListings = fuzzProductListCoordinates(related, userId).map((r) => ({
         id: r.id,
         title: r.title,
-        imageUrl: r.images?.[0],
+        imageUrl: (r.images as string[])?.[0],
         postType: r.post_type,
         createdAt: r.created_at,
+        coordinates_approximate: r.coordinates_approximate,
       }));
     }
   }
