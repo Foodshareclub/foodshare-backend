@@ -21,6 +21,7 @@ import {
   ValidationError,
 } from "../../_shared/errors.ts";
 import { logger } from "../../_shared/logger.ts";
+import { decryptMessage, encryptMessage } from "../../_shared/message-encryption.ts";
 import {
   transformFoodMessage,
   transformFoodRoom,
@@ -108,8 +109,18 @@ export async function foodListRooms(ctx: HandlerContext<unknown, ListQuery>): Pr
   const hasMore = items.length > limit;
   const resultItems = hasMore ? items.slice(0, -1) : items;
 
+  // Decrypt last_message for each room
+  const decryptedRooms = await Promise.all(
+    resultItems.map(async (room) => {
+      if (room.last_message && typeof room.last_message === "string") {
+        return { ...room, last_message: await decryptMessage(room.last_message) };
+      }
+      return room;
+    }),
+  );
+
   return paginated(
-    resultItems.map((room) => transformFoodRoom(room, userId)),
+    decryptedRooms.map((room) => transformFoodRoom(room, userId)),
     ctx,
     { offset: 0, limit, total: count || resultItems.length },
   );
@@ -161,9 +172,23 @@ export async function foodGetRoom(ctx: HandlerContext<unknown, ListQuery>): Prom
     .update({ last_message_seen_by: userId })
     .eq("id", roomId);
 
+  // Decrypt message text and room last_message
+  const decryptedMessages = await Promise.all(
+    (messages || []).map(async (msg) => {
+      if (msg.text && typeof msg.text === "string") {
+        return { ...msg, text: await decryptMessage(msg.text) };
+      }
+      return msg;
+    }),
+  );
+
+  const decryptedRoom = room.last_message && typeof room.last_message === "string"
+    ? { ...room, last_message: await decryptMessage(room.last_message) }
+    : room;
+
   return ok({
-    room: transformFoodRoomDetail(room, userId),
-    messages: (messages || []).map(transformFoodMessage),
+    room: transformFoodRoomDetail(decryptedRoom, userId),
+    messages: decryptedMessages.map(transformFoodMessage),
   }, ctx);
 }
 
@@ -196,13 +221,21 @@ export async function foodCreateRoom(ctx: HandlerContext<FoodCreateRoomBody>): P
 
   if (existingRoom) return ok({ roomId: existingRoom.id, created: false }, ctx);
 
+  // Encrypt initial message for storage
+  const encryptedInitialMessage = body.initialMessage
+    ? await encryptMessage(body.initialMessage)
+    : "";
+  const encryptedPreview = body.initialMessage
+    ? await encryptMessage(body.initialMessage.substring(0, 200))
+    : "";
+
   const { data: newRoom, error: createError } = await supabase
     .from("rooms")
     .insert({
       post_id: body.postId,
       sharer: body.sharerId,
       requester: userId,
-      last_message: body.initialMessage || "",
+      last_message: encryptedPreview,
       last_message_sent_by: userId,
       last_message_seen_by: userId,
       last_message_time: new Date().toISOString(),
@@ -219,7 +252,7 @@ export async function foodCreateRoom(ctx: HandlerContext<FoodCreateRoomBody>): P
     await supabase.from("room_participants").insert({
       room_id: newRoom.id,
       profile_id: userId,
-      text: body.initialMessage,
+      text: encryptedInitialMessage,
     });
   }
 
@@ -249,12 +282,17 @@ export async function foodSendMessage(ctx: HandlerContext<FoodSendMessageBody>):
     throw new AuthorizationError("You are not a participant in this chat");
   }
 
+  // Encrypt message text for storage
+  const plaintext = body.text.trim();
+  const encryptedText = await encryptMessage(plaintext);
+  const encryptedPreview = await encryptMessage(plaintext.substring(0, 200));
+
   const { data: message, error: messageError } = await supabase
     .from("room_participants")
     .insert({
       room_id: body.roomId,
       profile_id: userId,
-      text: body.text.trim(),
+      text: encryptedText,
       image: body.image || null,
     })
     .select("id, room_id, profile_id, text, image, timestamp")
@@ -268,7 +306,7 @@ export async function foodSendMessage(ctx: HandlerContext<FoodSendMessageBody>):
   await supabase
     .from("rooms")
     .update({
-      last_message: body.text.trim().substring(0, 200),
+      last_message: encryptedPreview,
       last_message_sent_by: userId,
       last_message_seen_by: userId,
       last_message_time: new Date().toISOString(),
@@ -277,7 +315,9 @@ export async function foodSendMessage(ctx: HandlerContext<FoodSendMessageBody>):
 
   logger.info("Food message sent", { messageId: message.id, roomId: body.roomId, userId });
 
-  return created(transformFoodMessage(message), ctx);
+  // Return decrypted message to the sender
+  const decryptedMessage = { ...message, text: plaintext };
+  return created(transformFoodMessage(decryptedMessage), ctx);
 }
 
 export async function foodUpdateRoom(
@@ -320,6 +360,9 @@ export async function foodUpdateRoom(
           post?.post_name || "the item"
         }".`;
 
+      const encryptedAcceptMessage = await encryptMessage(acceptMessage);
+      const encryptedAcceptPreview = await encryptMessage(acceptMessage.substring(0, 100) + "...");
+
       await supabase
         .from("rooms")
         .update({ post_arranged_to: room.requester, post_arranged_at: new Date().toISOString() })
@@ -328,13 +371,13 @@ export async function foodUpdateRoom(
       await supabase.from("room_participants").insert({
         room_id: roomId,
         profile_id: userId,
-        text: acceptMessage,
+        text: encryptedAcceptMessage,
       });
 
       await supabase
         .from("rooms")
         .update({
-          last_message: acceptMessage.substring(0, 100) + "...",
+          last_message: encryptedAcceptPreview,
           last_message_sent_by: userId,
           last_message_seen_by: userId,
           last_message_time: new Date().toISOString(),
@@ -351,6 +394,7 @@ export async function foodUpdateRoom(
       }
 
       const completeMessage = "✅ Exchange Complete! Thank you for sharing food.";
+      const encryptedCompleteMessage = await encryptMessage(completeMessage);
 
       if (post) {
         await supabase.from("posts").update({ is_arranged: true }).eq("id", post.id);
@@ -359,13 +403,13 @@ export async function foodUpdateRoom(
       await supabase.from("room_participants").insert({
         room_id: roomId,
         profile_id: userId,
-        text: completeMessage,
+        text: encryptedCompleteMessage,
       });
 
       await supabase
         .from("rooms")
         .update({
-          last_message: completeMessage,
+          last_message: encryptedCompleteMessage,
           last_message_sent_by: userId,
           last_message_seen_by: userId,
           last_message_time: new Date().toISOString(),

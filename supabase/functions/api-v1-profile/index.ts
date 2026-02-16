@@ -46,6 +46,7 @@ const updateProfileSchema = z.object({
   phone: z.string().max(20).optional(),
   location: z.string().max(200).optional(),
   isVolunteer: z.boolean().optional(),
+  profileVisibility: z.enum(["public", "friends_only", "private"]).optional(),
 });
 
 const updateAddressSchema = z.object({
@@ -114,7 +115,8 @@ async function getProfile(ctx: HandlerContext<unknown, QueryParams>): Promise<Re
       rating_count,
       rating_average,
       created_at,
-      updated_at
+      updated_at,
+      profile_visibility
     `)
     .eq("id", userId)
     .single();
@@ -195,6 +197,7 @@ async function updateProfile(ctx: HandlerContext<UpdateProfileBody>): Promise<Re
   if (body.phone !== undefined) updates.phone = sanitizeHtml(body.phone);
   if (body.location !== undefined) updates.location = sanitizeHtml(body.location);
   if (body.isVolunteer !== undefined) updates.is_volunteer = body.isVolunteer;
+  if (body.profileVisibility !== undefined) updates.profile_visibility = body.profileVisibility;
 
   const { data, error } = await supabase
     .from("profiles")
@@ -537,6 +540,7 @@ function transformProfile(data: Record<string, unknown>) {
     ratingAverage: data.rating_average,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
+    profileVisibility: data.profile_visibility || "public",
   };
 }
 
