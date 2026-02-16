@@ -4,9 +4,7 @@
  * Tests for api-v1-notifications/lib/channels/sms.ts
  */
 
-import {
-  assertEquals,
-} from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { SmsChannelAdapter } from "../api-v1-notifications/lib/channels/sms.ts";
 
 // =============================================================================
@@ -52,13 +50,19 @@ Deno.test("SmsChannelAdapter: successful send with mock Twilio", async () => {
 
   // Mock fetch for Twilio API
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (_input: string | URL | Request, _init?: RequestInit): Promise<Response> => {
-    return new Response(JSON.stringify({
-      sid: "SM_test_123",
-      status: "queued",
-      to: "+1234567890",
-      from: "+15005550006",
-    }), { status: 201 });
+  globalThis.fetch = async (
+    _input: string | URL | Request,
+    _init?: RequestInit,
+  ): Promise<Response> => {
+    return new Response(
+      JSON.stringify({
+        sid: "SM_test_123",
+        status: "queued",
+        to: "+1234567890",
+        from: "+15005550006",
+      }),
+      { status: 201 },
+    );
   };
 
   try {
@@ -88,11 +92,14 @@ Deno.test("SmsChannelAdapter: Twilio 4xx error handling", async () => {
 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (): Promise<Response> => {
-    return new Response(JSON.stringify({
-      code: 21211,
-      message: "The 'To' number is not a valid phone number.",
-      status: 400,
-    }), { status: 400 });
+    return new Response(
+      JSON.stringify({
+        code: 21211,
+        message: "The 'To' number is not a valid phone number.",
+        status: 400,
+      }),
+      { status: 400 },
+    );
   };
 
   try {
@@ -133,11 +140,14 @@ Deno.test("SmsChannelAdapter: health check with valid credentials", async () => 
 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (): Promise<Response> => {
-    return new Response(JSON.stringify({
-      sid: "ACtest789",
-      friendly_name: "Test Account",
-      status: "active",
-    }), { status: 200 });
+    return new Response(
+      JSON.stringify({
+        sid: "ACtest789",
+        friendly_name: "Test Account",
+        status: "active",
+      }),
+      { status: 200 },
+    );
   };
 
   try {

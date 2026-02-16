@@ -4,14 +4,11 @@
  * Tests for span tracing, SLI counters, Prometheus metrics, and traced fetch.
  */
 
-import {
-  assertEquals,
-  assertExists,
-} from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import {
   clearSpans,
-  getSpans,
   getSLICounters,
+  getSpans,
   recordSLI,
   startSpan,
 } from "../_shared/performance.ts";
@@ -185,7 +182,10 @@ Deno.test("tracedFetch: creates span and forwards context headers", async () => 
   const originalFetch = globalThis.fetch;
   let capturedHeaders: Headers | undefined;
 
-  globalThis.fetch = async (_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+  globalThis.fetch = async (
+    _input: string | URL | Request,
+    init?: RequestInit,
+  ): Promise<Response> => {
     capturedHeaders = new Headers(init?.headers);
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   };

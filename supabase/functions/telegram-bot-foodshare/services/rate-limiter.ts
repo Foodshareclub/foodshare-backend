@@ -5,10 +5,7 @@
  * Uses user_id (number) as the identifier.
  */
 
-import {
-  type BotRateLimitResult,
-  createBotRateLimiter,
-} from "../../_shared/bot/rate-limiter.ts";
+import { type BotRateLimitResult, createBotRateLimiter } from "../../_shared/bot/rate-limiter.ts";
 
 const rateLimiter = createBotRateLimiter({
   tableName: "telegram_rate_limits",

@@ -1,6 +1,6 @@
 /**
  * Forum Service
- * 
+ *
  * Reusable business logic for forum operations.
  * Separates data access from HTTP handlers.
  */

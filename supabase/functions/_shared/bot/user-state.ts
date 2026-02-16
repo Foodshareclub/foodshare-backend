@@ -84,7 +84,10 @@ export function createBotUserStateService<TState extends { action?: string }>(
       if (data.expires_at) {
         const expiresAt = new Date(data.expires_at);
         if (expiresAt < new Date()) {
-          logger.info("Bot state expired, cleaning up", { table: tableName, id: String(id).substring(0, 8) });
+          logger.info("Bot state expired, cleaning up", {
+            table: tableName,
+            id: String(id).substring(0, 8),
+          });
           await remove(id);
           return null;
         }
@@ -149,7 +152,10 @@ export function createBotUserStateService<TState extends { action?: string }>(
         .select(idColumn);
 
       if (error) {
-        logger.error("Error cleaning up expired bot states", { table: tableName, error: String(error) });
+        logger.error("Error cleaning up expired bot states", {
+          table: tableName,
+          error: String(error),
+        });
         return 0;
       }
 

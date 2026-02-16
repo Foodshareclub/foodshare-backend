@@ -83,7 +83,9 @@ export function formatPrometheusMetrics(): string {
     lines.push("# TYPE foodshare_circuit_breaker_failures_total counter");
     for (const [name, cb] of cbEntries) {
       lines.push(
-        `foodshare_circuit_breaker_failures_total{name="${sanitizeLabel(name)}"} ${cb.totalFailures}`,
+        `foodshare_circuit_breaker_failures_total{name="${
+          sanitizeLabel(name)
+        }"} ${cb.totalFailures}`,
       );
     }
     lines.push("");

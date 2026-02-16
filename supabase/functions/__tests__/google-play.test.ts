@@ -8,15 +8,13 @@
  * - verifyGoogleJWT: expired, invalid signature, valid JWT
  */
 
+import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import {
-  assertEquals,
-} from "https://deno.land/std@0.208.0/assert/mod.ts";
-import {
-  googlePlayHandler,
-  SubscriptionNotificationType,
-  OneTimeProductNotificationType,
-  base64UrlDecode,
   _clearJwksCache,
+  base64UrlDecode,
+  googlePlayHandler,
+  OneTimeProductNotificationType,
+  SubscriptionNotificationType,
 } from "../api-v1-subscription/handlers/google-play.ts";
 
 // =============================================================================

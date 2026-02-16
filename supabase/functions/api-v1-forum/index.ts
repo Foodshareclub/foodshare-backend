@@ -63,7 +63,13 @@ import {
 } from "./lib/threads.ts";
 
 // Comment handlers
-import { createComment, deleteComment, getComments, markBestAnswer, updateComment } from "./lib/comments.ts";
+import {
+  createComment,
+  deleteComment,
+  getComments,
+  markBestAnswer,
+  updateComment,
+} from "./lib/comments.ts";
 
 // Reaction/engagement handlers
 import {

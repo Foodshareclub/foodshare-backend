@@ -271,7 +271,9 @@ export function createMockSupabaseClientWithRpc(config: {
   queryErrors?: Map<string, Error>;
   rpcResults?: Map<string, unknown>;
   rpcErrors?: Map<string, Error>;
-} = {}): MockSupabaseClient & { rpc: (name: string, params?: unknown) => Promise<{ data: unknown; error: unknown }> } {
+} = {}): MockSupabaseClient & {
+  rpc: (name: string, params?: unknown) => Promise<{ data: unknown; error: unknown }>;
+} {
   const base = createMockSupabaseClient(config);
   const { rpcResults = new Map(), rpcErrors = new Map() } = config;
 

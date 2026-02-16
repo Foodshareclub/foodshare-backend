@@ -4,9 +4,7 @@
  * Tests for api-v1-notifications/lib/template-engine.ts
  */
 
-import {
-  assertEquals,
-} from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import {
   clearTemplateCache,
   interpolateTemplate,

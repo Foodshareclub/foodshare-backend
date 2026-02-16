@@ -5,10 +5,7 @@
  * Uses phone_number (string) as the identifier.
  */
 
-import {
-  type BotRateLimitResult,
-  createBotRateLimiter,
-} from "../../_shared/bot/rate-limiter.ts";
+import { type BotRateLimitResult, createBotRateLimiter } from "../../_shared/bot/rate-limiter.ts";
 
 const rateLimiter = createBotRateLimiter({
   tableName: "whatsapp_rate_limits",

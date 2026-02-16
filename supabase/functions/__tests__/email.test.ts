@@ -5,16 +5,13 @@
  * Tests provider selection, health checks, and circuit breaker integration.
  */
 
-import {
-  assertEquals,
-  assertExists,
-} from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import type {
   EmailProvider,
   EmailProviderName,
+  ProviderHealth,
   SendEmailParams,
   SendEmailResult,
-  ProviderHealth,
 } from "../_shared/email/types.ts";
 
 // =============================================================================
