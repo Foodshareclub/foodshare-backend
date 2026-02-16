@@ -26,10 +26,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Copy schema from production to test database
-log "Copying production schema to test database"
-docker exec -i "$DB_CONTAINER" pg_dump -U supabase_admin -d postgres --schema-only | \
-  docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d "$TEST_DB" > /dev/null 2>&1
+# Create schema_migrations table in test database
+log "Setting up test database"
+docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d "$TEST_DB" <<EOF > /dev/null 2>&1
+CREATE SCHEMA IF NOT EXISTS supabase_migrations;
+CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
+  version text PRIMARY KEY,
+  statements text,
+  name text
+);
+EOF
 
 # Apply new migrations to test database
 log "Testing new migrations"
