@@ -116,12 +116,16 @@ jobs:
           MIGRATIONS_CHANGED: ${{ needs.ci.outputs.migrations-changed }}
           INFRASTRUCTURE_CHANGED: ${{ needs.ci.outputs.infrastructure-changed }}
           CONFIG_CHANGED: ${{ needs.ci.outputs.config-changed }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ANON_KEY: ${{ secrets.ANON_KEY }}
+          SERVICE_ROLE_KEY: ${{ secrets.SERVICE_ROLE_KEY }}
         with:
           host: vps.foodshare.club
           username: organic
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 8m
-          envs: FORCE_RESTART,SKIP_BACKUP,FUNCTIONS_CHANGED,SHARED_CHANGED,MIGRATIONS_CHANGED,INFRASTRUCTURE_CHANGED,CONFIG_CHANGED
+          envs: FORCE_RESTART,SKIP_BACKUP,FUNCTIONS_CHANGED,SHARED_CHANGED,MIGRATIONS_CHANGED,INFRASTRUCTURE_CHANGED,CONFIG_CHANGED,POSTGRES_PASSWORD,JWT_SECRET,ANON_KEY,SERVICE_ROLE_KEY
           script: |
             set -eo pipefail
             cd /home/organic/dev/foodshare-backend
@@ -132,6 +136,15 @@ jobs:
             git pull --ff-only
             NEW_HEAD=$(git rev-parse HEAD)
             chmod +x scripts/deploy.sh
+
+            # ── Update .env with secrets from GitHub Actions ──
+            if [ -f .env ]; then
+              echo "=== Updating .env with secrets ==="
+              [ -n "$POSTGRES_PASSWORD" ] && sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$POSTGRES_PASSWORD|" .env
+              [ -n "$JWT_SECRET" ] && sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$JWT_SECRET|" .env
+              [ -n "$ANON_KEY" ] && sed -i "s|^ANON_KEY=.*|ANON_KEY=$ANON_KEY|" .env
+              [ -n "$SERVICE_ROLE_KEY" ] && sed -i "s|^SERVICE_ROLE_KEY=.*|SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY|" .env
+            fi
 
             # ── Stage 1: Backup ──
             if [ "$SKIP_BACKUP" != "true" ]; then
