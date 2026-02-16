@@ -1,0 +1,71 @@
+name: Canary Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      percentage:
+        description: 'Canary percentage (10, 50, or 100)'
+        required: true
+        default: '10'
+        type: choice
+        options:
+          - '10'
+          - '50'
+          - '100'
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    name: Canary Deploy
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_DEPLOY_CHAT_ID: ${{ secrets.TELEGRAM_DEPLOY_CHAT_ID }}
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Telegram - canary started
+        uses: ./.github/actions/telegram-notify
+        with:
+          bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_DEPLOY_CHAT_ID }}
+          message: |
+            🐤 *Canary deployment started*
+            Percentage: ${{ inputs.percentage }}%
+            Commit: `${{ github.sha }}`
+
+      - name: Deploy canary
+        uses: appleboy/ssh-action@v1
+        with:
+          host: vps.foodshare.club
+          username: organic
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 10m
+          script: |
+            cd /home/organic/dev/foodshare-backend
+            ./scripts/deploy-canary.sh ${{ inputs.percentage }}
+
+      - name: Telegram - canary succeeded
+        if: success()
+        uses: ./.github/actions/telegram-notify
+        with:
+          bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_DEPLOY_CHAT_ID }}
+          message: |
+            ✅ *Canary deployment succeeded*
+            Percentage: ${{ inputs.percentage }}%
+            
+      - name: Telegram - canary failed
+        if: failure()
+        uses: ./.github/actions/telegram-notify
+        with:
+          bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_DEPLOY_CHAT_ID }}
+          message: |
+            ❌ *Canary deployment failed*
+            Rolled back automatically

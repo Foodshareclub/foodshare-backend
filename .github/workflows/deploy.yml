@@ -168,19 +168,24 @@ jobs:
                   '{started_at: $started, stage: $stage, prev_head: $prev, new_head: $new, changed_files: $changed}' \
               > /tmp/deploy-state.json
 
-            # ── Stage 3: Migrate ──
+            # ── Stage 3: Validate migrations (dry-run) ──
             if [ "$MIGRATIONS_CHANGED" = "true" ]; then
+              echo "=== Stage: validate migrations ==="
+              ./scripts/validate-migrations-dryrun.sh
+              
               echo "=== Stage: migrate ==="
               ./scripts/deploy.sh migrate
             else
               echo "=== Skipping migrations (no changes) ==="
             fi
 
-            # ── Stage 4: Restart ──
+            # ── Stage 4: Restart (with zero-downtime for functions) ──
             echo "=== Stage: restart ==="
             if [ "$FORCE_RESTART" = "true" ] || [ "$INFRASTRUCTURE_CHANGED" = "true" ]; then
               ./scripts/deploy.sh restart full
-            elif [ "$FUNCTIONS_CHANGED" = "true" ] || [ "$SHARED_CHANGED" = "true" ] || [ "$CONFIG_CHANGED" = "true" ]; then
+            elif [ "$FUNCTIONS_CHANGED" = "true" ] || [ "$SHARED_CHANGED" = "true" ]; then
+              ./scripts/deploy-functions-zero-downtime.sh
+            elif [ "$CONFIG_CHANGED" = "true" ]; then
               ./scripts/deploy.sh restart functions
             elif [ "$MIGRATIONS_CHANGED" = "true" ]; then
               ./scripts/deploy.sh restart rest
