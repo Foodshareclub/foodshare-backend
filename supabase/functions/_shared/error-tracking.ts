@@ -207,7 +207,6 @@ function createAlert(error: TrackedError, threshold: number): void {
     threshold,
   });
 
-  // TODO: Send to external alerting system (PagerDuty, Slack, etc.)
   sendAlert(alert);
 }
 

@@ -1,7 +1,8 @@
 /**
  * Performance Monitoring Utilities
  *
- * Provides performance tracking, metrics collection, and slow query detection
+ * Provides performance tracking, metrics collection, slow query detection,
+ * span tracing, and SLI counters.
  */
 
 import { logger } from "./logger.ts";
@@ -24,6 +25,127 @@ export interface SlowQueryAlert {
   threshold: number;
   timestamp: string;
   context?: Record<string, unknown>;
+}
+
+// =============================================================================
+// Span Tracing
+// =============================================================================
+
+export interface Span {
+  operation: string;
+  startTime: number;
+  durationMs?: number;
+  metadata?: Record<string, unknown>;
+  status: "ok" | "error";
+}
+
+export interface SpanHandle {
+  end: (metadata?: Record<string, unknown>) => Span;
+}
+
+const MAX_SPANS_PER_REQUEST = 100;
+
+// Per-request span storage (safe in single-threaded Deno edge functions)
+let currentSpans: Span[] = [];
+
+/**
+ * Start a new span for tracking an operation within a request.
+ * Call `.end()` on the returned handle when the operation completes.
+ */
+export function startSpan(operation: string): SpanHandle {
+  const span: Span = {
+    operation,
+    startTime: performance.now(),
+    status: "ok",
+  };
+
+  return {
+    end: (metadata?: Record<string, unknown>): Span => {
+      span.durationMs = Math.round(performance.now() - span.startTime);
+      span.metadata = metadata;
+      if (metadata?.error) {
+        span.status = "error";
+      }
+      if (currentSpans.length < MAX_SPANS_PER_REQUEST) {
+        currentSpans.push(span);
+      }
+      return span;
+    },
+  };
+}
+
+/**
+ * Get all spans for the current request.
+ */
+export function getSpans(): Span[] {
+  return [...currentSpans];
+}
+
+/**
+ * Clear spans for the current request (call at end of request, before clearContext).
+ */
+export function clearSpans(): void {
+  currentSpans = [];
+}
+
+// =============================================================================
+// SLI Counters
+// =============================================================================
+
+export interface SLICounterData {
+  requestCount: number;
+  errorCount: number;
+  latencyBuckets: Record<string, number>;
+}
+
+const LATENCY_BUCKET_BOUNDARIES = [100, 250, 500, 1000, 3000];
+const LATENCY_BUCKET_LABELS = ["le100", "le250", "le500", "le1000", "le3000", "leInf"];
+
+const sliCounters = new Map<string, SLICounterData>();
+
+function getOrCreateSLI(handler: string): SLICounterData {
+  let counter = sliCounters.get(handler);
+  if (!counter) {
+    counter = {
+      requestCount: 0,
+      errorCount: 0,
+      latencyBuckets: Object.fromEntries(LATENCY_BUCKET_LABELS.map((l) => [l, 0])),
+    };
+    sliCounters.set(handler, counter);
+  }
+  return counter;
+}
+
+/**
+ * Increment SLI counters for a completed request.
+ */
+export function recordSLI(handler: string, durationMs: number, isError: boolean): void {
+  const counter = getOrCreateSLI(handler);
+  counter.requestCount++;
+  if (isError) counter.errorCount++;
+
+  // Increment all buckets where durationMs <= boundary (cumulative histogram)
+  for (let i = 0; i < LATENCY_BUCKET_BOUNDARIES.length; i++) {
+    if (durationMs <= LATENCY_BUCKET_BOUNDARIES[i]) {
+      counter.latencyBuckets[LATENCY_BUCKET_LABELS[i]]++;
+    }
+  }
+  // +Inf bucket always gets incremented
+  counter.latencyBuckets["leInf"]++;
+}
+
+/**
+ * Get all SLI counters.
+ */
+export function getSLICounters(): Map<string, SLICounterData> {
+  return new Map(sliCounters);
+}
+
+/**
+ * Get SLI latency bucket boundaries (for Prometheus export).
+ */
+export function getSLIBucketBoundaries(): number[] {
+  return [...LATENCY_BUCKET_BOUNDARIES];
 }
 
 // =============================================================================
@@ -285,6 +407,9 @@ export function trackRequest(handler: string): {
         statusCode,
         success: statusCode < 400,
       });
+
+      // Record SLI counters
+      recordSLI(handler, durationMs, statusCode >= 400);
 
       // Log request completion
       logger.info("Request completed", {

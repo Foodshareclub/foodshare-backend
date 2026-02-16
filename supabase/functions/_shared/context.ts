@@ -31,6 +31,8 @@ export interface RequestContext {
   service?: string;
   /** Additional context data */
   metadata: Record<string, unknown>;
+  /** Span count for this request (spans stored in performance.ts) */
+  spanCount?: number;
 }
 
 // Store context for the current request

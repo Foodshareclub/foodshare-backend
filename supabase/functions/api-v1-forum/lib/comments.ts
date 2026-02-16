@@ -9,7 +9,7 @@
 
 import { positiveIntSchema, z } from "../../_shared/schemas/common.ts";
 import { created, type HandlerContext, noContent, ok } from "../../_shared/api-handler.ts";
-import { AuthorizationError, NotFoundError, ValidationError } from "../../_shared/errors.ts";
+import { ValidationError } from "../../_shared/errors.ts";
 import { logger } from "../../_shared/logger.ts";
 import type { ForumQuery } from "../index.ts";
 import { CommentService } from "./comment-service.ts";

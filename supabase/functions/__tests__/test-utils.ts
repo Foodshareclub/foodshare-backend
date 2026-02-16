@@ -259,6 +259,96 @@ export function createMockProfile(
 }
 
 // ============================================================================
+// Extended Mock Factories
+// ============================================================================
+
+/**
+ * Create a mock Supabase client with `.rpc()` support
+ */
+export function createMockSupabaseClientWithRpc(config: {
+  user?: MockUser | null;
+  queryResults?: Map<string, unknown[]>;
+  queryErrors?: Map<string, Error>;
+  rpcResults?: Map<string, unknown>;
+  rpcErrors?: Map<string, Error>;
+} = {}): MockSupabaseClient & { rpc: (name: string, params?: unknown) => Promise<{ data: unknown; error: unknown }> } {
+  const base = createMockSupabaseClient(config);
+  const { rpcResults = new Map(), rpcErrors = new Map() } = config;
+
+  return {
+    ...base,
+    rpc: async (name: string, _params?: unknown) => {
+      const error = rpcErrors.get(name);
+      if (error) return { data: null, error };
+      const data = rpcResults.get(name) ?? null;
+      return { data, error: null };
+    },
+  };
+}
+
+/**
+ * Create a mock NotificationContext for testing notification handlers
+ */
+export function createMockNotificationContext(overrides: {
+  user?: MockUser | null;
+  queryResults?: Map<string, unknown[]>;
+  rpcResults?: Map<string, unknown>;
+} = {}): {
+  supabase: ReturnType<typeof createMockSupabaseClientWithRpc>;
+  requestId: string;
+  userId?: string;
+  isAdmin?: boolean;
+} {
+  const supabase = createMockSupabaseClientWithRpc({
+    user: overrides.user,
+    queryResults: overrides.queryResults,
+    rpcResults: overrides.rpcResults,
+  });
+
+  return {
+    supabase,
+    requestId: `test-req-${crypto.randomUUID().slice(0, 8)}`,
+    userId: overrides.user?.id || "test-user-id-12345",
+    isAdmin: false,
+  };
+}
+
+/**
+ * Create a mock chat room
+ */
+export function createMockRoom(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: crypto.randomUUID(),
+    post_id: Math.floor(Math.random() * 10000),
+    buyer_id: "buyer-user-id",
+    seller_id: "seller-user-id",
+    status: "pending",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+/**
+ * Create a mock chat message
+ */
+export function createMockMessage(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: crypto.randomUUID(),
+    room_id: crypto.randomUUID(),
+    sender_id: "test-user-id-12345",
+    content: "Hello, is this still available?",
+    type: "text",
+    created_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+// ============================================================================
 // Environment Setup
 // ============================================================================
 

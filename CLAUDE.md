@@ -135,19 +135,21 @@ Two env files (both gitignored, see `.env.example` and `.env.functions.example` 
 
 ## Deployment
 
+Self-hosted on VPS — all deployments go through GitHub Actions CI/CD. **After every push, always check the deployment status via CI/CD:**
+
 ```bash
-# SSH into VPS
+# Check latest CI/CD run status (always do this after pushing)
+gh run list --limit 3
+gh run view <run-id>              # Summary + job statuses
+gh run view <run-id> --log-failed # Show failure logs
+gh run watch <run-id>             # Live-stream a running deploy
+```
+
+The CI/CD pipeline runs: detect changes → test → security scan → validate migrations → lint → deploy gate → deploy to VPS → dry-run summary. Never SSH into the VPS to deploy manually — always push to `main` and let CI/CD handle it.
+
+```bash
+# Manual VPS access (debugging only, not for deploying)
 autossh -M 0 -o ServerAliveInterval=6000 -o ServerAliveCountMax=6000 -o ConnectTimeout=10 -o ConnectionAttempts=6000 -i ~/.ssh/id_rsa_gitlab organic@vps.foodshare.club
-
-# Update code
-cd /home/organic/dev/foodshare-backend
-git pull
-
-# Restart (only if docker-compose.yml or configs changed)
-docker compose up -d
-
-# Restart just edge functions (after function code changes)
-docker compose restart functions
 ```
 
 ## Common Pitfalls

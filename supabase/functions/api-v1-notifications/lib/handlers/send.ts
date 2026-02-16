@@ -22,6 +22,7 @@ import {
   sendRequestSchema,
   templateSendRequestSchema,
 } from "../validation.ts";
+import { interpolateTemplate, loadTemplate } from "../template-engine.ts";
 
 /**
  * POST /send - Send single notification
@@ -179,12 +180,12 @@ export async function handleSendBatch(
  * POST /send/template - Send notification using template
  */
 export async function handleSendTemplate(
-  body: unknown,
+  _body: unknown,
   context: NotificationContext,
 ): Promise<{ success: boolean; data?: DeliveryResult; error?: string }> {
   try {
     // Validate request
-    const request = templateSendRequestSchema.parse(body) as TemplateSendRequest;
+    const request = templateSendRequestSchema.parse(_body) as TemplateSendRequest;
 
     logger.info("Sending template notification", {
       requestId: context.requestId,
@@ -192,15 +193,28 @@ export async function handleSendTemplate(
       template: request.template,
     });
 
-    // TODO: Load template from database or file system
-    // For now, create a basic notification from template name
+    // Load template from database
+    const template = await loadTemplate(context.supabase, request.template);
+
+    if (!template) {
+      return {
+        success: false,
+        error: `Template '${request.template}' not found`,
+      };
+    }
+
+    // Interpolate variables into template
+    const stringVars: Record<string, unknown> = { ...request.variables };
+    const title = interpolateTemplate(template.title_template, stringVars);
+    const body = interpolateTemplate(template.body_template, stringVars);
+
     const notification: SendRequest = {
       userId: request.userId,
-      type: "system_announcement",
-      title: `Template: ${request.template}`,
-      body: `This is a template notification: ${request.template}`,
-      channels: request.channels,
-      priority: request.priority,
+      type: (template.type as SendRequest["type"]) || "system_announcement",
+      title,
+      body,
+      channels: request.channels || (template.channels as SendRequest["channels"]),
+      priority: request.priority || (template.priority as SendRequest["priority"]),
       data: {
         template: request.template,
         ...Object.fromEntries(

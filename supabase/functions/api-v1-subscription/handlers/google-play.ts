@@ -27,6 +27,7 @@ import {
 } from "../../_shared/subscriptions/types.ts";
 import { logger } from "../../_shared/logger.ts";
 import { PerformanceTimer } from "../../_shared/performance.ts";
+import { tracedFetch } from "../../_shared/traced-fetch.ts";
 
 // =============================================================================
 // Configuration
@@ -194,19 +195,177 @@ function decodeBase64(data: string): string {
 // JWT Verification (for authenticated push)
 // =============================================================================
 
-async function verifyGoogleJWT(_request: Request): Promise<boolean> {
+/** Cached JWKS keys from Google */
+let jwksCache: { keys: JsonWebKey[]; expiresAt: number } | null = null;
+const JWKS_DEFAULT_TTL_MS = 3600_000; // 1 hour fallback
+const GOOGLE_JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs";
+
+/**
+ * Decode a base64url string to Uint8Array.
+ */
+function base64UrlDecode(input: string): Uint8Array {
+  // Convert base64url to base64
+  let base64 = input.replace(/-/g, "+").replace(/_/g, "/");
+  // Pad with =
+  const pad = base64.length % 4;
+  if (pad === 2) base64 += "==";
+  else if (pad === 3) base64 += "=";
+
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/**
+ * Fetch Google's JWKS public keys with caching.
+ */
+async function getGoogleJWKS(): Promise<JsonWebKey[]> {
+  const now = Date.now();
+  if (jwksCache && jwksCache.expiresAt > now) {
+    return jwksCache.keys;
+  }
+
+  const response = await tracedFetch(GOOGLE_JWKS_URL, undefined, "google.jwks.fetch");
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch Google JWKS: ${response.status}`);
+  }
+
+  // Parse Cache-Control for TTL
+  let ttlMs = JWKS_DEFAULT_TTL_MS;
+  const cacheControl = response.headers.get("cache-control") || "";
+  const maxAgeMatch = cacheControl.match(/max-age=(\d+)/);
+  if (maxAgeMatch) {
+    ttlMs = parseInt(maxAgeMatch[1], 10) * 1000;
+  }
+
+  const jwks = await response.json();
+  jwksCache = {
+    keys: jwks.keys as JsonWebKey[],
+    expiresAt: now + ttlMs,
+  };
+
+  return jwksCache.keys;
+}
+
+/**
+ * Verify a Google JWT token from the Authorization header.
+ */
+async function verifyGoogleJWT(request: Request): Promise<boolean> {
   if (!VERIFY_JWT) {
     return true; // Skip verification if not configured
   }
 
-  // TODO: Implement Google JWT verification
-  // 1. Get Authorization header
-  // 2. Verify JWT signature using Google's public keys
-  // 3. Check claims (iss, aud, exp, etc.)
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader) {
+    logger.warn("Missing Authorization header for Google JWT verification");
+    return false;
+  }
 
-  logger.warn("Google JWT verification not fully implemented");
-  return true;
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
+
+  try {
+    // Split JWT into parts
+    const parts = token.split(".");
+    if (parts.length !== 3) {
+      logger.warn("Invalid JWT format: expected 3 parts");
+      return false;
+    }
+
+    const [headerB64, payloadB64, signatureB64] = parts;
+
+    // Decode header to get kid
+    const headerJson = new TextDecoder().decode(base64UrlDecode(headerB64));
+    const header = JSON.parse(headerJson) as { kid?: string; alg?: string };
+
+    if (!header.kid) {
+      logger.warn("JWT missing kid claim in header");
+      return false;
+    }
+
+    // Fetch JWKS and find matching key
+    const keys = await getGoogleJWKS();
+    const matchingKey = keys.find(
+      (k) => (k as Record<string, unknown>).kid === header.kid,
+    );
+
+    if (!matchingKey) {
+      logger.warn("No matching key found in Google JWKS", { kid: header.kid });
+      return false;
+    }
+
+    // Import key for verification
+    const cryptoKey = await crypto.subtle.importKey(
+      "jwk",
+      matchingKey,
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["verify"],
+    );
+
+    // Verify signature
+    const signedData = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
+    const signature = base64UrlDecode(signatureB64);
+
+    const valid = await crypto.subtle.verify(
+      "RSASSA-PKCS1-v1_5",
+      cryptoKey,
+      signature.buffer as ArrayBuffer,
+      signedData,
+    );
+
+    if (!valid) {
+      logger.warn("JWT signature verification failed");
+      return false;
+    }
+
+    // Decode and check claims
+    const payloadJson = new TextDecoder().decode(base64UrlDecode(payloadB64));
+    const claims = JSON.parse(payloadJson) as {
+      exp?: number;
+      aud?: string;
+      iss?: string;
+    };
+
+    // Check expiration
+    if (claims.exp && claims.exp < Math.floor(Date.now() / 1000)) {
+      logger.warn("JWT has expired", { exp: claims.exp });
+      return false;
+    }
+
+    // Check audience if configured
+    if (GOOGLE_CLOUD_PROJECT && claims.aud && claims.aud !== GOOGLE_CLOUD_PROJECT) {
+      logger.warn("JWT audience mismatch", {
+        expected: GOOGLE_CLOUD_PROJECT,
+        got: claims.aud,
+      });
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    logger.error(
+      "Google JWT verification error",
+      error instanceof Error ? error : new Error(String(error)),
+    );
+    return false;
+  }
 }
+
+/**
+ * Exported for testing: clear the cached JWKS keys.
+ */
+export function _clearJwksCache(): void {
+  jwksCache = null;
+}
+
+/**
+ * Exported for testing: the base64url decode utility.
+ */
+export { base64UrlDecode };
 
 // =============================================================================
 // Google Play Handler Implementation
