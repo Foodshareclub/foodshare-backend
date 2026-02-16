@@ -63,7 +63,7 @@ jobs:
     name: Lint
     runs-on: self-hosted
     needs: detect-changes
-    timeout-minutes: 3
+    timeout-minutes: 2
     defaults:
       run:
         working-directory: supabase/functions
@@ -90,8 +90,8 @@ jobs:
   test:
     name: Test
     runs-on: self-hosted
-    needs: detect-changes
-    timeout-minutes: 5
+    needs: lint
+    timeout-minutes: 2
     defaults:
       run:
         working-directory: supabase/functions
@@ -124,8 +124,8 @@ jobs:
   security:
     name: Security scan
     runs-on: self-hosted
-    needs: detect-changes
-    timeout-minutes: 3
+    needs: test
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -140,9 +140,9 @@ jobs:
   validate-migrations:
     name: Validate migrations
     runs-on: self-hosted
-    needs: detect-changes
+    needs: security
     if: needs.detect-changes.outputs.migrations-changed == 'true'
-    timeout-minutes: 5
+    timeout-minutes: 2
 
     services:
       postgres:
