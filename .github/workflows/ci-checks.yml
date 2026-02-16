@@ -39,7 +39,7 @@ jobs:
   # ── Change detection ──────────────────────────────────────────────────
   detect-changes:
     name: Detect changes
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ubuntu-latest]
     timeout-minutes: 2
     outputs:
       functions-changed: ${{ steps.changes.outputs.functions-changed }}
@@ -61,7 +61,7 @@ jobs:
   # ── Lint ──────────────────────────────────────────────────────────────
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ubuntu-latest]
     needs: detect-changes
     timeout-minutes: 3
     defaults:
@@ -89,7 +89,7 @@ jobs:
   # ── Test ─────────────────────────────────────────────────────────────
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ubuntu-latest]
     needs: detect-changes
     timeout-minutes: 5
     defaults:
@@ -123,7 +123,7 @@ jobs:
   # ── Security ─────────────────────────────────────────────────────────
   security:
     name: Security scan
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ubuntu-latest]
     needs: detect-changes
     timeout-minutes: 3
     steps:
@@ -139,7 +139,7 @@ jobs:
   # ── Validate migrations (conditional) ────────────────────────────────
   validate-migrations:
     name: Validate migrations
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ubuntu-latest]
     needs: detect-changes
     if: needs.detect-changes.outputs.migrations-changed == 'true'
     timeout-minutes: 5
