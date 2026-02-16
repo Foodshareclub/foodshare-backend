@@ -5,10 +5,7 @@
  * - handleVerifySend, handleVerifyConfirm, handleVerifyResend
  */
 
-import {
-  assertEquals,
-  assertExists,
-} from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
 
 // We test the handler logic by importing the handlers directly.
 // Since they depend on Supabase client and email service, we mock those.
@@ -98,21 +95,26 @@ Deno.test("generateVerificationCode: always produces 6-digit string", () => {
 // handleVerifySend Tests (via response checking)
 // =============================================================================
 
-Deno.test({ name: "handleVerifySend: profile not found returns 404", sanitizeOps: false, sanitizeResources: false, fn: async () => {
-  const { ctx } = createMockAuthContext(null);
+Deno.test({
+  name: "handleVerifySend: profile not found returns 404",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const { ctx } = createMockAuthContext(null);
 
-  // Dynamically import to avoid module-level side effects
-  const { handleVerifySend } = await import("../api-v1-auth/lib/verify.ts");
-  const response = await handleVerifySend(
-    { email: "nobody@example.com" },
-    ctx as any,
-  );
+    // Dynamically import to avoid module-level side effects
+    const { handleVerifySend } = await import("../api-v1-auth/lib/verify.ts");
+    const response = await handleVerifySend(
+      { email: "nobody@example.com" },
+      ctx as any,
+    );
 
-  assertEquals(response.status, 404);
-  const body = await response.json();
-  assertEquals(body.success, false);
-  assertEquals(body.error, "No account found for this email");
-}});
+    assertEquals(response.status, 404);
+    const body = await response.json();
+    assertEquals(body.success, false);
+    assertEquals(body.error, "No account found for this email");
+  },
+});
 
 Deno.test("handleVerifySend: already verified returns 409", async () => {
   const profile: MockProfile = {
@@ -277,9 +279,9 @@ Deno.test("checkResendRateLimit: allows first 3, blocks 4th", () => {
   }
 
   const email = "ratelimit-test@example.com";
-  assertEquals(checkLimit(email), true);  // 1st
-  assertEquals(checkLimit(email), true);  // 2nd
-  assertEquals(checkLimit(email), true);  // 3rd
+  assertEquals(checkLimit(email), true); // 1st
+  assertEquals(checkLimit(email), true); // 2nd
+  assertEquals(checkLimit(email), true); // 3rd
   assertEquals(checkLimit(email), false); // 4th - blocked
   assertEquals(checkLimit(email), false); // 5th - still blocked
 });

@@ -91,7 +91,9 @@ async function getEngagement(ctx: HandlerContext<unknown, QueryParams>): Promise
 
     // Check cache first
     const cacheKey = CACHE_KEYS.engagement(postIds, userId);
-    const cached = cache.get<Record<number, { isLiked: boolean; isBookmarked: boolean; likeCount: number }>>(cacheKey);
+    const cached = cache.get<
+      Record<number, { isLiked: boolean; isBookmarked: boolean; likeCount: number }>
+    >(cacheKey);
     if (cached) {
       return ok(cached, ctx);
     }
@@ -104,7 +106,8 @@ async function getEngagement(ctx: HandlerContext<unknown, QueryParams>): Promise
 
     if (!rpcError && rpcResult) {
       // RPC returns JSONB with string keys — normalize to number keys
-      const result: Record<number, { isLiked: boolean; isBookmarked: boolean; likeCount: number }> = {};
+      const result: Record<number, { isLiked: boolean; isBookmarked: boolean; likeCount: number }> =
+        {};
       for (const postId of postIds) {
         const entry = rpcResult[String(postId)];
         result[postId] = entry || { isLiked: false, isBookmarked: false, likeCount: 0 };

@@ -93,7 +93,7 @@ export async function getFeed(ctx: HandlerContext<unknown, ForumQuery>): Promise
   const { supabase, userId, query } = ctx;
 
   const service = new ForumService(supabase, userId || "");
-  
+
   const data = await service.getFeed({
     categoryId: query.categoryId ? parseInt(query.categoryId) : undefined,
     postType: query.postType,

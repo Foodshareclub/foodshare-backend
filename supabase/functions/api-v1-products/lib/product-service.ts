@@ -1,6 +1,6 @@
 /**
  * Product Service
- * 
+ *
  * Business logic for product/listing operations.
  */
 
@@ -69,7 +69,7 @@ export class ProductService {
     await this.verifyOwnership(productId);
 
     const updateData: Record<string, unknown> = {};
-    
+
     if (input.title !== undefined) updateData.product_name = input.title;
     if (input.description !== undefined) updateData.product_description = input.description;
     if (input.quantity !== undefined) updateData.product_quantity = input.quantity;
@@ -100,9 +100,9 @@ export class ProductService {
 
     const { error } = await this.supabase
       .from("products")
-      .update({ 
+      .update({
         product_status: "deleted",
-        deleted_at: new Date().toISOString() 
+        deleted_at: new Date().toISOString(),
       })
       .eq("id", productId);
 
@@ -139,11 +139,14 @@ export class ProductService {
   }) {
     let query = this.supabase
       .from("products")
-      .select(`
+      .select(
+        `
         *,
         profile:profiles!products_profile_id_fkey(id, nickname, avatar_url),
         category:categories(id, name, icon)
-      `, { count: "exact" });
+      `,
+        { count: "exact" },
+      );
 
     if (params.categoryId) {
       query = query.eq("category_id", params.categoryId);
