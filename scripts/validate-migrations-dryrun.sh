@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Migration dry-run validation
-# Tests migrations in isolated container before applying to production
+# Migration dry-run validation - simplified for VPS without Docker
+# Tests migrations against a copy of the production database
 
 set -eo pipefail
 
@@ -10,32 +10,45 @@ cd "$DEPLOY_DIR"
 log() { echo "[migration-dryrun] $*"; }
 err() { echo "[migration-dryrun] ERROR: $*" >&2; }
 
-# Create temporary test database
-log "Creating test database container"
-docker run -d --name migration-test-db \
-  -e POSTGRES_PASSWORD=test \
-  -e POSTGRES_DB=postgres \
-  postgres:17 > /dev/null
+# Create temporary database for testing
+DB_CONTAINER="${DB_CONTAINER:-supabase-db}"
+TEST_DB="postgres_migration_test_$$"
+
+log "Creating test database: $TEST_DB"
+docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d postgres -c "CREATE DATABASE $TEST_DB;" 2>/dev/null || {
+  err "Failed to create test database"
+  exit 1
+}
 
 cleanup() {
   log "Cleaning up test database"
-  docker rm -f migration-test-db > /dev/null 2>&1 || true
+  docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d postgres -c "DROP DATABASE IF EXISTS $TEST_DB;" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-# Wait for database
-log "Waiting for database..."
-sleep 5
+# Copy schema from production to test database
+log "Copying production schema to test database"
+docker exec -i "$DB_CONTAINER" pg_dump -U supabase_admin -d postgres --schema-only | \
+  docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d "$TEST_DB" > /dev/null 2>&1
 
-# Apply migrations to test database
-log "Applying migrations to test database"
+# Apply new migrations to test database
+log "Testing new migrations"
 FAILED=0
 for f in supabase/migrations/*.sql; do
   [ -f "$f" ] || continue
   BASENAME=$(basename "$f")
   
+  # Skip if already applied (check version in test db)
+  VERSION=$(echo "$BASENAME" | grep -oE '^[0-9]+')
+  APPLIED=$(docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d "$TEST_DB" -tAc \
+    "SELECT COUNT(*) FROM supabase_migrations.schema_migrations WHERE version='$VERSION';" 2>/dev/null || echo "0")
+  
+  if [ "$APPLIED" -gt 0 ]; then
+    continue
+  fi
+  
   log "Testing: $BASENAME"
-  if ! docker exec -i migration-test-db psql -U postgres -d postgres < "$f" 2>&1 | grep -v "NOTICE"; then
+  if ! docker exec -i "$DB_CONTAINER" psql -U supabase_admin -d "$TEST_DB" < "$f" 2>&1 | grep -v "NOTICE"; then
     err "Migration failed: $BASENAME"
     FAILED=1
     break

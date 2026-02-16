@@ -10,8 +10,9 @@ interface FeatureFlag {
 
 const FLAGS: Record<string, FeatureFlag> = {
   "enhanced-notifications": { enabled: true, rolloutPercent: 100 },
-  "new-chat-ui": { enabled: true, rolloutPercent: 10 },
+  "new-chat-ui": { enabled: true, rolloutPercent: 100 },
   "ai-recommendations": { enabled: false },
+  "canary-deployment": { enabled: true, rolloutPercent: 100 }, // Updated by canary script
 };
 
 export async function isFeatureEnabled(
@@ -43,3 +44,6 @@ async function hashUserId(userId: string): Promise<number> {
   const hashArray = new Uint8Array(hashBuffer);
   return hashArray[0];
 }
+
+// Export for use in API handlers
+export { FLAGS };
