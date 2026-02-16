@@ -38,7 +38,10 @@ async function getCryptoKey(): Promise<CryptoKey | null> {
   try {
     const keyBytes = Uint8Array.from(atob(keyBase64), (c) => c.charCodeAt(0));
     if (keyBytes.length !== 32) {
-      logger.error("CHAT_ENCRYPTION_KEY must be 32 bytes (256 bits)", new Error("Invalid key length"));
+      logger.error(
+        "CHAT_ENCRYPTION_KEY must be 32 bytes (256 bits)",
+        new Error("Invalid key length"),
+      );
       return null;
     }
 
@@ -51,7 +54,10 @@ async function getCryptoKey(): Promise<CryptoKey | null> {
     );
     return _cryptoKey;
   } catch (error) {
-    logger.error("Failed to load encryption key", error instanceof Error ? error : new Error(String(error)));
+    logger.error(
+      "Failed to load encryption key",
+      error instanceof Error ? error : new Error(String(error)),
+    );
     return null;
   }
 }
@@ -81,7 +87,10 @@ export async function encryptMessage(plaintext: string): Promise<string> {
 
     return ENCRYPTED_PREFIX + btoa(String.fromCharCode(...combined));
   } catch (error) {
-    logger.error("Message encryption failed, storing plaintext", error instanceof Error ? error : new Error(String(error)));
+    logger.error(
+      "Message encryption failed, storing plaintext",
+      error instanceof Error ? error : new Error(String(error)),
+    );
     return plaintext;
   }
 }
@@ -121,7 +130,10 @@ export async function decryptMessage(stored: string): Promise<string> {
 
     return new TextDecoder().decode(decrypted);
   } catch (error) {
-    logger.error("Message decryption failed", error instanceof Error ? error : new Error(String(error)));
+    logger.error(
+      "Message decryption failed",
+      error instanceof Error ? error : new Error(String(error)),
+    );
     return "[Encrypted message]";
   }
 }
