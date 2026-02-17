@@ -19,7 +19,7 @@ sed -i.bak "s/rolloutPercent: [0-9]*/rolloutPercent: $CANARY_PERCENT/" \
 
 # Restart functions to pick up new config
 log "Restarting edge functions"
-docker compose restart supabase-edge-functions
+docker compose restart functions
 
 # Monitor for 2 minutes
 log "Monitoring for 2 minutes..."
@@ -36,7 +36,7 @@ if [ "$ERROR_RATE" -gt 5 ]; then
   log "ERROR: High error rate detected, rolling back"
   # Restore backup
   mv supabase/functions/_shared/feature-flags.ts.bak supabase/functions/_shared/feature-flags.ts
-  docker compose restart supabase-edge-functions
+  docker compose restart functions
   exit 1
 fi
 
