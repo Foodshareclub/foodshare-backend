@@ -171,7 +171,7 @@ async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Re
   const lat = query.lat ? parseFloatSafe(query.lat) : undefined;
   const lng = query.lng ? parseFloatSafe(query.lng) : undefined;
   // Radius bounds: 0.1km minimum, 1000km maximum (500mi), default 10km
-  const radius = parseFloatSafeWithBounds(query.radius, 0.1, 1000, 10);
+  const radius = parseFloatSafeWithBounds(query.radiusKm || query.radius, 0.1, 1000, 10);
   const userId = query.userId;
 
   // Decode composite cursor (timestamp + id)
@@ -209,18 +209,15 @@ async function listProducts(ctx: HandlerContext<unknown, ListQuery>): Promise<Re
     );
   }
 
-  // Location-based filtering (if coordinates provided)
+  // Location-based filtering via bounding box (if coordinates provided)
   if (lat !== undefined && lng !== undefined) {
-    // Use PostGIS ST_DWithin for efficient radius query
-    dbQuery = dbQuery.rpc("nearby_posts", {
-      p_lat: lat,
-      p_lng: lng,
-      p_radius_km: radius,
-      p_post_type: postType || null,
-      p_limit: limit + 1,
-      p_cursor: cursor ? cursor.timestamp : null,
-      p_cursor_id: cursor ? cursor.id : null,
-    });
+    const latDelta = radius / 111.0;
+    const lngDelta = radius / (111.0 * Math.cos(lat * Math.PI / 180));
+    dbQuery = dbQuery
+      .gte("latitude", lat - latDelta)
+      .lte("latitude", lat + latDelta)
+      .gte("longitude", lng - lngDelta)
+      .lte("longitude", lng + lngDelta);
   }
 
   const { data, error, count } = await dbQuery;
