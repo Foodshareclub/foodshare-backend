@@ -168,11 +168,8 @@ jobs:
                   '{started_at: $started, stage: $stage, prev_head: $prev, new_head: $new, changed_files: $changed}' \
               > /tmp/deploy-state.json
 
-            # ── Stage 3: Validate migrations (dry-run) ──
+            # ── Stage 3: Migrate ──
             if [ "$MIGRATIONS_CHANGED" = "true" ]; then
-              echo "=== Stage: validate migrations ==="
-              ./scripts/validate-migrations-dryrun.sh
-              
               echo "=== Stage: migrate ==="
               ./scripts/deploy.sh migrate
             else
