@@ -87,7 +87,7 @@ async function routeRequest(ctx: HandlerContext): Promise<Response> {
     authMode = "webhook";
     provider = segments[1];
     usePermissiveCors = true;
-    rawBody = await ctx.request.text();
+    rawBody = JSON.stringify(ctx.body);
   } else if (isTrigger) {
     const triggerType = segments[1];
     if (triggerType === "new-listing") {
@@ -176,8 +176,7 @@ async function routeRequest(ctx: HandlerContext): Promise<Response> {
   // =========================================================================
 
   if (isDigestProcess && method === "POST") {
-    const body = await ctx.request.json().catch(() => ({}));
-    const result = await handleDigestProcess(body, context);
+    const result = await handleDigestProcess(ctx.body, context);
     return jsonResponse(result, result.success ? 200 : 500);
   }
 
@@ -186,20 +185,17 @@ async function routeRequest(ctx: HandlerContext): Promise<Response> {
   // =========================================================================
 
   if (segments[0] === "send" && segments.length === 1 && method === "POST") {
-    const body = await ctx.request.json();
-    const result = await handleSend(body, context);
+    const result = await handleSend(ctx.body, context);
     return jsonResponse(result, result.success ? 200 : 400);
   }
 
   if (segments[0] === "send" && segments[1] === "batch" && method === "POST") {
-    const body = await ctx.request.json();
-    const result = await handleSendBatch(body, context);
+    const result = await handleSendBatch(ctx.body, context);
     return jsonResponse(result, result.success ? 200 : 400);
   }
 
   if (segments[0] === "send" && segments[1] === "template" && method === "POST") {
-    const body = await ctx.request.json();
-    const result = await handleSendTemplate(body, context);
+    const result = await handleSendTemplate(ctx.body, context);
     return jsonResponse(result, result.success ? 200 : 400);
   }
 
@@ -213,14 +209,12 @@ async function routeRequest(ctx: HandlerContext): Promise<Response> {
   }
 
   if (segments[0] === "preferences" && segments.length === 1 && method === "PUT") {
-    const body = await ctx.request.json();
-    const result = await handleUpdatePreferences(body, context);
+    const result = await handleUpdatePreferences(ctx.body, context);
     return jsonResponse(result, result.success ? 200 : 400);
   }
 
   if (segments[0] === "preferences" && segments[1] === "dnd" && method === "POST") {
-    const body = await ctx.request.json().catch(() => ({}));
-    const result = await handleEnableDnd(body, context);
+    const result = await handleEnableDnd(ctx.body, context);
     return jsonResponse(result, result.success ? 200 : 400);
   }
 
@@ -254,8 +248,7 @@ async function routeRequest(ctx: HandlerContext): Promise<Response> {
 
   if (isTrigger && method === "POST" && segments[1]) {
     const triggerType = segments[1];
-    const body = await ctx.request.json().catch(() => ({}));
-    const result = await handleTrigger(triggerType, body, context);
+    const result = await handleTrigger(triggerType, ctx.body, context);
     return jsonResponse(result, result.success ? 200 : 400);
   }
 
@@ -264,10 +257,7 @@ async function routeRequest(ctx: HandlerContext): Promise<Response> {
   // =========================================================================
 
   if (isAdmin) {
-    const body = ["POST", "PUT", "PATCH"].includes(method)
-      ? await ctx.request.json().catch(() => ({}))
-      : {};
-    const result = await handleAdminRoute(segments, method, body, context);
+    const result = await handleAdminRoute(segments, method, ctx.body, context);
     return jsonResponse(result, result.status || (result.success ? 200 : 400));
   }
 
