@@ -35,18 +35,27 @@ CREATE TRIGGER trg_notification_templates_updated_at
 -- RLS
 ALTER TABLE notification_templates ENABLE ROW LEVEL SECURITY;
 
--- Authenticated users can read active templates
-CREATE POLICY "Authenticated users can read active templates"
-  ON notification_templates FOR SELECT
-  TO authenticated
-  USING (is_active = TRUE);
+-- Roles may not exist in CI bare Postgres, wrap in DO block
+DO $$
+BEGIN
+  -- Authenticated users can read active templates
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    CREATE POLICY "Authenticated users can read active templates"
+      ON notification_templates FOR SELECT
+      TO authenticated
+      USING (is_active = TRUE);
+  END IF;
 
--- Service role can do everything
-CREATE POLICY "Service role full access"
-  ON notification_templates FOR ALL
-  TO service_role
-  USING (TRUE)
-  WITH CHECK (TRUE);
+  -- Service role can do everything
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    CREATE POLICY "Service role full access"
+      ON notification_templates FOR ALL
+      TO service_role
+      USING (TRUE)
+      WITH CHECK (TRUE);
+  END IF;
+END;
+$$;
 
 -- Seed data
 INSERT INTO notification_templates (name, type, title_template, body_template, channels, priority) VALUES
