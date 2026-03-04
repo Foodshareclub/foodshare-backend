@@ -5,6 +5,15 @@
 
 name: supabase
 
+x-logging: &id001
+                  # Common logging configuration
+  driver: json-file
+  options:
+    max-size: 20m
+    max-file: '3'
+x-security: # Common security options
+  security_opt:
+    - no-new-privileges:true
 services:
 
   studio:
@@ -12,13 +21,8 @@ services:
     image: supabase/studio:2026.02.04-sha-fba1944
     restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://studio:3000/api/platform/profile').then((r) => {if (r.status !== 200) throw new Error(r.status)})"
-        ]
+      test: ["CMD", "node", "-e", "fetch('http://studio:3000/api/platform/profile').then((r)
+            => {if (r.status !== 200) throw new Error(r.status)})"]
       timeout: 10s
       interval: 5s
       retries: 3
@@ -60,6 +64,46 @@ services:
     ports:
       - 127.0.0.1:3005:3000/tcp
 
+    
+  caddy:
+    container_name: supabase-caddy
+    image: caddy:2.7.6-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./volumes/proxy/Caddyfile:/etc/caddy/Caddyfile:ro,z
+      - caddy-data:/data:z
+      - caddy-config:/config:z
+    environment:
+      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME}
+      DASHBOARD_PASSWORD_HASH: ${DASHBOARD_PASSWORD_HASH}
+    networks:
+      - supabase-network
+    logging: *id001
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+
+networks:
+      - supabase-network
+    logging: *id001
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
   kong:
     container_name: supabase-kong
     image: kong:2.8.1
@@ -76,32 +120,39 @@ services:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
       KONG_DNS_ORDER: LAST,A,CNAME
-      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth,request-termination,ip-restriction
+      KONG_PLUGINS: 
+        request-transformer,cors,key-auth,acl,basic-auth,request-termination,ip-restriction
       KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
       KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
       SUPABASE_ANON_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
       DASHBOARD_USERNAME: ${DASHBOARD_USERNAME}
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD}
-    entrypoint: bash -c 'eval "echo \"$$(cat ~/temp.yml)\"" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'
+    entrypoint: bash -c 'eval "echo \"$$(cat ~/temp.yml)\"" > ~/kong.yml && 
+      /docker-entrypoint.sh kong docker-start'
 
+    networks:
+      - supabase-network
+    logging: *id001
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
   auth:
     container_name: supabase-auth
     image: supabase/gotrue:v2.186.0
     restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://localhost:9999/health"
-        ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
       timeout: 5s
       interval: 5s
       retries: 3
+      start_period: 20s
     depends_on:
       db:
         condition: service_healthy
@@ -113,7 +164,8 @@ services:
       API_EXTERNAL_URL: ${API_EXTERNAL_URL}
 
       GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      GOTRUE_DB_DATABASE_URL: 
+        postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
 
       GOTRUE_SITE_URL: ${SITE_URL}
       GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS}
@@ -134,8 +186,10 @@ services:
       GOTRUE_JWT_SECRET: ${JWT_SECRET}
 
       ## Sessions & Security
-      GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: ${SECURITY_REFRESH_TOKEN_ROTATION_ENABLED:-true}
-      GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: ${SECURITY_REFRESH_TOKEN_REUSE_INTERVAL:-10}
+      GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: 
+        ${SECURITY_REFRESH_TOKEN_ROTATION_ENABLED:-true}
+      GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: 
+        ${SECURITY_REFRESH_TOKEN_REUSE_INTERVAL:-10}
       GOTRUE_SESSIONS_SINGLE_PER_USER: ${SESSIONS_SINGLE_PER_USER:-false}
 
       ## MFA
@@ -154,8 +208,10 @@ services:
       GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP}
       GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: ${ENABLE_ANONYMOUS_USERS}
       GOTRUE_MAILER_AUTOCONFIRM: ${ENABLE_EMAIL_AUTOCONFIRM}
-      GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: ${MAILER_SECURE_EMAIL_CHANGE:-true}
-      GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION: ${SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION:-true}
+      GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: 
+        ${MAILER_SECURE_EMAIL_CHANGE:-true}
+      GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION: 
+        ${SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION:-true}
       GOTRUE_PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH:-8}
       GOTRUE_MAILER_OTP_EXP: ${MAILER_OTP_EXP:-3600}
       GOTRUE_MAILER_OTP_LENGTH: ${MAILER_OTP_LENGTH:-6}
@@ -173,12 +229,18 @@ services:
       GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: ${MAILER_URLPATHS_EMAIL_CHANGE}
 
       ## Email Templates
-      GOTRUE_MAILER_TEMPLATES_CONFIRMATION: http://kong:8000/storage/v1/object/public/assets/templates/confirmation.html
-      GOTRUE_MAILER_TEMPLATES_INVITE: http://kong:8000/storage/v1/object/public/assets/templates/invite.html
-      GOTRUE_MAILER_TEMPLATES_MAGIC_LINK: http://kong:8000/storage/v1/object/public/assets/templates/magic_link.html
-      GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE: http://kong:8000/storage/v1/object/public/assets/templates/email_change.html
-      GOTRUE_MAILER_TEMPLATES_RECOVERY: http://kong:8000/storage/v1/object/public/assets/templates/recovery.html
-      GOTRUE_MAILER_TEMPLATES_REAUTHENTICATION: http://kong:8000/storage/v1/object/public/assets/templates/reauthentication.html
+      GOTRUE_MAILER_TEMPLATES_CONFIRMATION: 
+        http://kong:8000/storage/v1/object/public/assets/templates/confirmation.html
+      GOTRUE_MAILER_TEMPLATES_INVITE: 
+        http://kong:8000/storage/v1/object/public/assets/templates/invite.html
+      GOTRUE_MAILER_TEMPLATES_MAGIC_LINK: 
+        http://kong:8000/storage/v1/object/public/assets/templates/magic_link.html
+      GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE: 
+        http://kong:8000/storage/v1/object/public/assets/templates/email_change.html
+      GOTRUE_MAILER_TEMPLATES_RECOVERY: 
+        http://kong:8000/storage/v1/object/public/assets/templates/recovery.html
+      GOTRUE_MAILER_TEMPLATES_REAUTHENTICATION: 
+        http://kong:8000/storage/v1/object/public/assets/templates/reauthentication.html
       GOTRUE_MAILER_SUBJECTS_CONFIRMATION: "Confirm Your Signup"
       GOTRUE_MAILER_SUBJECTS_INVITE: "You have been invited"
       GOTRUE_MAILER_SUBJECTS_MAGIC_LINK: "Your Magic Link"
@@ -197,105 +259,150 @@ services:
       GOTRUE_SMS_OTP_LENGTH: ${SMS_OTP_LENGTH:-6}
       GOTRUE_SMS_TEMPLATE: ${SMS_TEMPLATE}
       GOTRUE_SMS_TEST_OTP: ${SMS_TEST_OTP:-}
-      GOTRUE_SMS_TEST_OTP_VALID_UNTIL: ${SMS_TEST_OTP_VALID_UNTIL:-2030-01-01T00:00:00Z}
+      GOTRUE_SMS_TEST_OTP_VALID_UNTIL: 
+        ${SMS_TEST_OTP_VALID_UNTIL:-2030-01-01T00:00:00Z}
 
       ## OAuth Providers
       GOTRUE_EXTERNAL_APPLE_ENABLED: ${GOTRUE_EXTERNAL_APPLE_ENABLED:-false}
       GOTRUE_EXTERNAL_APPLE_CLIENT_ID: ${GOTRUE_EXTERNAL_APPLE_CLIENT_ID:-}
       GOTRUE_EXTERNAL_APPLE_SECRET: ${GOTRUE_EXTERNAL_APPLE_SECRET:-}
-      GOTRUE_EXTERNAL_APPLE_REDIRECT_URI: ${GOTRUE_EXTERNAL_APPLE_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_APPLE_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_APPLE_REDIRECT_URI:-}
 
       GOTRUE_EXTERNAL_AZURE_ENABLED: ${GOTRUE_EXTERNAL_AZURE_ENABLED:-false}
       GOTRUE_EXTERNAL_AZURE_CLIENT_ID: ${GOTRUE_EXTERNAL_AZURE_CLIENT_ID:-}
       GOTRUE_EXTERNAL_AZURE_SECRET: ${GOTRUE_EXTERNAL_AZURE_SECRET:-}
-      GOTRUE_EXTERNAL_AZURE_REDIRECT_URI: ${GOTRUE_EXTERNAL_AZURE_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_AZURE_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_AZURE_REDIRECT_URI:-}
       GOTRUE_EXTERNAL_AZURE_URL: ${GOTRUE_EXTERNAL_AZURE_URL:-}
 
-      GOTRUE_EXTERNAL_BITBUCKET_ENABLED: ${GOTRUE_EXTERNAL_BITBUCKET_ENABLED:-false}
-      GOTRUE_EXTERNAL_BITBUCKET_CLIENT_ID: ${GOTRUE_EXTERNAL_BITBUCKET_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_BITBUCKET_ENABLED: 
+        ${GOTRUE_EXTERNAL_BITBUCKET_ENABLED:-false}
+      GOTRUE_EXTERNAL_BITBUCKET_CLIENT_ID: 
+        ${GOTRUE_EXTERNAL_BITBUCKET_CLIENT_ID:-}
       GOTRUE_EXTERNAL_BITBUCKET_SECRET: ${GOTRUE_EXTERNAL_BITBUCKET_SECRET:-}
-      GOTRUE_EXTERNAL_BITBUCKET_REDIRECT_URI: ${GOTRUE_EXTERNAL_BITBUCKET_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_BITBUCKET_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_BITBUCKET_REDIRECT_URI:-}
 
       GOTRUE_EXTERNAL_DISCORD_ENABLED: ${GOTRUE_EXTERNAL_DISCORD_ENABLED:-false}
       GOTRUE_EXTERNAL_DISCORD_CLIENT_ID: ${GOTRUE_EXTERNAL_DISCORD_CLIENT_ID:-}
       GOTRUE_EXTERNAL_DISCORD_SECRET: ${GOTRUE_EXTERNAL_DISCORD_SECRET:-}
-      GOTRUE_EXTERNAL_DISCORD_REDIRECT_URI: ${GOTRUE_EXTERNAL_DISCORD_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_DISCORD_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_DISCORD_REDIRECT_URI:-}
 
-      GOTRUE_EXTERNAL_FACEBOOK_ENABLED: ${GOTRUE_EXTERNAL_FACEBOOK_ENABLED:-false}
-      GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID: ${GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_FACEBOOK_ENABLED: 
+        ${GOTRUE_EXTERNAL_FACEBOOK_ENABLED:-false}
+      GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID: 
+        ${GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID:-}
       GOTRUE_EXTERNAL_FACEBOOK_SECRET: ${GOTRUE_EXTERNAL_FACEBOOK_SECRET:-}
-      GOTRUE_EXTERNAL_FACEBOOK_REDIRECT_URI: ${GOTRUE_EXTERNAL_FACEBOOK_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_FACEBOOK_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_FACEBOOK_REDIRECT_URI:-}
 
       GOTRUE_EXTERNAL_FIGMA_ENABLED: ${GOTRUE_EXTERNAL_FIGMA_ENABLED:-false}
       GOTRUE_EXTERNAL_FIGMA_CLIENT_ID: ${GOTRUE_EXTERNAL_FIGMA_CLIENT_ID:-}
       GOTRUE_EXTERNAL_FIGMA_SECRET: ${GOTRUE_EXTERNAL_FIGMA_SECRET:-}
-      GOTRUE_EXTERNAL_FIGMA_REDIRECT_URI: ${GOTRUE_EXTERNAL_FIGMA_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_FIGMA_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_FIGMA_REDIRECT_URI:-}
 
       GOTRUE_EXTERNAL_GITHUB_ENABLED: ${GOTRUE_EXTERNAL_GITHUB_ENABLED:-false}
       GOTRUE_EXTERNAL_GITHUB_CLIENT_ID: ${GOTRUE_EXTERNAL_GITHUB_CLIENT_ID:-}
       GOTRUE_EXTERNAL_GITHUB_SECRET: ${GOTRUE_EXTERNAL_GITHUB_SECRET:-}
-      GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI: ${GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI:-}
 
       GOTRUE_EXTERNAL_GITLAB_ENABLED: ${GOTRUE_EXTERNAL_GITLAB_ENABLED:-false}
       GOTRUE_EXTERNAL_GITLAB_CLIENT_ID: ${GOTRUE_EXTERNAL_GITLAB_CLIENT_ID:-}
       GOTRUE_EXTERNAL_GITLAB_SECRET: ${GOTRUE_EXTERNAL_GITLAB_SECRET:-}
-      GOTRUE_EXTERNAL_GITLAB_REDIRECT_URI: ${GOTRUE_EXTERNAL_GITLAB_REDIRECT_URI:-}
-      GOTRUE_EXTERNAL_GITLAB_URL: ${GOTRUE_EXTERNAL_GITLAB_URL:-https://gitlab.com}
+      GOTRUE_EXTERNAL_GITLAB_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_GITLAB_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_GITLAB_URL: 
+        ${GOTRUE_EXTERNAL_GITLAB_URL:-https://gitlab.com}
 
       GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOTRUE_EXTERNAL_GOOGLE_ENABLED:-false}
       GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID:-}
       GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOTRUE_EXTERNAL_GOOGLE_SECRET:-}
-      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI:-}
 
-      GOTRUE_EXTERNAL_KEYCLOAK_ENABLED: ${GOTRUE_EXTERNAL_KEYCLOAK_ENABLED:-false}
-      GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID: ${GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_KEYCLOAK_ENABLED: 
+        ${GOTRUE_EXTERNAL_KEYCLOAK_ENABLED:-false}
+      GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID: 
+        ${GOTRUE_EXTERNAL_KEYCLOAK_CLIENT_ID:-}
       GOTRUE_EXTERNAL_KEYCLOAK_SECRET: ${GOTRUE_EXTERNAL_KEYCLOAK_SECRET:-}
-      GOTRUE_EXTERNAL_KEYCLOAK_REDIRECT_URI: ${GOTRUE_EXTERNAL_KEYCLOAK_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_KEYCLOAK_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_KEYCLOAK_REDIRECT_URI:-}
       GOTRUE_EXTERNAL_KEYCLOAK_URL: ${GOTRUE_EXTERNAL_KEYCLOAK_URL:-}
 
-      GOTRUE_EXTERNAL_LINKEDIN_OIDC_ENABLED: ${GOTRUE_EXTERNAL_LINKEDIN_OIDC_ENABLED:-false}
-      GOTRUE_EXTERNAL_LINKEDIN_OIDC_CLIENT_ID: ${GOTRUE_EXTERNAL_LINKEDIN_OIDC_CLIENT_ID:-}
-      GOTRUE_EXTERNAL_LINKEDIN_OIDC_SECRET: ${GOTRUE_EXTERNAL_LINKEDIN_OIDC_SECRET:-}
-      GOTRUE_EXTERNAL_LINKEDIN_OIDC_REDIRECT_URI: ${GOTRUE_EXTERNAL_LINKEDIN_OIDC_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_LINKEDIN_OIDC_ENABLED: 
+        ${GOTRUE_EXTERNAL_LINKEDIN_OIDC_ENABLED:-false}
+      GOTRUE_EXTERNAL_LINKEDIN_OIDC_CLIENT_ID: 
+        ${GOTRUE_EXTERNAL_LINKEDIN_OIDC_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_LINKEDIN_OIDC_SECRET: 
+        ${GOTRUE_EXTERNAL_LINKEDIN_OIDC_SECRET:-}
+      GOTRUE_EXTERNAL_LINKEDIN_OIDC_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_LINKEDIN_OIDC_REDIRECT_URI:-}
 
       GOTRUE_EXTERNAL_NOTION_ENABLED: ${GOTRUE_EXTERNAL_NOTION_ENABLED:-false}
       GOTRUE_EXTERNAL_NOTION_CLIENT_ID: ${GOTRUE_EXTERNAL_NOTION_CLIENT_ID:-}
       GOTRUE_EXTERNAL_NOTION_SECRET: ${GOTRUE_EXTERNAL_NOTION_SECRET:-}
-      GOTRUE_EXTERNAL_NOTION_REDIRECT_URI: ${GOTRUE_EXTERNAL_NOTION_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_NOTION_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_NOTION_REDIRECT_URI:-}
 
-      GOTRUE_EXTERNAL_SLACK_OIDC_ENABLED: ${GOTRUE_EXTERNAL_SLACK_OIDC_ENABLED:-false}
-      GOTRUE_EXTERNAL_SLACK_OIDC_CLIENT_ID: ${GOTRUE_EXTERNAL_SLACK_OIDC_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_SLACK_OIDC_ENABLED: 
+        ${GOTRUE_EXTERNAL_SLACK_OIDC_ENABLED:-false}
+      GOTRUE_EXTERNAL_SLACK_OIDC_CLIENT_ID: 
+        ${GOTRUE_EXTERNAL_SLACK_OIDC_CLIENT_ID:-}
       GOTRUE_EXTERNAL_SLACK_OIDC_SECRET: ${GOTRUE_EXTERNAL_SLACK_OIDC_SECRET:-}
-      GOTRUE_EXTERNAL_SLACK_OIDC_REDIRECT_URI: ${GOTRUE_EXTERNAL_SLACK_OIDC_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_SLACK_OIDC_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_SLACK_OIDC_REDIRECT_URI:-}
 
-      GOTRUE_EXTERNAL_SNAPCHAT_ENABLED: ${GOTRUE_EXTERNAL_SNAPCHAT_ENABLED:-false}
-      GOTRUE_EXTERNAL_SNAPCHAT_CLIENT_ID: ${GOTRUE_EXTERNAL_SNAPCHAT_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_SNAPCHAT_ENABLED: 
+        ${GOTRUE_EXTERNAL_SNAPCHAT_ENABLED:-false}
+      GOTRUE_EXTERNAL_SNAPCHAT_CLIENT_ID: 
+        ${GOTRUE_EXTERNAL_SNAPCHAT_CLIENT_ID:-}
       GOTRUE_EXTERNAL_SNAPCHAT_SECRET: ${GOTRUE_EXTERNAL_SNAPCHAT_SECRET:-}
-      GOTRUE_EXTERNAL_SNAPCHAT_REDIRECT_URI: ${GOTRUE_EXTERNAL_SNAPCHAT_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_SNAPCHAT_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_SNAPCHAT_REDIRECT_URI:-}
 
       GOTRUE_EXTERNAL_SPOTIFY_ENABLED: ${GOTRUE_EXTERNAL_SPOTIFY_ENABLED:-false}
       GOTRUE_EXTERNAL_SPOTIFY_CLIENT_ID: ${GOTRUE_EXTERNAL_SPOTIFY_CLIENT_ID:-}
       GOTRUE_EXTERNAL_SPOTIFY_SECRET: ${GOTRUE_EXTERNAL_SPOTIFY_SECRET:-}
-      GOTRUE_EXTERNAL_SPOTIFY_REDIRECT_URI: ${GOTRUE_EXTERNAL_SPOTIFY_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_SPOTIFY_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_SPOTIFY_REDIRECT_URI:-}
 
       GOTRUE_EXTERNAL_TWITCH_ENABLED: ${GOTRUE_EXTERNAL_TWITCH_ENABLED:-false}
       GOTRUE_EXTERNAL_TWITCH_CLIENT_ID: ${GOTRUE_EXTERNAL_TWITCH_CLIENT_ID:-}
       GOTRUE_EXTERNAL_TWITCH_SECRET: ${GOTRUE_EXTERNAL_TWITCH_SECRET:-}
-      GOTRUE_EXTERNAL_TWITCH_REDIRECT_URI: ${GOTRUE_EXTERNAL_TWITCH_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_TWITCH_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_TWITCH_REDIRECT_URI:-}
 
       GOTRUE_EXTERNAL_TWITTER_ENABLED: ${GOTRUE_EXTERNAL_TWITTER_ENABLED:-false}
       GOTRUE_EXTERNAL_TWITTER_CLIENT_ID: ${GOTRUE_EXTERNAL_TWITTER_CLIENT_ID:-}
       GOTRUE_EXTERNAL_TWITTER_SECRET: ${GOTRUE_EXTERNAL_TWITTER_SECRET:-}
-      GOTRUE_EXTERNAL_TWITTER_REDIRECT_URI: ${GOTRUE_EXTERNAL_TWITTER_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_TWITTER_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_TWITTER_REDIRECT_URI:-}
 
       GOTRUE_EXTERNAL_WORKOS_ENABLED: ${GOTRUE_EXTERNAL_WORKOS_ENABLED:-false}
       GOTRUE_EXTERNAL_WORKOS_CLIENT_ID: ${GOTRUE_EXTERNAL_WORKOS_CLIENT_ID:-}
       GOTRUE_EXTERNAL_WORKOS_SECRET: ${GOTRUE_EXTERNAL_WORKOS_SECRET:-}
-      GOTRUE_EXTERNAL_WORKOS_REDIRECT_URI: ${GOTRUE_EXTERNAL_WORKOS_REDIRECT_URI:-}
+      GOTRUE_EXTERNAL_WORKOS_REDIRECT_URI: 
+        ${GOTRUE_EXTERNAL_WORKOS_REDIRECT_URI:-}
       GOTRUE_EXTERNAL_WORKOS_URL: ${GOTRUE_EXTERNAL_WORKOS_URL:-}
 
     volumes:
       - ./volumes/auth/templates:/templates:ro
+    networks:
+      - supabase-network
+    logging: *id001
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
   rest:
     container_name: supabase-rest
     image: postgrest/postgrest:v14.4
@@ -306,18 +413,28 @@ services:
       analytics:
         condition: service_healthy
     environment:
-      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      PGRST_DB_URI: 
+        postgres://authenticator:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
       PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS}
       PGRST_DB_ANON_ROLE: anon
       PGRST_JWT_SECRET: ${JWT_SECRET}
       PGRST_DB_USE_LEGACY_GUCS: "false"
       PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
       PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY}
-    command:
-      [
-        "postgrest"
-      ]
+    command: ["postgrest"]
+    networks:
+      - supabase-network
+    logging: *id001
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stop_grace_period: 10s
 
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
   realtime:
     container_name: realtime-dev.supabase-realtime
     image: supabase/realtime:v2.76.0
@@ -328,11 +445,8 @@ services:
       analytics:
         condition: service_healthy
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -sSfL --head -o /dev/null -H \"Authorization: Bearer ${ANON_KEY}\" http://localhost:4000/api/tenants/realtime-dev/health"
-        ]
+      test: ["CMD-SHELL", "curl -sSfL --head -o /dev/null -H \"Authorization: Bearer
+            ${ANON_KEY}\" http://localhost:4000/api/tenants/realtime-dev/health"]
       timeout: 5s
       interval: 30s
       retries: 3
@@ -356,6 +470,18 @@ services:
       RUN_JANITOR: "true"
       DISABLE_HEALTHCHECK_LOGGING: "true"
 
+    networks:
+      - supabase-network
+    logging: *id001
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
   storage:
     container_name: supabase-storage
     image: supabase/storage-api:v1.37.7
@@ -363,18 +489,11 @@ services:
     volumes:
       - ./volumes/storage:/var/lib/storage:z
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://storage:5000/status"
-        ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://storage:5000/status"]
       timeout: 5s
       interval: 5s
       retries: 3
+      start_period: 20s
     depends_on:
       db:
         condition: service_healthy
@@ -382,22 +501,42 @@ services:
         condition: service_started
       imgproxy:
         condition: service_started
+    env_file:
+      - .env
+      - .env.functions
     environment:
       ANON_KEY: ${ANON_KEY}
       SERVICE_KEY: ${SERVICE_ROLE_KEY}
       POSTGREST_URL: http://rest:3000
       PGRST_JWT_SECRET: ${JWT_SECRET}
-      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      DATABASE_URL: 
+        postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
       REQUEST_ALLOW_X_FORWARDED_PATH: "true"
       FILE_SIZE_LIMIT: 52428800
-      STORAGE_BACKEND: file
-      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
-      TENANT_ID: stub
-      REGION: stub
-      GLOBAL_S3_BUCKET: stub
+      STORAGE_BACKEND: s3
+      GLOBAL_S3_BUCKET: ${R2_BUCKET_NAME}
+      REGION: ${R2_JURISDICTION:-auto}
+      TENANT_ID: foodshare
+      AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${R2_JURISDICTION:-auto}
+      STORAGE_S3_ENDPOINT: https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+      STORAGE_S3_FORCE_PATH_STYLE: "true"
       ENABLE_IMAGE_TRANSFORMATION: "true"
       IMGPROXY_URL: http://imgproxy:5001
 
+    networks:
+      - supabase-network
+    logging: *id001
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
   imgproxy:
     container_name: supabase-imgproxy
     image: darthsim/imgproxy:v3.30.1
@@ -405,12 +544,7 @@ services:
     volumes:
       - ./volumes/storage:/var/lib/storage:z
     healthcheck:
-      test:
-        [
-          "CMD",
-          "imgproxy",
-          "health"
-        ]
+      test: ["CMD", "imgproxy", "health"]
       timeout: 5s
       interval: 5s
       retries: 3
@@ -421,6 +555,18 @@ services:
       IMGPROXY_ENABLE_WEBP_DETECTION: ${IMGPROXY_ENABLE_WEBP_DETECTION}
       IMGPROXY_MAX_SRC_RESOLUTION: 16.8
 
+    networks:
+      - supabase-network
+    logging: *id001
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
   meta:
     container_name: supabase-meta
     image: supabase/postgres-meta:v0.95.2
@@ -439,6 +585,18 @@ services:
       PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
       CRYPTO_KEY: ${PG_META_CRYPTO_KEY}
 
+    networks:
+      - supabase-network
+    logging: *id001
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
   functions:
     container_name: supabase-edge-functions
     image: supabase/edge-runtime:v1.70.1
@@ -455,29 +613,33 @@ services:
       SUPABASE_URL: http://kong:8000
       SUPABASE_ANON_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
-      SUPABASE_DB_URL: postgresql://postgres:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      SUPABASE_DB_URL: 
+        postgresql://postgres:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
       VERIFY_JWT: "${FUNCTIONS_VERIFY_JWT}"
-    command:
-      [
-        "start",
-        "--main-service",
-        "/home/deno/functions/main"
-      ]
+    command: ["start", "--main-service", "/home/deno/functions/main"]
+    networks:
+      - supabase-network
+    logging: *id001
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stop_grace_period: 10s
 
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
   analytics:
     container_name: supabase-analytics
     image: supabase/logflare:1.30.3
     restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "http://localhost:4000/health"
-        ]
+      test: ["CMD", "curl", "http://localhost:4000/health"]
       timeout: 5s
       interval: 5s
       retries: 10
+      start_period: 20s
     depends_on:
       db:
         condition: service_healthy
@@ -494,10 +656,23 @@ services:
       LOGFLARE_SINGLE_TENANT: true
       LOGFLARE_SUPABASE_MODE: true
 
-      POSTGRES_BACKEND_URL: postgresql://supabase_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/_supabase
+      POSTGRES_BACKEND_URL: 
+        postgresql://supabase_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/_supabase
       POSTGRES_BACKEND_SCHEMA: _analytics
       LOGFLARE_FEATURE_FLAG_OVERRIDE: multibackend=true
 
+    networks:
+      - supabase-network
+    logging: *id001
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
   db:
     container_name: supabase-db
     image: supabase/postgres:17.6.1.081
@@ -511,20 +686,15 @@ services:
       - ./volumes/db/_supabase.sql:/docker-entrypoint-initdb.d/migrations/97-_supabase.sql:Z
       - ./volumes/db/logs.sql:/docker-entrypoint-initdb.d/migrations/99-logs.sql:Z
       - ./volumes/db/pooler.sql:/docker-entrypoint-initdb.d/migrations/99-pooler.sql:Z
-      - db-config:/etc/postgresql-custom
+      - db-config:
+  caddy-data:
+  caddy-config:/etc/postgresql-custom
     healthcheck:
-      test:
-        [
-        "CMD",
-        "pg_isready",
-        "-U",
-        "postgres",
-        "-h",
-        "localhost"
-        ]
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 20s
     depends_on:
       vector:
         condition: service_healthy
@@ -538,15 +708,21 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXP: ${JWT_EXPIRY}
-    command:
-      [
-        "postgres",
-        "-c",
-        "config_file=/etc/postgresql/postgresql.conf",
-        "-c",
-        "log_min_messages=fatal"
-      ]
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c",
+      "log_min_messages=fatal"]
+    networks:
+      - supabase-network
+    logging: *id001
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stop_grace_period: 60s
 
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
   vector:
     container_name: supabase-vector
     image: timberio/vector:0.28.1-alpine
@@ -555,28 +731,27 @@ services:
       - ./volumes/logs/vector.yml:/etc/vector/vector.yml:ro,z
       - ${DOCKER_SOCKET_LOCATION}:/var/run/docker.sock:ro,z
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://vector:9001/health"
-        ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://vector:9001/health"]
       timeout: 5s
       interval: 5s
       retries: 3
     environment:
       LOGFLARE_PUBLIC_ACCESS_TOKEN: ${LOGFLARE_PUBLIC_ACCESS_TOKEN}
-    command:
-      [
-        "--config",
-        "/etc/vector/vector.yml"
-      ]
+    command: ["--config", "/etc/vector/vector.yml"]
     security_opt:
       - "label=disable"
 
+      - no-new-privileges:true
+    networks:
+      - supabase-network
+    logging: *id001
+    init: true
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
   supavisor:
     container_name: supabase-pooler
     image: supabase/supavisor:2.7.4
@@ -587,16 +762,7 @@ services:
     volumes:
       - ./volumes/pooler/pooler.exs:/etc/pooler/pooler.exs:ro,z
     healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-sSfL",
-          "--head",
-          "-o",
-          "/dev/null",
-          "http://127.0.0.1:4000/api/health"
-        ]
+      test: ["CMD", "curl", "-sSfL", "--head", "-o", "/dev/null", "http://127.0.0.1:4000/api/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -610,7 +776,8 @@ services:
       POSTGRES_PORT: ${POSTGRES_PORT}
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      DATABASE_URL: ecto://supabase_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/_supabase
+      DATABASE_URL: 
+        ecto://supabase_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/_supabase
       CLUSTER_POSTGRES: true
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
       VAULT_ENC_KEY: ${VAULT_ENC_KEY}
@@ -623,12 +790,26 @@ services:
       POOLER_MAX_CLIENT_CONN: ${POOLER_MAX_CLIENT_CONN}
       POOLER_POOL_MODE: transaction
       DB_POOL_SIZE: ${POOLER_DB_POOL_SIZE}
-    command:
-      [
-        "/bin/sh",
-        "-c",
-        "/app/bin/migrate && /app/bin/supavisor eval \"$$(cat /etc/pooler/pooler.exs)\" && /app/bin/server"
-      ]
+    command: ["/bin/sh", "-c", "/app/bin/migrate && /app/bin/supavisor eval \"$$(cat
+          /etc/pooler/pooler.exs)\" && /app/bin/server"]
+    networks:
+      - supabase-network
+    logging: *id001
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stop_grace_period: 60s
 
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 volumes:
   db-config:
+  caddy-data:
+  caddy-config:
+networks:
+  supabase-network:
+    driver: bridge
+    name: supabase-network
