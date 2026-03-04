@@ -92,18 +92,6 @@ services:
           cpus: '0.25'
           memory: 256M
 
-networks:
-      - supabase-network
-    logging: *id001
-    security_opt:
-      - no-new-privileges:true
-    init: true
-    stop_grace_period: 10s
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
   kong:
     container_name: supabase-kong
     image: kong:2.8.1
@@ -686,9 +674,7 @@ networks:
       - ./volumes/db/_supabase.sql:/docker-entrypoint-initdb.d/migrations/97-_supabase.sql:Z
       - ./volumes/db/logs.sql:/docker-entrypoint-initdb.d/migrations/99-logs.sql:Z
       - ./volumes/db/pooler.sql:/docker-entrypoint-initdb.d/migrations/99-pooler.sql:Z
-      - db-config:
-  caddy-data:
-  caddy-config:/etc/postgresql-custom
+      - db-config:/etc/postgresql-custom
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
       interval: 5s
@@ -729,7 +715,7 @@ networks:
     restart: unless-stopped
     volumes:
       - ./volumes/logs/vector.yml:/etc/vector/vector.yml:ro,z
-      - ${DOCKER_SOCKET_LOCATION}:/var/run/docker.sock:ro,z
+      - /var/run/docker.sock:/var/run/docker.sock:ro,z
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://vector:9001/health"]
       timeout: 5s
@@ -740,7 +726,6 @@ networks:
     command: ["--config", "/etc/vector/vector.yml"]
     security_opt:
       - "label=disable"
-
       - no-new-privileges:true
     networks:
       - supabase-network
