@@ -39,6 +39,8 @@ services:
     url: http://auth:9999/verify
     routes:
       - name: auth-v1-open
+        hosts:
+          - api.foodshare.club
         strip_path: true
         paths:
           - /auth/v1/verify
@@ -48,6 +50,8 @@ services:
     url: http://auth:9999/callback
     routes:
       - name: auth-v1-open-callback
+        hosts:
+          - api.foodshare.club
         strip_path: true
         paths:
           - /auth/v1/callback
@@ -57,6 +61,8 @@ services:
     url: http://auth:9999/authorize
     routes:
       - name: auth-v1-open-authorize
+        hosts:
+          - api.foodshare.club
         strip_path: true
         paths:
           - /auth/v1/authorize
@@ -69,6 +75,8 @@ services:
     url: http://auth:9999/
     routes:
       - name: auth-v1-all
+        hosts:
+          - api.foodshare.club
         strip_path: true
         paths:
           - /auth/v1/
@@ -90,6 +98,9 @@ services:
     url: http://rest:3000/
     routes:
       - name: rest-v1-all
+        hosts:
+          - api.foodshare.club
+          - db.foodshare.club
         strip_path: true
         paths:
           - /rest/v1/
@@ -111,6 +122,9 @@ services:
     url: http://rest:3000/rpc/graphql
     routes:
       - name: graphql-v1-all
+        hosts:
+          - api.foodshare.club
+          - db.foodshare.club
         strip_path: true
         paths:
           - /graphql/v1
@@ -138,6 +152,8 @@ services:
     protocol: ws
     routes:
       - name: realtime-v1-ws
+        hosts:
+          - api.foodshare.club
         strip_path: true
         paths:
           - /realtime/v1/
@@ -158,6 +174,8 @@ services:
     protocol: http
     routes:
       - name: realtime-v1-rest
+        hosts:
+          - api.foodshare.club
         strip_path: true
         paths:
           - /realtime/v1/api
@@ -179,6 +197,9 @@ services:
     url: http://storage:5000/
     routes:
       - name: storage-v1-all
+        hosts:
+          - api.foodshare.club
+          - storage.foodshare.club
         strip_path: true
         paths:
           - /storage/v1/
@@ -191,6 +212,8 @@ services:
     url: http://functions:9000/
     routes:
       - name: functions-v1-all
+        hosts:
+          - api.foodshare.club
         strip_path: true
         paths:
           - /functions/v1/
@@ -203,6 +226,8 @@ services:
     url: http://analytics:4000/
     routes:
       - name: analytics-v1-all
+        hosts:
+          - api.foodshare.club
         strip_path: true
         paths:
           - /analytics/v1/
@@ -213,6 +238,9 @@ services:
     url: http://meta:8080/
     routes:
       - name: meta-all
+        hosts:
+          - api.foodshare.club
+          - db.foodshare.club
         strip_path: true
         paths:
           - /pg/
@@ -232,6 +260,8 @@ services:
     url: http://studio:3000/
     routes:
       - name: dashboard-all
+        hosts:
+          - studio.foodshare.club
         strip_path: true
         paths:
           - /

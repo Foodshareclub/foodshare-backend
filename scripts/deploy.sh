@@ -118,6 +118,17 @@ do_backup() {
   DB_SIZE=$(du -h "$DB_TARGET" | cut -f1)
   log "DB dump: $DB_SIZE"
 
+  # Upload to R2 (optional off-site backup)
+  if [ -f "scripts/backup-to-r2.ts" ]; then
+    log "Uploading backup to R2..."
+    export PATH="/home/organic/.deno/bin:$PATH"
+    if (set -a && [ -f .env.functions ] && . .env.functions && /home/organic/.deno/bin/deno run --allow-read --allow-net --allow-env --allow-sys scripts/backup-to-r2.ts "$DB_TARGET"); then
+      log "Off-site backup SUCCESS"
+    else
+      log "WARNING: Off-site backup FAILED (continuing with local)"
+    fi
+  fi
+
   # Verify dump is non-empty
   if [ ! -s "$DB_TARGET" ]; then
     err "Database dump is empty!"

@@ -1,0 +1,17 @@
+{
+    email support@foodshare.club
+}
+
+# Supabase API Gateway (Kong)
+api.foodshare.club {
+    reverse_proxy kong:8000
+}
+
+# Supabase Studio (Dashboard)
+studio.foodshare.club {
+    # Basic auth for Studio protection
+    basic_auth {
+        {$DASHBOARD_USERNAME} {$DASHBOARD_PASSWORD_HASH}
+    }
+    reverse_proxy studio:3000
+}
