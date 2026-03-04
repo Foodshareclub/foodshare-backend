@@ -487,7 +487,7 @@ jobs:
           ANON_KEY: ${{ secrets.ANON_KEY }}
           SERVICE_ROLE_KEY: ${{ secrets.SERVICE_ROLE_KEY }}
         with:
-          host: vps.foodshare.club
+          host: backend.foodshare.club
           username: organic
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 8m
