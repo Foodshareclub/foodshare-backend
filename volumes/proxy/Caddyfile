@@ -3,7 +3,7 @@
 }
 
 # Supabase API Gateway (Kong)
-api.foodshare.club {
+api.foodshare.club, backend.foodshare.club {
     reverse_proxy kong:8000
 }
 
