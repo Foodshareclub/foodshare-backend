@@ -7,7 +7,7 @@ import { scheduleGroupMessageDeletion, sendMessage } from "../services/telegram-
 import { getUserState, setUserState } from "../services/user-state.ts";
 import { getProfileByTelegramId, updateProfile } from "../services/profile.ts";
 import { trackMessage } from "../services/tracking.ts";
-import { type Language, getUserLanguage, t } from "../lib/i18n.ts";
+import { getUserLanguage, type Language, t } from "../lib/i18n.ts";
 import { getMainMenuKeyboard, getMenuActionAllLangs } from "../lib/keyboards.ts";
 import * as emoji from "../lib/emojis.ts";
 import * as msg from "../lib/messages.ts";
