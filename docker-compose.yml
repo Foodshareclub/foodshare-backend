@@ -586,7 +586,6 @@ services:
           cpus: '0.5'
           memory: 512M
   functions:
-    container_name: supabase-edge-functions
     image: supabase/edge-runtime:v1.70.1
     restart: unless-stopped
     volumes:
