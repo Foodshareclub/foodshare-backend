@@ -13,7 +13,7 @@ import {
   updateProfile,
 } from "../services/profile.ts";
 import { sendVerificationEmail } from "../services/email.ts";
-import { getUserLanguage, t, type Language } from "../lib/i18n.ts";
+import { getUserLanguage, type Language, t } from "../lib/i18n.ts";
 import { getMainMenuKeyboard } from "../lib/keyboards.ts";
 import * as emoji from "../lib/emojis.ts";
 import * as msg from "../lib/messages.ts";
