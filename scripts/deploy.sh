@@ -376,19 +376,19 @@ do_smoke() {
 
   check_endpoint "Kong REST API" \
     "http://localhost:54321/rest/v1/" \
-    "-H 'apikey: $ANON_KEY'" 5 5 || SMOKE_PASS=false
+    "-H 'Host: api.foodshare.club' -H 'apikey: $ANON_KEY'" 5 5 || SMOKE_PASS=false
 
   check_endpoint "Auth service" \
     "http://localhost:54321/auth/v1/health" \
-    "-H 'apikey: $ANON_KEY'" 1 3 || SMOKE_PASS=false
+    "-H 'Host: api.foodshare.club' -H 'apikey: $ANON_KEY'" 1 3 || SMOKE_PASS=false
 
   check_endpoint "Edge functions" \
     "http://localhost:54321/functions/v1/api-v1-health" \
-    "-H 'apikey: $ANON_KEY'" 3 3 || SMOKE_PASS=false
+    "-H 'Host: api.foodshare.club' -H 'apikey: $ANON_KEY'" 3 3 || SMOKE_PASS=false
 
   check_endpoint "DB connectivity" \
     "http://localhost:54321/rest/v1/" \
-    "-H 'apikey: $SERVICE_KEY' -H 'Authorization: Bearer $SERVICE_KEY'" 1 0 || SMOKE_PASS=false
+    "-H 'Host: api.foodshare.club' -H 'apikey: $SERVICE_KEY' -H 'Authorization: Bearer $SERVICE_KEY'" 1 0 || SMOKE_PASS=false
 
   state_write "smoke" "$SMOKE_PASS"
 
@@ -439,13 +439,13 @@ do_rollback() {
   ANON_KEY=$(get_anon_key)
   check_endpoint "Rollback: Kong" \
     "http://localhost:54321/rest/v1/" \
-    "-H 'apikey: $ANON_KEY'" 3 5 || err "Rollback health check failed for Kong"
+    "-H 'Host: api.foodshare.club' -H 'apikey: $ANON_KEY'" 3 5 || err "Rollback health check failed for Kong"
   check_endpoint "Rollback: Auth" \
     "http://localhost:54321/auth/v1/health" \
-    "-H 'apikey: $ANON_KEY'" 3 5 || err "Rollback health check failed for Auth"
+    "-H 'Host: api.foodshare.club' -H 'apikey: $ANON_KEY'" 3 5 || err "Rollback health check failed for Auth"
   check_endpoint "Rollback: Functions" \
     "http://localhost:54321/functions/v1/api-v1-health" \
-    "-H 'apikey: $ANON_KEY'" 3 5 || err "Rollback health check failed for Functions"
+    "-H 'Host: api.foodshare.club' -H 'apikey: $ANON_KEY'" 3 5 || err "Rollback health check failed for Functions"
 
   state_write "rollback" "done"
   log "=== ROLLBACK COMPLETE ==="
