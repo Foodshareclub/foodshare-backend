@@ -13,11 +13,11 @@ import {
   updateProfile,
 } from "../services/profile.ts";
 import { sendVerificationEmail } from "../services/email.ts";
-import { getUserLanguage, t } from "../lib/i18n.ts";
+import { getUserLanguage, t, type Language } from "../lib/i18n.ts";
 import { getMainMenuKeyboard } from "../lib/keyboards.ts";
 import * as emoji from "../lib/emojis.ts";
 import * as msg from "../lib/messages.ts";
-import type { TelegramUser } from "../types/index.ts";
+import type { Profile, TelegramMessage, TelegramUser, UserState } from "../types/index.ts";
 
 // Brute-force protection constants
 const MAX_VERIFICATION_ATTEMPTS = 5;
@@ -114,21 +114,11 @@ async function incrementFailedAttempts(
   }
 }
 
-/**
- * Reset verification attempts on successful verification
- */
-async function _resetVerificationAttempts(profileId: string): Promise<void> {
-  await updateProfile(profileId, {
-    verification_attempts: 0,
-    verification_locked_until: null,
-  });
-}
-
 export async function handleEmailInput(
   email: string,
   telegramUser: TelegramUser,
   chatId: number,
-  lang: string = "en",
+  lang: Language = "en",
 ): Promise<void> {
   // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -596,7 +586,7 @@ export async function handleVerificationCode(
     // Check if code matches and hasn't expired
     if (existingProfile.verification_code !== code) {
       await incrementFailedAttempts(
-        existing_profile_id,
+        existing_profile_id as string,
         existingProfile.verification_attempts || 0,
       );
       const attemptsLeft = MAX_VERIFICATION_ATTEMPTS -
@@ -633,7 +623,7 @@ export async function handleVerificationCode(
     }
 
     // Link the Telegram account to the existing profile and reset attempts
-    await updateProfile(existing_profile_id, {
+    await updateProfile(existing_profile_id as string, {
       telegram_id: telegramUser.id,
       first_name: telegramUser.first_name,
       nickname: telegramUser.username || existingProfile.nickname,
@@ -695,7 +685,7 @@ export async function handleVerificationCode(
     }
 
     if (profile.verification_code !== code) {
-      await incrementFailedAttempts(profile_id, profile.verification_attempts || 0);
+      await incrementFailedAttempts(profile_id as string, profile.verification_attempts || 0);
       const attemptsLeft = MAX_VERIFICATION_ATTEMPTS - ((profile.verification_attempts || 0) + 1);
 
       await sendMessage(
@@ -729,7 +719,7 @@ export async function handleVerificationCode(
     }
 
     // Verify email, clear verification code, and reset attempts
-    await updateProfile(profile_id, {
+    await updateProfile(profile_id as string, {
       email_verified: true,
       verification_code: null,
       verification_code_expires_at: null,
@@ -807,16 +797,16 @@ export async function handleResendCode(telegramUser: TelegramUser, chatId: numbe
   // Determine which profile to resend to
   if (userState.action === "awaiting_verification_link") {
     // Resending for sign in flow
-    profileId = userState.data.existing_profile_id;
-    email = userState.data.email;
+    profileId = userState.data.existing_profile_id || null;
+    email = userState.data.email || null;
   } else {
     // Resending for registration flow
     const profile = await getProfileByTelegramId(telegramUser.id);
     if (profile) {
       profileId = profile.id;
-      email = profile.email || userState.data.email;
+      email = profile?.email || userState.data.email || null;
     } else {
-      email = userState.data.email;
+      email = userState.data.email || null;
     }
   }
 

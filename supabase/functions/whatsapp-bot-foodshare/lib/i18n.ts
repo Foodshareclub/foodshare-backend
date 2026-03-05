@@ -9,7 +9,7 @@ import { de } from "../locales/de.ts";
 import { getSupabaseClient } from "../../_shared/supabase.ts";
 
 type Translations = typeof en;
-type Language = "en" | "ru" | "de";
+export type Language = "en" | "ru" | "de";
 
 const translations: Record<Language, Translations> = {
   en,

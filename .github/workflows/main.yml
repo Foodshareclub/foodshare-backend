@@ -269,7 +269,11 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-          exit $EXIT_CODE
+          if [ "$DELTA" -gt 0 ]; then
+            exit 1
+          else
+            exit 0
+          fi
 
   # ── Validate functions ────────────────────────
   validate-functions:

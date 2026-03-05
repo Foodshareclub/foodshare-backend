@@ -9,7 +9,7 @@ import { getBadges, getUserImpactStats } from "../services/impact.ts";
 import { extractCoordinates } from "../services/geocoding.ts";
 import { getSupabaseClient } from "../../_shared/supabase.ts";
 import { getCached, setCache } from "../services/cache.ts";
-import { getUserLanguage, t } from "../lib/i18n.ts";
+import { getUserLanguage, type Language, t } from "../lib/i18n.ts";
 import { getMainMenuKeyboard } from "../lib/keyboards.ts";
 import * as emoji from "../lib/emojis.ts";
 import * as msg from "../lib/messages.ts";
@@ -131,7 +131,7 @@ export async function handleStartCommand(
   await setUserState(userId, { action: "awaiting_email", data: {} });
 }
 
-export async function handleHelpCommand(chatId: number, lang: string = "en"): Promise<void> {
+export async function handleHelpCommand(chatId: number, lang: Language = "en"): Promise<void> {
   const helpMsg = msg.boxedHeader(`${emoji.PLATE} FoodShare Bot Help`) +
     "\n\n" +
     `${emoji.FOOD} <b>Food Sharing:</b>\n` +

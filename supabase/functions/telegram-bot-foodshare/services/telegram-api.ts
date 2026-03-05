@@ -20,16 +20,13 @@ const FETCH_TIMEOUT = 10000; // 10 seconds
 // When true, all sent messages are auto-scheduled for deletion after 5 min.
 // Set via enableGroupAutoDelete / disableGroupAutoDelete around group message handling.
 let _groupAutoDelete = false;
-let _groupAutoDeleteChatId: number | null = null;
 
-export function enableGroupAutoDelete(chatId: number): void {
+export function enableGroupAutoDelete(_chatId: number): void {
   _groupAutoDelete = true;
-  _groupAutoDeleteChatId = chatId;
 }
 
 export function disableGroupAutoDelete(): void {
   _groupAutoDelete = false;
-  _groupAutoDeleteChatId = null;
 }
 
 /**

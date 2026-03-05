@@ -2,12 +2,12 @@
  * Keyboard helpers for Telegram bot menus
  */
 
-import { t } from "./i18n.ts";
+import { type Language, t } from "./i18n.ts";
 
 /**
  * Get the main menu keyboard that persists at the bottom of the chat
  */
-export function getMainMenuKeyboard(lang: string) {
+export function getMainMenuKeyboard(lang: Language) {
   return {
     keyboard: [
       [
@@ -34,7 +34,7 @@ export function getMainMenuKeyboard(lang: string) {
 /**
  * Check if text matches any menu button and return the action name
  */
-export function getMenuAction(text: string, lang: string): string | null {
+export function getMenuAction(text: string, lang: Language): string | null {
   const menuMap: Record<string, string> = {
     [t(lang, "menu.shareFood")]: "share",
     [t(lang, "menu.findFood")]: "find",
@@ -54,7 +54,7 @@ export function getMenuAction(text: string, lang: string): string | null {
  * This handles the case where user's language setting differs from button text
  */
 export function getMenuActionAllLangs(text: string): string | null {
-  const languages = ["en", "ru", "de"];
+  const languages: Language[] = ["en", "ru", "de"];
   for (const lang of languages) {
     const action = getMenuAction(text, lang);
     if (action) return action;

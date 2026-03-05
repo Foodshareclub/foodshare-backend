@@ -99,8 +99,9 @@ serve(async (req) => {
     );
   } catch (error) {
     console.error("Validation error:", error);
+    const message = error instanceof Error ? error.message : String(error);
     return new Response(
-      JSON.stringify({ error: "Validation failed", message: error.message }),
+      JSON.stringify({ error: "Validation failed", message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }

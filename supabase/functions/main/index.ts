@@ -16,6 +16,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (pathname === "/_internal/metric") {
+    // @ts-ignore: EdgeRuntime is available in Supabase Edge Functions environment
     const metric = await EdgeRuntime.getRuntimeMetrics();
     return Response.json(metric);
   }
@@ -36,6 +37,7 @@ Deno.serve(async (req: Request) => {
     const envVarsObj = Deno.env.toObject();
     const envVars = Object.keys(envVarsObj).map((k) => [k, envVarsObj[k]]);
 
+    // @ts-ignore: EdgeRuntime is available in Supabase Edge Functions environment
     return await EdgeRuntime.userWorkers.create({
       servicePath,
       memoryLimitMb: 150,
@@ -55,6 +57,7 @@ Deno.serve(async (req: Request) => {
       return await worker.fetch(req, { signal: controller.signal });
     } catch (e) {
       console.error(e);
+      // @ts-ignore: WorkerAlreadyRetired is specific to Deno Deploy / Supabase Edge Functions
       if (e instanceof Deno.errors.WorkerAlreadyRetired) {
         return await callWorker();
       }
