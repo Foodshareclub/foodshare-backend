@@ -228,9 +228,11 @@ export interface Profile {
   location: string | null;
   verification_code: string | null;
   verification_code_expires_at: string | null;
+  verification_attempts?: number;
+  verification_locked_until?: string | null;
+  language?: string;
   search_radius_km?: number;
   created_time?: string;
-  language?: string;
 }
 
 export interface UserStateData {

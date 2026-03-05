@@ -7,7 +7,7 @@ import { scheduleGroupMessageDeletion, sendMessage } from "../services/telegram-
 import { getUserState, setUserState } from "../services/user-state.ts";
 import { getProfileByTelegramId, updateProfile } from "../services/profile.ts";
 import { trackMessage } from "../services/tracking.ts";
-import { getUserLanguage, t } from "../lib/i18n.ts";
+import { type Language, getUserLanguage, t } from "../lib/i18n.ts";
 import { getMainMenuKeyboard, getMenuActionAllLangs } from "../lib/keyboards.ts";
 import * as emoji from "../lib/emojis.ts";
 import * as msg from "../lib/messages.ts";
@@ -31,7 +31,7 @@ import { handleEmailInput, handleVerificationCode } from "./auth.ts";
 // Actions that require authorization
 const PROTECTED_ACTIONS = new Set(["share", "nearby", "profile", "impact", "stats", "language"]);
 // Public actions that don't require auth (kept for documentation)
-const _PUBLIC_ACTIONS = new Set(["find", "help", "leaderboard"]);
+const PUBLIC_ACTIONS = new Set(["find", "help", "leaderboard"]);
 
 /**
  * Check if user is authorized (has verified email)
@@ -40,7 +40,7 @@ const _PUBLIC_ACTIONS = new Set(["find", "help", "leaderboard"]);
 export async function requireAuth(
   telegramUserId: number,
   chatId: number,
-  lang: string,
+  lang: Language,
   action?: string,
 ): Promise<{
   authorized: boolean;
@@ -259,7 +259,7 @@ export async function handleTextMessage(message: TelegramMessage): Promise<void>
         ? (async () => {
           const { downloadAndUploadTelegramFile } = await import("../services/telegram-files.ts");
           return withTimeout(
-            downloadAndUploadTelegramFile(userState.data.photo, userId),
+            downloadAndUploadTelegramFile(userState.data.photo as string, userId),
             30000,
             "Photo upload timeout",
           );
@@ -328,7 +328,7 @@ export async function handleTextMessage(message: TelegramMessage): Promise<void>
       .from("posts")
       .insert({
         profile_id: profile.value.id,
-        post_name: userState.data.description.split("\n")[0].substring(0, 100),
+        post_name: (userState.data.description || "").split("\n")[0].substring(0, 100),
         post_description: userState.data.description,
         post_address: text,
         location: point,
@@ -452,7 +452,7 @@ export async function handleLocationMessage(message: TelegramMessage): Promise<v
         ? (async () => {
           const { downloadAndUploadTelegramFile } = await import("../services/telegram-files.ts");
           return withTimeout(
-            downloadAndUploadTelegramFile(userState.data.photo, userId),
+            downloadAndUploadTelegramFile(userState.data.photo as string, userId),
             30000,
             "Photo upload timeout",
           );
@@ -495,7 +495,7 @@ export async function handleLocationMessage(message: TelegramMessage): Promise<v
       .from("posts")
       .insert({
         profile_id: profile.value.id,
-        post_name: userState.data.description.split("\n")[0].substring(0, 100),
+        post_name: (userState.data.description || "").split("\n")[0].substring(0, 100),
         post_description: userState.data.description,
         location: point,
         post_type: "food",

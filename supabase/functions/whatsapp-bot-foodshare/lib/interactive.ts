@@ -5,9 +5,7 @@
 
 import type { InteractiveListSection } from "../types/index.ts";
 import * as emoji from "./emojis.ts";
-import { t } from "./i18n.ts";
-
-type Language = "en" | "ru" | "de";
+import { type Language, t } from "./i18n.ts";
 
 /**
  * Build main menu buttons

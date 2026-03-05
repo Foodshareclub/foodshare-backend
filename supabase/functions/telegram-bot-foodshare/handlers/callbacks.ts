@@ -9,7 +9,7 @@ import * as emoji from "../lib/emojis.ts";
 import * as msg from "../lib/messages.ts";
 import { getUserLanguage } from "../lib/i18n.ts";
 import { safeExecute } from "../utils/errors.ts";
-import type { TelegramCallbackQuery } from "../types/index.ts";
+import type { TelegramCallbackQuery, TelegramUser } from "../types/index.ts";
 import {
   handleFindCommand,
   handleLeaderboardCommand,
@@ -117,7 +117,7 @@ async function handleLanguageSelection(
   chatId: number,
   userId: number,
   language: string,
-  telegramUser: { id: number; first_name: string; language_code?: string },
+  telegramUser: TelegramUser,
 ): Promise<void> {
   const { saveUserLanguage } = await import("../lib/i18n.ts");
 
