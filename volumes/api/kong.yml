@@ -279,3 +279,4 @@ services:
           - /
     plugins:
       - name: cors
+# Trigger infrastructure reload
