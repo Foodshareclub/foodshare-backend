@@ -180,7 +180,7 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
 
   // GET / -- quick health (DB ping)
   const result = await service.checkQuickHealth();
-  const httpStatus = result.status === "ok" ? 200 : 503;
+  const httpStatus = result.status === "unhealthy" ? 503 : 200;
   return ok(result, ctx, { status: httpStatus, cacheTTL: 10 });
 }
 
