@@ -61,6 +61,8 @@ services:
     volumes:
       - ./volumes/snippets:/app/snippets:Z
       - ./volumes/functions:/app/edge-functions:Z
+    networks:
+      - supabase-network
     ports:
       - 127.0.0.1:3005:3000/tcp
 
