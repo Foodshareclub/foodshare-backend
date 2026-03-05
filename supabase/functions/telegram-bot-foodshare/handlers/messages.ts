@@ -31,7 +31,7 @@ import { handleEmailInput, handleVerificationCode } from "./auth.ts";
 // Actions that require authorization
 const PROTECTED_ACTIONS = new Set(["share", "nearby", "profile", "impact", "stats", "language"]);
 // Public actions that don't require auth (kept for documentation)
-const PUBLIC_ACTIONS = new Set(["find", "help", "leaderboard"]);
+const _PUBLIC_ACTIONS = new Set(["find", "help", "leaderboard"]);
 
 /**
  * Check if user is authorized (has verified email)

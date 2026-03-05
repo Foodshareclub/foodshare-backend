@@ -17,7 +17,7 @@ import { getUserLanguage, t, type Language } from "../lib/i18n.ts";
 import { getMainMenuKeyboard } from "../lib/keyboards.ts";
 import * as emoji from "../lib/emojis.ts";
 import * as msg from "../lib/messages.ts";
-import type { Profile, TelegramMessage, TelegramUser, UserState } from "../types/index.ts";
+import type { TelegramUser } from "../types/index.ts";
 
 // Brute-force protection constants
 const MAX_VERIFICATION_ATTEMPTS = 5;
