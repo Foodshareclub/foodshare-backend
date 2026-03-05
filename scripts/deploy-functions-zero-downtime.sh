@@ -9,8 +9,18 @@ cd "$DEPLOY_DIR"
 
 log() { echo "[zero-downtime] $*"; }
 
-# Health check via Kong — uses the api-v1-health quick endpoint
-ANON_KEY=$(grep -E "^ANON_KEY=" .env 2>/dev/null | cut -d= -f2- | tr -d '"' || echo "")
+# Read ANON_KEY: prefer env var (set by GitHub Actions), fall back to .env file
+if [ -z "$ANON_KEY" ]; then
+  if [ -f "$DEPLOY_DIR/.env" ]; then
+    ANON_KEY=$(grep -E "^ANON_KEY=" "$DEPLOY_DIR/.env" | cut -d= -f2- | tr -d '"' || echo "")
+  fi
+fi
+
+if [ -z "$ANON_KEY" ]; then
+  log "ERROR: ANON_KEY not found. Set ANON_KEY env var or ensure .env file exists."
+  exit 1
+fi
+
 HEALTH_URL="http://localhost:54321/functions/v1/api-v1-health"
 
 # 1. Pull latest code (already done by deploy script, but be safe)
@@ -28,13 +38,10 @@ sleep 15
 # 4. Health check with retries
 log "Health checking edge functions"
 for i in {1..10}; do
-  if [ -n "$ANON_KEY" ]; then
-    HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
-      -H "apikey: $ANON_KEY" \
-      "$HEALTH_URL" 2>/dev/null || echo "000")
-  else
-    HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "$HEALTH_URL" 2>/dev/null || echo "000")
-  fi
+  HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
+    -H "apikey: $ANON_KEY" \
+    -H "Host: api.foodshare.club" \
+    "$HEALTH_URL" 2>/dev/null || echo "000")
 
   if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "204" ]; then
     log "Edge functions healthy (attempt $i, HTTP $HTTP_STATUS)"
