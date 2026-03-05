@@ -10,7 +10,7 @@ api.foodshare.club {
 # Supabase Studio (Dashboard)
 studio.foodshare.club {
     # Basic auth for Studio protection
-    basic_auth {
+    basicauth {
         {$DASHBOARD_USERNAME} {$DASHBOARD_PASSWORD_HASH}
     }
     reverse_proxy studio:3000
