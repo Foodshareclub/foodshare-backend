@@ -216,7 +216,8 @@ do_pull() {
   state_write "prev_head" "$PREV_HEAD"
 
   log "Pulling latest code..."
-  git pull --ff-only
+  git checkout main --quiet || true
+  git pull origin main --ff-only
 
   NEW_HEAD=$(git rev-parse HEAD)
   state_write "new_head" "$NEW_HEAD"
@@ -302,6 +303,7 @@ do_restart() {
     full)
       log "Full stack restart"
       docker compose up -d
+      docker compose restart kong
       ;;
     functions)
       log "Restarting edge functions"
