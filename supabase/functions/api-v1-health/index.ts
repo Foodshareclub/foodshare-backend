@@ -179,9 +179,10 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
   }
 
   // GET / -- quick health (DB ping)
+  // Always returns 200: this is a liveness check, not a DB readiness gate.
+  // Use GET /?full=true for deep health including DB.
   const result = await service.checkQuickHealth();
-  const httpStatus = result.status === "unhealthy" ? 503 : 200;
-  return ok(result, ctx, { status: httpStatus, cacheTTL: 10 });
+  return ok(result, ctx, { status: 200, cacheTTL: 10 });
 }
 
 async function handlePost(ctx: HandlerContext): Promise<Response> {
