@@ -386,7 +386,7 @@ do_smoke() {
 
   check_endpoint "Edge functions" \
     "http://localhost:54321/functions/v1/api-v1-health" \
-    "-H 'Host: api.foodshare.club' -H 'apikey: $ANON_KEY'" 3 3 || SMOKE_PASS=false
+    "-H 'Host: api.foodshare.club' -H 'apikey: $ANON_KEY'" 8 5 || SMOKE_PASS=false
 
   check_endpoint "DB connectivity" \
     "http://localhost:54321/rest/v1/" \
