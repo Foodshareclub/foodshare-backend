@@ -65,6 +65,13 @@ services:
       - supabase-network
     ports:
       - 127.0.0.1:3005:3000/tcp
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 512M
+        reservations:
+          memory: 128M
 
     
   caddy:
@@ -99,8 +106,8 @@ services:
     image: kong:2.8.1
     restart: unless-stopped
     ports:
-      - ${KONG_HTTP_PORT}:8000/tcp
-      - ${KONG_HTTPS_PORT}:8443/tcp
+      - 127.0.0.1:${KONG_HTTP_PORT}:8000/tcp
+      - 127.0.0.1:${KONG_HTTPS_PORT}:8443/tcp
     volumes:
       - ./volumes/api/kong.yml:/home/kong/temp.yml:ro,z
     depends_on:
@@ -132,7 +139,13 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 512M
+          memory: 1G
+        reservations:
+          memory: 256M
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
   auth:
     container_name: supabase-auth
     image: supabase/gotrue:v2.186.0
@@ -392,7 +405,13 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 512M
+          memory: 1G
+        reservations:
+          memory: 256M
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
   rest:
     container_name: supabase-rest
     image: postgrest/postgrest:v14.4
@@ -424,7 +443,9 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 512M
+          memory: 1G
+        reservations:
+          memory: 256M
   realtime:
     container_name: realtime-dev.supabase-realtime
     image: supabase/realtime:v2.76.0
@@ -459,6 +480,8 @@ services:
       SEED_SELF_HOST: "true"
       RUN_JANITOR: "true"
       DISABLE_HEALTHCHECK_LOGGING: "true"
+      DB_POOL_SIZE: 10
+      ERL_MAX_PORTS: 65536
 
     networks:
       - supabase-network
@@ -472,6 +495,10 @@ services:
         limits:
           cpus: '1.0'
           memory: 1G
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
   storage:
     container_name: supabase-storage
     image: supabase/storage-api:v1.37.7
@@ -655,7 +682,9 @@ services:
       resources:
         limits:
           cpus: '1.0'
-          memory: 1G
+          memory: 2G
+        reservations:
+          memory: 512M
   db:
     container_name: supabase-db
     image: supabase/postgres:17.6.1.081
@@ -689,8 +718,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXP: ${JWT_EXPIRY}
+    shm_size: 2gb
     command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c",
-      "log_min_messages=fatal"]
+      "log_min_messages=fatal", "-c", "shared_buffers=1536MB", "-c", "work_mem=32MB", "-c", "maintenance_work_mem=512MB", "-c", "effective_cache_size=4GB", "-c", "random_page_cost=1.1", "-c", "max_parallel_workers_per_gather=2", "-c", "max_parallel_workers=2", "-c", "max_worker_processes=10", "-c", "max_wal_size=4GB", "-c", "min_wal_size=1GB", "-c", "checkpoint_completion_target=0.9", "-c", "max_connections=200", "-c", "autovacuum_max_workers=5", "-c", "huge_pages=try"]
     networks:
       - supabase-network
     logging: *id001
@@ -703,7 +733,13 @@ services:
       resources:
         limits:
           cpus: '2.0'
+          memory: 6G
+        reservations:
           memory: 2G
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
   vector:
     container_name: supabase-vector
     image: timberio/vector:0.28.1-alpine
@@ -737,8 +773,8 @@ services:
     image: supabase/supavisor:2.7.4
     restart: unless-stopped
     ports:
-      - ${POSTGRES_PORT}:5432
-      - ${POOLER_PROXY_PORT_TRANSACTION}:6543
+      - 127.0.0.1:${POSTGRES_PORT}:5432
+      - 127.0.0.1:${POOLER_PROXY_PORT_TRANSACTION}:6543
     volumes:
       - ./volumes/pooler/pooler.exs:/etc/pooler/pooler.exs:ro,z
     healthcheck:
@@ -767,9 +803,9 @@ services:
       ERL_AFLAGS: -proto_dist inet_tcp
       POOLER_TENANT_ID: ${POOLER_TENANT_ID}
       POOLER_DEFAULT_POOL_SIZE: ${POOLER_DEFAULT_POOL_SIZE}
-      POOLER_MAX_CLIENT_CONN: ${POOLER_MAX_CLIENT_CONN}
+      POOLER_MAX_CLIENT_CONN: 2000
       POOLER_POOL_MODE: transaction
-      DB_POOL_SIZE: ${POOLER_DB_POOL_SIZE}
+      DB_POOL_SIZE: 15
     command: ["/bin/sh", "-c", "/app/bin/migrate && /app/bin/supavisor eval \"$$(cat
           /etc/pooler/pooler.exs)\" && /app/bin/server"]
     networks:
@@ -785,6 +821,12 @@ services:
         limits:
           cpus: '0.5'
           memory: 512M
+    cap_add:
+      - SYS_RESOURCE
+    ulimits:
+      nofile:
+        soft: 100000
+        hard: 100000
 volumes:
   db-config:
   caddy-data:
