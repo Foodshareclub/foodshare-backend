@@ -17,7 +17,7 @@ export async function checkDatabase(supabase: SupabaseClient): Promise<ServiceHe
 
   try {
     const { error } = await supabase
-      .from("profiles")
+      .from("profiles_foodshare")
       .select("id")
       .limit(1)
       .maybeSingle();
