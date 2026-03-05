@@ -61,8 +61,11 @@ async function handleMetrics(ctx: HandlerContext): Promise<Response> {
     const supabase = getSupabaseClient();
     const { error } = await supabase.from("profiles").select("id").limit(1);
     databaseLatencyMs = Date.now() - dbStart;
-    if(error) console.error("DB_ERROR:", JSON.stringify(error)); databaseHealthy = !error; if(error) console.error("DB_ERROR:", JSON.stringify(error));
-  } catch (e) { console.error("DB_EXCEPTION:", e);
+    if (error) console.error("DB_ERROR:", JSON.stringify(error));
+    databaseHealthy = !error;
+    if (error) console.error("DB_ERROR:", JSON.stringify(error));
+  } catch (e) {
+    console.error("DB_EXCEPTION:", e);
     databaseHealthy = false;
   }
 
