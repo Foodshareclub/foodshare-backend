@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Blue-green deployment for edge functions
+# Rolling restart for edge functions (single-instance safe)
 # Usage: ./scripts/deploy-functions-zero-downtime.sh
 
 set -eo pipefail
@@ -8,32 +8,31 @@ DEPLOY_DIR="/home/organic/dev/foodshare-backend"
 cd "$DEPLOY_DIR"
 
 log() { echo "[zero-downtime] $*"; }
+HEALTH_URL="http://localhost:54321/functions/v1/_internal/health"
 
-# 1. Scale up to 2 instances
-log "Scaling functions to 2 instances"
-docker compose up -d --scale functions=2 --no-recreate
+# 1. Pull latest code (already done by deploy script, but be safe)
+log "Pulling latest code"
+git pull --ff-only || true
 
-# 2. Wait for new instance to be healthy
-log "Waiting for new instance..."
-sleep 10
+# 2. Restart edge functions container in-place
+log "Restarting edge functions container"
+docker compose up -d --force-recreate functions
 
-# 3. Reload functions in new instance
-log "Reloading functions in new instance"
-docker compose exec -T functions sh -c "pkill -HUP deno || true"
+# 3. Wait for container to start
+log "Waiting for container to initialise (15s)..."
+sleep 15
 
-# 4. Health check new instance
-log "Health checking new instance"
-for i in {1..5}; do
-  if curl -sf http://localhost:54321/functions/v1/_internal/health > /dev/null; then
-    log "New instance healthy"
+# 4. Health check with retries
+log "Health checking edge functions"
+for i in {1..10}; do
+  HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "$HEALTH_URL" 2>/dev/null || echo "000")
+  if [ "$HTTP_STATUS" = "200" ]; then
+    log "Edge functions healthy (attempt $i)"
     break
   fi
-  [ $i -eq 5 ] && { log "ERROR: New instance unhealthy"; exit 1; }
-  sleep 2
+  log "Attempt $i: HTTP $HTTP_STATUS — waiting..."
+  [ $i -eq 10 ] && { log "ERROR: Edge functions still unhealthy after 10 attempts"; exit 1; }
+  sleep 5
 done
-
-# 5. Scale back to 1 (removes old instance)
-log "Scaling back to 1 instance"
-docker compose up -d --scale functions=1
 
 log "Zero-downtime deployment complete"
