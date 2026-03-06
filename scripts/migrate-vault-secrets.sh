@@ -99,6 +99,7 @@ echo ""
 
 # Secrets to migrate: [env_var_name, vault_secret_name, description]
 # Most use the same name in .env.functions and vault
+declare -a SECRETS=(
   "GROQ_API_KEY|GROQ_API_KEY|Groq API key for AI features"
   "ZAI_API_KEY|ZAI_API_KEY|Z.ai API key for AI embeddings"
   "RESEND_API_KEY|RESEND_API_KEY|Resend email API key"
