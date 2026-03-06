@@ -510,13 +510,13 @@ jobs:
             echo "=== Stage: pull ==="
             PREV_HEAD=$(git rev-parse HEAD)
             
-            # Unstage any root-owned volumes left over from previous broken backups
-            git rm -f --cached -r volumes/ backups/ 2>/dev/null || true
+            # Clean up any leftover index artifacts from backup operations
             rm -f .git/index.lock .git/backup_index
-            git reset HEAD 2>/dev/null || true
             
-            git stash
-            git pull --ff-only
+            # Fetch and hard-reset to origin/main
+            # This handles diverged branches (e.g. from backup commits to main)
+            git fetch origin main
+            git reset --hard origin/main
             NEW_HEAD=$(git rev-parse HEAD)
             chmod +x scripts/deploy.sh
 
