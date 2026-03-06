@@ -202,7 +202,13 @@ do_backup() {
     git update-ref "refs/heads/$BRANCH_NAME" "$COMMIT"
     # Push via SSH (deploy key) since origin may be HTTPS
     SSH_URL="git@github.com:Foodshareclub/foodshare-backend.git"
-    export GIT_SSH_COMMAND="ssh -v -i /home/organic/.ssh/id_rsa_gitlab -o StrictHostKeyChecking=no"
+    
+    # DEBUG: List SSH keys to find the right one
+    echo "=== DIRECTORY LISTING OF ~/.ssh ==="
+    ls -la /home/organic/.ssh || true
+    echo "==================================="
+    
+    export GIT_SSH_COMMAND="ssh -v -i /home/organic/.ssh/id_rsa -o StrictHostKeyChecking=no"
     if git push "$SSH_URL" "$BRANCH_NAME" --force-with-lease; then
       log "Pushed $BRANCH_NAME: $(git rev-parse --short "$COMMIT")"
     else
