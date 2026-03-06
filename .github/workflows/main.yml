@@ -557,12 +557,12 @@ jobs:
 
             # ── Stage 2: Record pull state ──
             echo "=== Recording pull state ==="
-            echo '{}' > /tmp/deploy-state.json
+            CHANGED_FILES=$(git diff --name-only "$PREV_HEAD" "$NEW_HEAD" 2>/dev/null | head -100 | tr '\n' ',' || echo "unknown")
             jq -n --arg started "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
                   --arg stage "pull" \
                   --arg prev "$PREV_HEAD" \
                   --arg new "$NEW_HEAD" \
-                  --arg changed "$(git diff --name-only "$PREV_HEAD" "$NEW_HEAD" | tr '\n' ',')" \
+                  --arg changed "$CHANGED_FILES" \
                   '{started_at: $started, stage: $stage, prev_head: $prev, new_head: $new, changed_files: $changed}' \
               > /tmp/deploy-state.json
 
