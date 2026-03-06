@@ -204,10 +204,12 @@ do_backup() {
     SSH_URL="git@github.com:Foodshareclub/foodshare-backend.git"
     
     export GIT_SSH_COMMAND="ssh -i /home/organic/.ssh/vps_backup_deploy_key -o StrictHostKeyChecking=no"
-    if git push "$SSH_URL" "$BRANCH_NAME" --force-with-lease --quiet; then
+    if git push "$SSH_URL" "$BRANCH_NAME" --force --quiet; then
       log "Pushed $BRANCH_NAME: $(git rev-parse --short "$COMMIT")"
     else
       log "WARNING: Could not push $BRANCH_NAME — local ref updated"
+      # Print the error for debugging in CI
+      git push "$SSH_URL" "$BRANCH_NAME" --force || true
     fi
   fi
 
