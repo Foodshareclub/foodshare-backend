@@ -99,8 +99,8 @@ echo ""
 
 # Secrets to migrate: [env_var_name, vault_secret_name, description]
 # Most use the same name in .env.functions and vault
-declare -a SECRETS=(
-  "OPENAI_API_KEY|OPENAI_API_KEY|OpenAI API key for AI features"
+  "GROQ_API_KEY|GROQ_API_KEY|Groq API key for AI features"
+  "ZAI_API_KEY|ZAI_API_KEY|Z.ai API key for AI embeddings"
   "RESEND_API_KEY|RESEND_API_KEY|Resend email API key"
   "UPSTASH_REDIS_TOKEN|UPSTASH_REDIS_TOKEN|Upstash Redis authentication token"
   "UPSTASH_REDIS_URL|UPSTASH_REDIS_URL|Upstash Redis REST endpoint"
@@ -149,7 +149,8 @@ done
 
 echo ""
 log_info "Verification queries:"
-echo "  SELECT public.get_openai_api_key() IS NOT NULL AS has_openai_key;"
+echo "  SELECT public.get_vault_secret('GROQ_API_KEY') IS NOT NULL AS has_groq_key;"
+echo "  SELECT public.get_vault_secret('ZAI_API_KEY') IS NOT NULL AS has_zai_key;"
 echo "  SELECT public.get_resend_api_key() IS NOT NULL AS has_resend_key;"
 echo "  SELECT public.get_vault_secret('MOTHERDUCK_TOKEN') IS NOT NULL AS has_motherduck;"
 echo "  SELECT * FROM public.list_required_secrets();"
