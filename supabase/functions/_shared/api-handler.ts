@@ -50,6 +50,8 @@ import { trackError } from "./error-tracking.ts";
 import { checkMemoryUsage, clearSpans, getSpans, type Span, trackRequest } from "./performance.ts";
 import { CsrfError, type CsrfOptions, validateCsrf } from "./csrf.ts";
 import { checkDistributedRateLimit } from "./rate-limiter.ts";
+import { getSecret, loadAllSecrets } from "./vault.ts";
+
 
 // =============================================================================
 // Types
@@ -93,6 +95,8 @@ export interface HandlerContext<TBody = unknown, TQuery = Record<string, string>
   idempotencyKey: string | null;
   /** CORS headers for response */
   corsHeaders: Record<string, string>;
+  /** Secret retrieval (from Vault with ENV fallback) */
+  getSecret: (name: string) => Promise<string | undefined>;
   /** Rate limit info (populated after rate limit check) */
   rateLimitInfo?: { limit: number; remaining: number; reset: number };
 }
@@ -519,6 +523,9 @@ function addStandardHeaders(
 // Main Handler Factory
 // =============================================================================
 
+// Global vault cache presence tracker
+let vaultLoaded = false;
+
 /**
  * Create an API handler with full enterprise features
  */
@@ -543,6 +550,16 @@ export function createAPIHandler(config: APIHandlerConfig) {
     const ctx = createContext(request, service);
     const corsHeaders = getCorsHeaders(request, additionalOrigins);
     const perfTracker = trackRequest(service);
+
+    // Ensure Vault is loaded (warm cache)
+    if (!vaultLoaded) {
+      try {
+        await loadAllSecrets();
+        vaultLoaded = true;
+      } catch (err) {
+        logger.error("Vault pre-load failed", { error: err });
+      }
+    }
 
     // Check memory usage at most once per 60 seconds (avoid syscall overhead)
     const now = Date.now();
@@ -684,6 +701,7 @@ export function createAPIHandler(config: APIHandlerConfig) {
         headers: request.headers,
         idempotencyKey,
         corsHeaders,
+        getSecret,
       };
 
       // Check built-in rate limit if configured
