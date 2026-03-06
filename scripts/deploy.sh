@@ -376,15 +376,17 @@ do_restart() {
   require_dir
   state_write "stage" "restart"
 
+  # Sync secrets to Vault for Studio visibility and Edge Function access
+  sync_secrets_to_vault ".env.functions"
+  sync_secrets_to_vault ".env"
+
   MODE="${1:-detect}"
+
 
   case "$MODE" in
     full)
       log "Full stack restart"
       docker compose up -d
-      # Sync secrets to Vault for Studio visibility and Edge Function access
-      sync_secrets_to_vault ".env.functions"
-      sync_secrets_to_vault ".env"
 
       # Restart services for environment variables to take effect
       log "Restarting services to pick up new secrets..."
