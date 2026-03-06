@@ -509,6 +509,12 @@ jobs:
             # ── Stage 0: Pull code first (ensures deploy script exists) ──
             echo "=== Stage: pull ==="
             PREV_HEAD=$(git rev-parse HEAD)
+            
+            # Unstage any root-owned volumes left over from previous broken backups
+            git rm -f --cached -r volumes/ backups/ 2>/dev/null || true
+            rm -f .git/index.lock .git/backup_index
+            git reset HEAD 2>/dev/null || true
+            
             git stash
             git pull --ff-only
             NEW_HEAD=$(git rev-parse HEAD)
