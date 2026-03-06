@@ -228,6 +228,63 @@ do_backup() {
   log "Backup complete"
 }
 
+# ── Vault Sync ─────────────────────────────────────────────────────────
+
+sync_secrets_to_vault() {
+  local env_file="$1"
+  if [ ! -f "$env_file" ]; then
+    log "INFO: No $env_file found to sync to Vault"
+    return
+  fi
+
+  log "Syncing secrets to Supabase Vault..."
+  
+  local script_file="/tmp/vault_sync_$$.sql"
+  cat > "$script_file" <<EOF
+DO \$\$
+DECLARE
+  secret_id UUID;
+BEGIN
+EOF
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Skip comments, empty lines, and lines without =
+    [[ "$line" =~ ^#.*$ ]] && continue
+    [[ -z "$line" ]] && continue
+    [[ ! "$line" =~ = ]] && continue
+    
+    KEY=$(echo "$line" | cut -d'=' -f1 | xargs)
+    VALUE=$(echo "$line" | cut -d'=' -f2- | xargs)
+    
+    [ -z "$KEY" ] && continue
+    [ -z "$VALUE" ] && continue
+    
+    # Escape single quotes and backslashes for SQL
+    ESCAPED_VALUE=$(echo "$VALUE" | sed "s/\\\\/\\\\\\\\/g; s/'/''/g")
+    
+    cat >> "$script_file" <<EOF
+  SELECT id INTO secret_id FROM vault.secrets WHERE name = '$KEY';
+  IF secret_id IS NULL THEN
+    PERFORM vault.create_secret('$ESCAPED_VALUE', '$KEY');
+  ELSE
+    PERFORM vault.update_secret(secret_id, new_secret := '$ESCAPED_VALUE');
+  END IF;
+EOF
+  done < "$env_file"
+
+  echo "END \$\$;" >> "$script_file"
+
+  # Copy and execute in DB container
+  if docker cp "$script_file" supabase-db:/tmp/vault_sync.sql >/dev/null 2>&1; then
+    docker exec supabase-db psql -U postgres -d postgres -f /tmp/vault_sync.sql >/dev/null 2>&1
+    log "Vault sync complete"
+  else
+    log "WARNING: Could not connect to database for Vault sync"
+  fi
+  
+  rm -f "$script_file"
+}
+
 # ── Stage: pull ─────────────────────────────────────────────────────────
 
 do_pull() {
@@ -325,6 +382,12 @@ do_restart() {
     full)
       log "Full stack restart"
       docker compose up -d
+      # Sync secrets to Vault for Studio visibility and Edge Function access
+      sync_secrets_to_vault ".env.functions"
+      sync_secrets_to_vault ".env"
+
+      # Restart services for environment variables to take effect
+      log "Restarting services to pick up new secrets..."
       docker compose restart kong
       ;;
     functions)
