@@ -160,9 +160,9 @@ do_backup() {
     chmod 600 /tmp/pre-deploy-db.sql.gz
   fi
 
-  # Git snapshot
-  # Always commit to the main branch
-  BRANCH_NAME="main"
+  # Git snapshot — push to a dedicated backup branch (NOT main)
+  # Committing to main causes divergence and blocks deployments
+  BRANCH_NAME="backup/vps"
 
   export GIT_INDEX_FILE=.git/backup_index
   # Start with the current tree
@@ -190,9 +190,9 @@ do_backup() {
     log "No changes since last backup — skipped git snapshot"
   else
     if [ "$DAILY" = true ]; then
-      MSG="backup(daily): $(git rev-parse --short HEAD) [skip ci]"
+      MSG="backup(daily): $(date -u +%Y-%m-%dT%H%M%SZ) from $(git rev-parse --short HEAD)"
     else
-      MSG="backup(pre-deploy): $TIMESTAMP ($(git rev-parse --short HEAD)) [skip ci]"
+      MSG="backup(pre-deploy): $TIMESTAMP from $(git rev-parse --short HEAD)"
     fi
     if [ -n "$PARENT" ]; then
       COMMIT=$(echo "$MSG" | git commit-tree "$TREE" -p "$PARENT")
@@ -200,10 +200,10 @@ do_backup() {
       COMMIT=$(echo "$MSG" | git commit-tree "$TREE")
     fi
     git update-ref "refs/heads/$BRANCH_NAME" "$COMMIT"
-    if git push origin "$BRANCH_NAME" --quiet 2>/dev/null; then
-      log "Pushed backup to main: $(git rev-parse --short "$COMMIT")"
+    if git push origin "$BRANCH_NAME" --force-with-lease --quiet 2>/dev/null; then
+      log "Pushed $BRANCH_NAME: $(git rev-parse --short "$COMMIT")"
     else
-      log "WARNING: Could not push backup to main (read-only key?) — local ref updated"
+      log "WARNING: Could not push $BRANCH_NAME (read-only key?) — local ref updated"
     fi
   fi
 
