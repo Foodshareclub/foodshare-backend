@@ -164,6 +164,9 @@ do_backup() {
   # Always commit to the main branch
   BRANCH_NAME="main"
 
+  export GIT_INDEX_FILE=.git/backup_index
+  # Start with the current tree
+  git read-tree HEAD
   git add -A
   # Force add our local unignored backups folder (contains db.sql.gz and .env)
   git add -f backups/ 2>/dev/null || true
@@ -175,7 +178,9 @@ do_backup() {
   git reset volumes/db/data/ 2>/dev/null || true
 
   TREE=$(git write-tree)
-  git reset HEAD --quiet
+  rm -f .git/backup_index
+  unset GIT_INDEX_FILE
+
   PARENT=$(git rev-parse --verify "refs/heads/$BRANCH_NAME" 2>/dev/null || echo "")
   SKIP=false
   if [ -n "$PARENT" ]; then
