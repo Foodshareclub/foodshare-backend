@@ -161,8 +161,8 @@ do_backup() {
   fi
 
   # Git snapshot
-  BRANCH_NAME="backup/pre-deploy"
-  [ "$DAILY" = true ] && BRANCH_NAME="backup/vps"
+  # Always commit to the main branch
+  BRANCH_NAME="main"
 
   git add -A
   # Force add our local unignored backups folder (contains db.sql.gz and .env)
@@ -185,11 +185,9 @@ do_backup() {
     log "No changes since last backup — skipped git snapshot"
   else
     if [ "$DAILY" = true ]; then
-      MSG="backup: $DATE ($TIMESTAMP)
-main: $(git rev-parse --short HEAD)
-dirty: $(git status --porcelain | wc -l | tr -d ' ') files"
+      MSG="backup(daily): $(git rev-parse --short HEAD) [skip ci]"
     else
-      MSG="pre-deploy: $TIMESTAMP ($(git rev-parse --short HEAD))"
+      MSG="backup(pre-deploy): $TIMESTAMP ($(git rev-parse --short HEAD)) [skip ci]"
     fi
     if [ -n "$PARENT" ]; then
       COMMIT=$(echo "$MSG" | git commit-tree "$TREE" -p "$PARENT")
@@ -197,10 +195,10 @@ dirty: $(git status --porcelain | wc -l | tr -d ' ') files"
       COMMIT=$(echo "$MSG" | git commit-tree "$TREE")
     fi
     git update-ref "refs/heads/$BRANCH_NAME" "$COMMIT"
-    if git push origin "$BRANCH_NAME" --force-with-lease --quiet 2>/dev/null; then
-      log "Pushed $BRANCH_NAME: $(git rev-parse --short "$COMMIT")"
+    if git push origin "$BRANCH_NAME" --quiet 2>/dev/null; then
+      log "Pushed backup to main: $(git rev-parse --short "$COMMIT")"
     else
-      log "WARNING: Could not push backup branch (read-only key?) — local ref updated"
+      log "WARNING: Could not push backup to main (read-only key?) — local ref updated"
     fi
   fi
 
