@@ -509,6 +509,7 @@ jobs:
             # ── Stage 0: Pull code first (ensures deploy script exists) ──
             echo "=== Stage: pull ==="
             PREV_HEAD=$(git rev-parse HEAD)
+            git stash
             git pull --ff-only
             NEW_HEAD=$(git rev-parse HEAD)
             chmod +x scripts/deploy.sh
