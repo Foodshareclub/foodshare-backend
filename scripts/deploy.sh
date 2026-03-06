@@ -99,14 +99,15 @@ do_backup() {
   TIMESTAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
   DATE=$(date -u +%Y-%m-%d)
 
+  # For Git tracking, always place latest snapshot in the repo's backups/ directory
+  mkdir -p backups
+  DB_TARGET="backups/db.sql.gz"
+
   if [ "$DAILY" = true ]; then
-    log "Daily backup"
+    log "Daily VPS backup to Git"
     mkdir -p "$BACKUP_DIR/daily" "$BACKUP_DIR/db"
-    DB_TARGET="$BACKUP_DIR/db/foodshare-$DATE.sql.gz"
   else
-    log "Pre-deploy backup"
-    mkdir -p backups
-    DB_TARGET="backups/db.sql.gz"
+    log "Pre-deploy backup to Git"
   fi
 
   # Database dump
@@ -137,7 +138,12 @@ do_backup() {
 
   # Secrets snapshot
   log "Secrets snapshot..."
+  cp .env backups/.env 2>/dev/null || true
+  cp .env.functions backups/.env.functions 2>/dev/null || true
+  cp docker-compose.override.yml backups/docker-compose.override.yml 2>/dev/null || true
+
   if [ "$DAILY" = true ]; then
+    # Create the daily rotated tarball in the external directory for longer retention
     SECRETS_FILE="$BACKUP_DIR/daily/secrets-$DATE.tar.gz"
     tar czf "$SECRETS_FILE" \
       .env \
@@ -145,12 +151,11 @@ do_backup() {
       docker-compose.override.yml \
       2>/dev/null || tar czf "$SECRETS_FILE" .env .env.functions 2>/dev/null || true
     log "Secrets: $(du -h "$SECRETS_FILE" | cut -f1)"
+    
+    # Also save DB to long-retention directory
+    cp "$DB_TARGET" "$BACKUP_DIR/db/foodshare-$DATE.sql.gz" 2>/dev/null || true
   else
-    cp .env backups/.env 2>/dev/null || true
-    cp .env.functions backups/.env.functions 2>/dev/null || true
-    cp docker-compose.override.yml backups/docker-compose.override.yml 2>/dev/null || true
-
-    # Save copy for fast rollback (restricted permissions — contains PII)
+    # Save copy for fast rollback inside /tmp where permissions are restricted
     cp "$DB_TARGET" /tmp/pre-deploy-db.sql.gz
     chmod 600 /tmp/pre-deploy-db.sql.gz
   fi
@@ -160,7 +165,15 @@ do_backup() {
   [ "$DAILY" = true ] && BRANCH_NAME="backup/vps"
 
   git add -A
-  [ "$DAILY" != true ] && git add -f backups/
+  # Force add our local unignored backups folder (contains db.sql.gz and .env)
+  git add -f backups/ 2>/dev/null || true
+  # Force add persistent user data volumes
+  git add -f volumes/storage/ 2>/dev/null || true
+  git add -f volumes/snippets/ 2>/dev/null || true
+  
+  # Ensure raw DB data is explicitly excluded to prevent torn pages and massive bloat
+  git reset volumes/db/data/ 2>/dev/null || true
+
   TREE=$(git write-tree)
   git reset HEAD --quiet
   PARENT=$(git rev-parse --verify "refs/heads/$BRANCH_NAME" 2>/dev/null || echo "")
