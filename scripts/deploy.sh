@@ -202,7 +202,7 @@ do_backup() {
     git update-ref "refs/heads/$BRANCH_NAME" "$COMMIT"
     # Push via SSH (deploy key) since origin may be HTTPS
     SSH_URL="git@github.com:Foodshareclub/foodshare-backend.git"
-    if git push "$SSH_URL" "$BRANCH_NAME" --force-with-lease --quiet 2>/dev/null; then
+    if git push "$SSH_URL" "$BRANCH_NAME" --force-with-lease --quiet; then
       log "Pushed $BRANCH_NAME: $(git rev-parse --short "$COMMIT")"
     else
       log "WARNING: Could not push $BRANCH_NAME — local ref updated"
