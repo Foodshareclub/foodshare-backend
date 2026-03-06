@@ -32,10 +32,10 @@ export async function getSecret(name: string): Promise<string | undefined> {
   try {
     const supabase = getAdminClient();
     const { data, error } = await supabase
+      .schema("vault")
       .from("secrets")
       .select("secret")
       .eq("name", name)
-      .schema("vault")
       .single();
 
     if (error) {
@@ -72,9 +72,9 @@ export async function loadAllSecrets(): Promise<void> {
   try {
     const supabase = getAdminClient();
     const { data, error } = await supabase
+      .schema("vault")
       .from("secrets")
-      .select("name, secret")
-      .schema("vault");
+      .select("name, secret");
 
     if (error) throw error;
 

@@ -52,7 +52,6 @@ import { CsrfError, type CsrfOptions, validateCsrf } from "./csrf.ts";
 import { checkDistributedRateLimit } from "./rate-limiter.ts";
 import { getSecret, loadAllSecrets } from "./vault.ts";
 
-
 // =============================================================================
 // Types
 // =============================================================================
