@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+
+# Supabase
+.temp/
+supabase/.temp/
+
+# Environment (secrets)
+.env
+.env.local
+.env.*.local
+.env.functions
+
+# Docker (VPS-specific overrides + runtime data)
+docker-compose.override.yml
+volumes/db/data/
+volumes/storage/*
+!volumes/storage/.gitkeep
+volumes/snippets/*
+!volumes/snippets/.gitkeep
+
+# Deno lock (edge-runtime resolves deps fresh)
+supabase/functions/deno.lock
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build
+dist/
+build/
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Backups
+backups/
+
+# Misc
+migrations_backup/
+.vercel

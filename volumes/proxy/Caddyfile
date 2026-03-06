@@ -1,0 +1,20 @@
+{
+    email support@foodshare.club
+}
+
+# Supabase API Gateway (Kong)
+api.foodshare.club {
+    reverse_proxy kong:8000
+}
+
+# Legacy backend URL (used by frontend NEXT_PUBLIC_SUPABASE_URL)
+backend.foodshare.club {
+    reverse_proxy kong:8000 {
+        header_up Host api.foodshare.club
+    }
+}
+
+# Supabase Studio (Dashboard)
+studio.foodshare.club {
+    reverse_proxy studio:3000
+}

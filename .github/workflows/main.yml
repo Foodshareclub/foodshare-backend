@@ -1,0 +1,667 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      force-restart:
+        description: Ignore change detection, full restart
+        type: boolean
+        default: false
+      skip-backup:
+        description: Skip pre-deploy backup (faster, less safe)
+        type: boolean
+        default: false
+      dry-run:
+        description: Validate only, do not deploy
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BASELINE_MIGRATION: 20260128195318_baseline.sql
+
+jobs:
+  # ── Change detection ──────────────────────────────────────────────────
+  detect-changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      functions-changed: ${{ steps.changes.outputs.functions-changed }}
+      functions-list: ${{ steps.changes.outputs.functions-list }}
+      shared-changed: ${{ steps.changes.outputs.shared-changed }}
+      migrations-changed: ${{ steps.changes.outputs.migrations-changed }}
+      migrations-list: ${{ steps.changes.outputs.migrations-list }}
+      infrastructure-changed: ${{ steps.changes.outputs.infrastructure-changed }}
+      config-changed: ${{ steps.changes.outputs.config-changed }}
+      any-deployable: ${{ steps.changes.outputs.any-deployable }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - id: changes
+        uses: ./.github/actions/detect-changes
+
+  # ── Lint ──────────────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    timeout-minutes: 2
+    defaults:
+      run:
+        working-directory: supabase/functions
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: ./.github/actions/setup-deno
+
+      - name: deno lint
+        run: deno lint
+
+      - name: deno fmt --check
+        run: deno fmt --check
+
+      - name: Check for problematic JSR imports
+        run: |
+          if grep -r "jsr:@supabase/functions-js" .; then
+            echo "::error::Problematic JSR import detected! This import causes cold start timeouts."
+            echo "::error::Remove: import \"jsr:@supabase/functions-js/edge-runtime.d.ts\";"
+            exit 1
+          fi
+          echo "No problematic JSR imports found."
+
+  # ── Test ─────────────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    timeout-minutes: 2
+    defaults:
+      run:
+        working-directory: supabase/functions
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: ./.github/actions/setup-deno
+
+      - name: deno test
+        id: test
+        run: |
+          set +e
+          OUTPUT=$(deno test --allow-all 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+
+          PASS=$(echo "$OUTPUT" | grep -oP '\d+ passed' | grep -oP '\d+' || echo "0")
+          FAIL=$(echo "$OUTPUT" | grep -oP '\d+ failed' | grep -oP '\d+' || echo "0")
+
+          {
+            echo "## Tests"
+            echo ""
+            echo "| Passed | Failed |"
+            echo "|--------|--------|"
+            echo "| $PASS | $FAIL |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit $EXIT_CODE
+
+  # ── Security ─────────────────────────────────────────────────────────
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    timeout-minutes: 2
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for leaked secrets
+        uses: trufflesecurity/trufflehog@7635b24fd512a2e817dd3e9dd661caaf035a079d # v3.93.1
+        with:
+          extra_args: --only-verified --results=verified
+
+  # ── Validate migrations (conditional) ────────────────────────────────
+  validate-migrations:
+    name: Validate migrations
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.migrations-changed == 'true'
+    timeout-minutes: 2
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: supabase_admin
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U supabase_admin"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+      - name: Create schema_migrations table
+        run: |
+          psql -h localhost -U supabase_admin -d postgres -c "
+            CREATE SCHEMA IF NOT EXISTS supabase_migrations;
+            CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
+              version text PRIMARY KEY,
+              statements text,
+              name text
+            );
+          "
+        env:
+          PGPASSWORD: postgres
+      - name: Apply baseline (best-effort)
+        run: |
+          echo "Applying baseline migration (best-effort — warnings expected)..."
+          psql -h localhost -U supabase_admin -d postgres \
+            -f "supabase/migrations/${BASELINE_MIGRATION}" \
+            2>&1 || true
+          echo "Baseline applied (errors from \\restrict, pg_cron, pg_net are expected)"
+        env:
+          PGPASSWORD: postgres
+      - name: Apply incremental migrations (strict)
+        run: |
+          FAILED=0
+          for f in supabase/migrations/*.sql; do
+            [ -f "$f" ] || continue
+            BASENAME=$(basename "$f")
+
+            if [ "$BASENAME" = "$BASELINE_MIGRATION" ]; then
+              continue
+            fi
+
+            if grep -qE '(cron\.(schedule|unschedule)|net\.http_(post|get))' "$f"; then
+              echo "--- Skipping: $BASENAME (requires pg_cron/pg_net) ---"
+              continue
+            fi
+
+            if grep -qE '(ALTER TABLE|CREATE INDEX|COMMENT ON|INSERT INTO|FROM)\s+(public\.)?(posts|profiles|community_fridges|blocked_users)|extensions\.(st_|geometry)|auth\.(uid|jwt|users)' "$f"; then
+              echo "--- Skipping: $BASENAME (depends on baseline tables/extensions) ---"
+              continue
+            fi
+
+            VERSION=$(echo "$BASENAME" | grep -oE '^[0-9]+')
+            echo "--- Applying: $BASENAME ---"
+
+            if ! psql -h localhost -U supabase_admin -d postgres \
+              -v ON_ERROR_STOP=1 -f "$f"; then
+              echo "::error::Migration failed: $BASENAME"
+              FAILED=1
+              break
+            fi
+
+            psql -h localhost -U supabase_admin -d postgres -c \
+              "INSERT INTO supabase_migrations.schema_migrations (version) VALUES ('$VERSION') ON CONFLICT DO NOTHING;"
+          done
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::Migration validation failed — pipeline blocked"
+            exit 1
+          fi
+          echo "All incremental migrations applied successfully."
+        env:
+          PGPASSWORD: postgres
+
+  # ── Type-check ─────────────────────────────────────────────
+  typecheck:
+    name: Type-check
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    timeout-minutes: 5
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: supabase/functions
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: ./.github/actions/setup-deno
+
+      - name: deno check
+        id: check
+        run: |
+          set +e
+          OUTPUT=$(deno check '**/*.ts' 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+
+          ERROR_COUNT=$(echo "$OUTPUT" | grep -c "^error\[" || echo "0")
+          echo "error-count=$ERROR_COUNT" >> "$GITHUB_OUTPUT"
+          echo "exit-code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+          BASELINE=324
+          DELTA=$((ERROR_COUNT - BASELINE))
+          echo "baseline=$BASELINE" >> "$GITHUB_OUTPUT"
+          echo "delta=$DELTA" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Type-check"
+            echo ""
+            if [ "$DELTA" -gt 0 ]; then
+              echo "> **Warning**: TS errors increased by +$DELTA (now $ERROR_COUNT, baseline $BASELINE)"
+            elif [ "$DELTA" -lt 0 ]; then
+              echo "> TS errors decreased by $DELTA (now $ERROR_COUNT, baseline $BASELINE)"
+            else
+              echo "> TS errors unchanged: $ERROR_COUNT (baseline $BASELINE)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$DELTA" -gt 0 ]; then
+            exit 1
+          else
+            exit 0
+          fi
+
+  # ── Validate functions ────────────────────────
+  validate-functions:
+    name: Validate functions
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.functions-changed == 'true' || needs.detect-changes.outputs.shared-changed == 'true'
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: supabase/functions
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: ./.github/actions/setup-deno
+
+      - name: Validate changed functions
+        env:
+          FUNCTIONS_LIST: ${{ needs.detect-changes.outputs.functions-list }}
+          SHARED: ${{ needs.detect-changes.outputs.shared-changed }}
+        run: |
+          # If shared changed, validate all function dirs
+          if [ "$SHARED" = "true" ]; then
+            DIRS=$(find . -maxdepth 1 -type d \( -name 'api-v1-*' -o -name 'telegram-*' -o -name 'whatsapp-*' -o -name 'main' \) | sed 's|^\./||' | sort)
+          else
+            DIRS=$(echo "$FUNCTIONS_LIST" | jq -r '.[]' 2>/dev/null || echo "")
+          fi
+
+          if [ -z "$DIRS" ]; then
+            echo "No function directories to validate"
+            exit 0
+          fi
+
+          {
+            echo "## Function Validation"
+            echo ""
+            echo "| Function | Type-check | Size | Deno.serve | No JSR | No cross-import |"
+            echo "|----------|-----------|------|------------|--------|-----------------|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          FAIL=0
+
+          for DIR in $DIRS; do
+            [ -d "$DIR" ] || continue
+            [ -f "$DIR/index.ts" ] || continue
+
+            TC_OK="pass"
+            SIZE_OK="pass"
+            SERVE_OK="pass"
+            JSR_OK="pass"
+            IMPORT_OK="pass"
+
+            # 1. Type-check
+            if ! deno check "$DIR/index.ts" 2>/dev/null; then
+              TC_OK="warn"
+            fi
+
+            # 2. Bundle size via deno info
+            SIZE_OUTPUT=$(deno info --json "$DIR/index.ts" 2>/dev/null || echo "{}")
+            TOTAL_SIZE=$(echo "$SIZE_OUTPUT" | jq -r '.totalSize // 0' 2>/dev/null || echo "0")
+            SIZE_MB=$((TOTAL_SIZE / 1048576))
+            if [ "$SIZE_MB" -gt 5 ]; then
+              SIZE_OK="FAIL (${SIZE_MB}MB)"
+              FAIL=1
+            else
+              SIZE_OK="${SIZE_MB}MB"
+            fi
+
+            # 3. Deno.serve pattern
+            if ! grep -q 'Deno\.serve(' "$DIR/index.ts"; then
+              SERVE_OK="FAIL"
+              FAIL=1
+            fi
+
+            # 4. No JSR imports
+            if grep -rq 'jsr:@supabase/functions-js' "$DIR/"; then
+              JSR_OK="FAIL"
+              FAIL=1
+            fi
+
+            # 5. No cross-function imports (only _shared/ allowed)
+            if grep -rE "from ['\"]\.\./(api-v1-|telegram-|whatsapp-|main/)" "$DIR/" 2>/dev/null; then
+              IMPORT_OK="FAIL"
+              FAIL=1
+            fi
+
+            echo "| $DIR | $TC_OK | $SIZE_OK | $SERVE_OK | $JSR_OK | $IMPORT_OK |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          if [ "$FAIL" -ne 0 ]; then
+            echo "::error::Function validation failed — see summary"
+            exit 1
+          fi
+
+  # ── CI Gate ──────────────────────────────────────────────────────
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    needs: [lint, test, security, validate-migrations, typecheck, validate-functions]
+    if: always() && !cancelled()
+    timeout-minutes: 1
+    steps:
+      - name: Go / no-go
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+          MIGRATIONS_RESULT: ${{ needs.validate-migrations.result }}
+          TYPECHECK_RESULT: ${{ needs.typecheck.result }}
+          FUNCTIONS_RESULT: ${{ needs.validate-functions.result }}
+        run: |
+          for job in LINT TEST SECURITY MIGRATIONS FUNCTIONS; do
+            eval "RESULT=\$${job}_RESULT"
+            if [ "$RESULT" = "failure" ]; then
+              echo "::error::${job,,} failed — pipeline blocked"
+              exit 1
+            fi
+          done
+          echo "All gates passed"
+
+  # ── PR Summary ──────────────────────────────────────────────────────
+  pr-summary:
+    name: PR Summary
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test, security, validate-migrations, validate-functions]
+    if: github.event_name == 'pull_request' && always()
+    timeout-minutes: 2
+    steps:
+      - name: Aggregate results
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          TYPECHECK_RESULT: ${{ needs.typecheck.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+          MIGRATIONS_RESULT: ${{ needs.validate-migrations.result }}
+          FUNCTIONS_RESULT: ${{ needs.validate-functions.result }}
+        run: |
+          {
+            echo "## PR Validation Summary"
+            echo ""
+            echo "| Job | Status |"
+            echo "|-----|--------|"
+            echo "| Lint | ${LINT_RESULT} |"
+            echo "| Type-check | ${TYPECHECK_RESULT} |"
+            echo "| Test | ${TEST_RESULT} |"
+            echo "| Security | ${SECURITY_RESULT} |"
+            echo "| Migrations | ${MIGRATIONS_RESULT:-skipped} |"
+            echo "| Functions | ${FUNCTIONS_RESULT:-skipped} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Deploy ───────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: [detect-changes, ci-gate]
+    if: |
+      !cancelled() &&
+      needs.ci-gate.result == 'success' &&
+      inputs.dry-run != true &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main'
+    timeout-minutes: 10
+    environment: production
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_DEPLOY_CHAT_ID: ${{ secrets.TELEGRAM_DEPLOY_CHAT_ID }}
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 1
+
+      - name: Build change summary
+        id: summary
+        env:
+          FN_CHANGED: ${{ needs.detect-changes.outputs.functions-changed }}
+          SHARED_CHANGED: ${{ needs.detect-changes.outputs.shared-changed }}
+          MIG_CHANGED: ${{ needs.detect-changes.outputs.migrations-changed }}
+          INFRA_CHANGED: ${{ needs.detect-changes.outputs.infrastructure-changed }}
+          CFG_CHANGED: ${{ needs.detect-changes.outputs.config-changed }}
+        run: |
+          PARTS=""
+          for pair in "FN_CHANGED:functions" "SHARED_CHANGED:shared" "MIG_CHANGED:migrations" \
+                      "INFRA_CHANGED:infra" "CFG_CHANGED:config"; do
+            KEY="${pair%%:*}"; LABEL="${pair##*:}"
+            eval "VAL=\$$KEY"
+            [ "$VAL" = "true" ] && PARTS="$PARTS $LABEL"
+          done
+          PARTS=$(echo "$PARTS" | xargs | tr ' ' ', ')
+          echo "changes=${PARTS:-none}" >> "$GITHUB_OUTPUT"
+
+      - name: Telegram — deploy started
+        uses: ./.github/actions/telegram-notify
+        continue-on-error: true
+        with:
+          bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_DEPLOY_CHAT_ID }}
+          message: |
+            ⏳ *Deploying foodshare-backend*
+            Commit: `${{ github.sha }}` by ${{ github.actor }}
+            Changes: ${{ steps.summary.outputs.changes }}
+
+      - name: Deploy via SSH
+        id: deploy
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
+        env:
+          FORCE_RESTART: ${{ inputs.force-restart }}
+          SKIP_BACKUP: ${{ inputs.skip-backup }}
+          FUNCTIONS_CHANGED: ${{ needs.detect-changes.outputs.functions-changed }}
+          SHARED_CHANGED: ${{ needs.detect-changes.outputs.shared-changed }}
+          MIGRATIONS_CHANGED: ${{ needs.detect-changes.outputs.migrations-changed }}
+          INFRASTRUCTURE_CHANGED: ${{ needs.detect-changes.outputs.infrastructure-changed }}
+          CONFIG_CHANGED: ${{ needs.detect-changes.outputs.config-changed }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ANON_KEY: ${{ secrets.ANON_KEY }}
+          SERVICE_ROLE_KEY: ${{ secrets.SERVICE_ROLE_KEY }}
+          GOTRUE_EXTERNAL_APPLE_CLIENT_ID: ${{ secrets.GOTRUE_EXTERNAL_APPLE_CLIENT_ID }}
+          GOTRUE_EXTERNAL_APPLE_SECRET: ${{ secrets.GOTRUE_EXTERNAL_APPLE_SECRET }}
+          GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID: ${{ secrets.GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID }}
+          GOTRUE_EXTERNAL_FACEBOOK_SECRET: ${{ secrets.GOTRUE_EXTERNAL_FACEBOOK_SECRET }}
+          GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${{ secrets.GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID }}
+          GOTRUE_EXTERNAL_GOOGLE_SECRET: ${{ secrets.GOTRUE_EXTERNAL_GOOGLE_SECRET }}
+        with:
+          host: backend.foodshare.club
+          username: organic
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 8m
+          envs: FORCE_RESTART,SKIP_BACKUP,FUNCTIONS_CHANGED,SHARED_CHANGED,MIGRATIONS_CHANGED,INFRASTRUCTURE_CHANGED,CONFIG_CHANGED,POSTGRES_PASSWORD,JWT_SECRET,ANON_KEY,SERVICE_ROLE_KEY,GOTRUE_EXTERNAL_APPLE_CLIENT_ID,GOTRUE_EXTERNAL_APPLE_SECRET,GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID,GOTRUE_EXTERNAL_FACEBOOK_SECRET,GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID,GOTRUE_EXTERNAL_GOOGLE_SECRET
+          script: |
+            set -eo pipefail
+            cd /home/organic/dev/foodshare-backend
+
+            # ── Stage 0: Pull code first (ensures deploy script exists) ──
+            echo "=== Stage: pull ==="
+            PREV_HEAD=$(git rev-parse HEAD)
+            
+            # Clean up any leftover index artifacts from backup operations
+            rm -f .git/index.lock .git/backup_index
+            
+            # Fetch and hard-reset to origin/main
+            # This handles diverged branches (e.g. from backup commits to main)
+            git fetch origin main
+            git reset --hard origin/main
+            NEW_HEAD=$(git rev-parse HEAD)
+            chmod +x scripts/deploy.sh
+
+            # ── Update .env with secrets from GitHub Actions ──
+            if [ -f .env ]; then
+              echo "=== Updating .env with secrets ==="
+              [ -n "$POSTGRES_PASSWORD" ] && sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$POSTGRES_PASSWORD|" .env
+              [ -n "$JWT_SECRET" ] && sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$JWT_SECRET|" .env
+              [ -n "$ANON_KEY" ] && sed -i "s|^ANON_KEY=.*|ANON_KEY=$ANON_KEY|" .env
+              [ -n "$SERVICE_ROLE_KEY" ] && sed -i "s|^SERVICE_ROLE_KEY=.*|SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY|" .env
+              
+              if [ -n "$GOTRUE_EXTERNAL_APPLE_CLIENT_ID" ]; then
+                sed -i "s|^GOTRUE_EXTERNAL_APPLE_ENABLED=.*|GOTRUE_EXTERNAL_APPLE_ENABLED=true|" .env
+                sed -i "s|^GOTRUE_EXTERNAL_APPLE_CLIENT_ID=.*|GOTRUE_EXTERNAL_APPLE_CLIENT_ID=$GOTRUE_EXTERNAL_APPLE_CLIENT_ID|" .env
+                sed -i "s|^GOTRUE_EXTERNAL_APPLE_SECRET=.*|GOTRUE_EXTERNAL_APPLE_SECRET=$GOTRUE_EXTERNAL_APPLE_SECRET|" .env
+              fi
+              
+              if [ -n "$GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID" ]; then
+                sed -i "s|^GOTRUE_EXTERNAL_FACEBOOK_ENABLED=.*|GOTRUE_EXTERNAL_FACEBOOK_ENABLED=true|" .env
+                sed -i "s|^GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID=.*|GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID=$GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID|" .env
+                sed -i "s|^GOTRUE_EXTERNAL_FACEBOOK_SECRET=.*|GOTRUE_EXTERNAL_FACEBOOK_SECRET=$GOTRUE_EXTERNAL_FACEBOOK_SECRET|" .env
+              fi
+              
+              if [ -n "$GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID" ]; then
+                sed -i "s|^GOTRUE_EXTERNAL_GOOGLE_ENABLED=.*|GOTRUE_EXTERNAL_GOOGLE_ENABLED=true|" .env
+                sed -i "s|^GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID=.*|GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID=$GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID|" .env
+                sed -i "s|^GOTRUE_EXTERNAL_GOOGLE_SECRET=.*|GOTRUE_EXTERNAL_GOOGLE_SECRET=$GOTRUE_EXTERNAL_GOOGLE_SECRET|" .env
+              fi
+            fi
+
+            # ── Stage 1: Backup ──
+            if [ "$SKIP_BACKUP" != "true" ]; then
+              echo "=== Stage: backup ==="
+              ./scripts/deploy.sh backup
+            else
+              echo "=== Skipping backup (skip-backup=true) ==="
+            fi
+
+            # ── Stage 2: Record pull state ──
+            echo "=== Recording pull state ==="
+            echo '{}' > /tmp/deploy-state.json
+            jq -n --arg started "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                  --arg stage "pull" \
+                  --arg prev "$PREV_HEAD" \
+                  --arg new "$NEW_HEAD" \
+                  --arg changed "$(git diff --name-only "$PREV_HEAD" "$NEW_HEAD" | tr '\n' ',')" \
+                  '{started_at: $started, stage: $stage, prev_head: $prev, new_head: $new, changed_files: $changed}' \
+              > /tmp/deploy-state.json
+
+            # ── Stage 3: Migrate ──
+            if [ "$MIGRATIONS_CHANGED" = "true" ]; then
+              echo "=== Stage: migrate ==="
+              ./scripts/deploy.sh migrate
+            else
+              echo "=== Skipping migrations (no changes) ==="
+            fi
+
+            # ── Stage 4: Restart (with zero-downtime for functions) ──
+            echo "=== Stage: restart ==="
+            if [ "$FORCE_RESTART" = "true" ] || [ "$INFRASTRUCTURE_CHANGED" = "true" ]; then
+              ./scripts/deploy.sh restart full
+            elif [ "$FUNCTIONS_CHANGED" = "true" ] || [ "$SHARED_CHANGED" = "true" ]; then
+              ./scripts/deploy-functions-zero-downtime.sh
+            elif [ "$CONFIG_CHANGED" = "true" ]; then
+              ./scripts/deploy.sh restart functions
+            elif [ "$MIGRATIONS_CHANGED" = "true" ]; then
+              ./scripts/deploy.sh restart rest
+            else
+              echo "No restart needed"
+            fi
+
+            # ── Stage 5: Smoke tests ──
+            echo "=== Stage: smoke ==="
+            ./scripts/deploy.sh smoke
+
+            echo "=== Deploy complete ==="
+
+      - name: Deploy summary
+        if: always()
+        env:
+          CHANGE_SUMMARY: ${{ steps.summary.outputs.changes }}
+          FORCE_RESTART: ${{ inputs.force-restart || 'false' }}
+          SKIP_BACKUP: ${{ inputs.skip-backup || 'false' }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+        run: |
+          SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          {
+            echo "## Deploy: \`${SHORT_SHA}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Commit** | \`${SHORT_SHA}\` — ${COMMIT_MSG} |"
+            echo "| **Actor** | ${GITHUB_ACTOR} |"
+            echo "| **Changes** | ${CHANGE_SUMMARY} |"
+            echo "| **Force restart** | ${FORCE_RESTART} |"
+            echo "| **Skip backup** | ${SKIP_BACKUP} |"
+            echo "| **Status** | ${DEPLOY_OUTCOME} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Telegram — deploy succeeded
+        if: success()
+        continue-on-error: true
+        uses: ./.github/actions/telegram-notify
+        with:
+          bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_DEPLOY_CHAT_ID }}
+          message: |
+            ✅ *Deploy succeeded* — `${{ github.sha }}`
+            Changes: ${{ steps.summary.outputs.changes }}
+
+      - name: Telegram — deploy failed
+        if: failure()
+        continue-on-error: true
+        uses: ./.github/actions/telegram-notify
+        with:
+          bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_DEPLOY_CHAT_ID }}
+          message: |
+            ❌ *DEPLOY FAILED* — `${{ github.sha }}`
+            Check: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  # ── Post-deploy (dry-run summary) ────────────────────────────────────
+  dry-run-summary:
+    name: Dry-run summary
+    runs-on: ubuntu-latest
+    needs: [detect-changes, ci-gate]
+    if: inputs.dry-run == true && needs.ci-gate.result == 'success'
+    timeout-minutes: 1
+    steps:
+      - name: Summary
+        env:
+          FN_CHANGED: ${{ needs.detect-changes.outputs.functions-changed }}
+          SHARED_CHANGED: ${{ needs.detect-changes.outputs.shared-changed }}
+          MIG_CHANGED: ${{ needs.detect-changes.outputs.migrations-changed }}
+          INFRA_CHANGED: ${{ needs.detect-changes.outputs.infrastructure-changed }}
+          CFG_CHANGED: ${{ needs.detect-changes.outputs.config-changed }}
+        run: |
+          {
+            echo "## Dry Run — Validation Passed"
+            echo ""
+            echo "All gates passed. Deploy would proceed with:"
+            echo "- Functions changed: ${FN_CHANGED}"
+            echo "- Shared changed: ${SHARED_CHANGED}"
+            echo "- Migrations changed: ${MIG_CHANGED}"
+            echo "- Infrastructure changed: ${INFRA_CHANGED}"
+            echo "- Config changed: ${CFG_CHANGED}"
+          } >> "$GITHUB_STEP_SUMMARY"

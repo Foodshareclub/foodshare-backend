@@ -1,0 +1,37 @@
+name: Telegram Notify
+description: Send a Telegram notification (fails silently)
+
+inputs:
+  bot-token:
+    description: Telegram bot token
+    required: true
+  chat-id:
+    description: Telegram chat ID
+    required: true
+  message:
+    description: Message text (Markdown)
+    required: true
+  silent:
+    description: Send silently (no notification sound)
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        TG_TOKEN: ${{ inputs.bot-token }}
+        TG_CHAT: ${{ inputs.chat-id }}
+        TG_MSG: ${{ inputs.message }}
+        TG_SILENT: ${{ inputs.silent }}
+      run: |
+        if [ -z "$TG_TOKEN" ]; then
+          echo "::debug::Telegram notification skipped (no bot token)"
+          exit 0
+        fi
+        curl -sf -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+          --data-urlencode "chat_id=${TG_CHAT}" \
+          --data-urlencode "text=${TG_MSG}" \
+          -d parse_mode=Markdown \
+          -d "disable_notification=${TG_SILENT}" \
+          || echo "Telegram notification failed (non-blocking)"
