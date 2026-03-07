@@ -169,7 +169,7 @@ async function buildEmailContent(
   if (email.email_type === "newsletter" && email.campaign_id) {
     const { data: campaign, error } = await supabase
       .from("newsletter_campaigns")
-      .select("subject, html_content, text_content")
+      .select("subject,html_content,text_content")
       .eq("id", email.campaign_id)
       .single();
 
@@ -200,7 +200,7 @@ async function buildEmailContent(
   if (email.template_slug) {
     const { data: template, error } = await supabase
       .from("email_templates")
-      .select("subject, html_content, text_content")
+      .select("subject,html_content,text_content")
       .eq("slug", email.template_slug)
       .single();
 
@@ -394,7 +394,7 @@ async function resolveAutomationEmailContent(
 ): Promise<{ subject: string; html: string; to: string } | null> {
   const { data: profile } = await supabase
     .from("profiles")
-    .select("email, first_name, nickname")
+    .select("email,first_name,nickname")
     .eq("id", profileId)
     .single();
 
@@ -403,7 +403,7 @@ async function resolveAutomationEmailContent(
   if (emailData.template_slug) {
     const { data: template } = await supabase
       .from("email_templates")
-      .select("subject, html_content")
+      .select("subject,html_content")
       .eq("slug", emailData.template_slug)
       .eq("is_active", true)
       .single();

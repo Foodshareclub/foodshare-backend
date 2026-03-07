@@ -224,7 +224,7 @@ async function getUserBookmarks(ctx: HandlerContext<unknown, QueryParams>): Prom
 
   const { data, error } = await supabase
     .from("post_bookmarks")
-    .select("post_id, created_at")
+    .select("post_id,created_at")
     .eq("profile_id", userId)
     .order("created_at", { ascending: false })
     .limit(limit);

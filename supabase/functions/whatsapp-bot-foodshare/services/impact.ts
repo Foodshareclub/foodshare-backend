@@ -14,7 +14,7 @@ export async function getUserImpactStats(profileId: string): Promise<ImpactStats
   // Get the profile
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("id, created_time")
+    .select("id,created_time")
     .eq("id", profileId)
     .single();
 

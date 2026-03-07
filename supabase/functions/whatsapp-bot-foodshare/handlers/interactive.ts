@@ -319,7 +319,7 @@ async function handleLeaderboard(phoneNumber: string): Promise<void> {
   // Get top contributors
   const { data: leaders, error } = await supabase
     .from("profiles")
-    .select("first_name, nickname")
+    .select("first_name,nickname")
     .limit(10);
 
   if (error || !leaders || leaders.length === 0) {

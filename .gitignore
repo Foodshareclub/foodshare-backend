@@ -40,14 +40,12 @@ npm-debug.log*
 dist/
 build/
 
-# Lock files
+# Package managers
 package-lock.json
-yarn.lock
-pnpm-lock.yaml
+deno.lock
 
 # Backups
 backups/
 
 # Misc
 migrations_backup/
-.vercel

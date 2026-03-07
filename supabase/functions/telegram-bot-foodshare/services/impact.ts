@@ -11,7 +11,7 @@ export async function getUserImpactStats(userId: number): Promise<ImpactStats> {
   // First, get the profile (required for subsequent queries)
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("id, created_time")
+    .select("id,created_time")
     .eq("telegram_id", userId)
     .single();
 

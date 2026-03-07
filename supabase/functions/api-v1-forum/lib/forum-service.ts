@@ -67,7 +67,7 @@ export class ForumService {
     const { data, error } = await this.supabase
       .from("forum")
       .insert(insertData)
-      .select("id, slug, forum_post_name, forum_post_created_at")
+      .select("id,slug,forum_post_name,forum_post_created_at")
       .single();
 
     if (error) throw error;
@@ -101,7 +101,7 @@ export class ForumService {
       .from("forum")
       .update(updateData)
       .eq("id", postId)
-      .select("id, forum_post_name, forum_post_updated_at, slug")
+      .select("id,forum_post_name,forum_post_updated_at,slug")
       .single();
 
     if (error) throw error;

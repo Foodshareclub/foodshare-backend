@@ -8,6 +8,7 @@
     "noUnusedParameters": true
   },
   "nodeModulesDir": "auto",
+  "lock": false,
   "imports": {},
   "tasks": {
     "dev": "deno run --allow-all --watch",

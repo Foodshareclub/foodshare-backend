@@ -277,7 +277,7 @@ export async function handleFindCommand(
 
   let query = supabase
     .from("posts")
-    .select("id, post_name, post_description, post_address, location, images")
+    .select("id,post_name,post_description,post_address,location,images")
     .eq("post_type", "food")
     .eq("is_active", true)
     .order("created_at", { ascending: false })
@@ -328,7 +328,7 @@ export async function handleNearbyCommand(chatId: number, userId: number): Promi
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("location, search_radius_km")
+    .select("location,search_radius_km")
     .eq("telegram_id", userId)
     .single();
 
@@ -512,7 +512,7 @@ export async function handleLeaderboardCommand(
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("telegram_user_activity")
-    .select("first_name, username, message_count")
+    .select("first_name,username,message_count")
     .order("message_count", { ascending: false })
     .limit(10);
 

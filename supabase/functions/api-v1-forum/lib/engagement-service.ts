@@ -65,7 +65,7 @@ export class EngagementService {
   async toggleReaction(forumId: number, reactionType: string) {
     const { data: existing } = await this.supabase
       .from("forum_reactions")
-      .select("id, reaction_type")
+      .select("id,reaction_type")
       .eq("forum_id", forumId)
       .eq("profile_id", this.userId)
       .maybeSingle();

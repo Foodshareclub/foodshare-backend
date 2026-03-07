@@ -165,7 +165,7 @@ export default async function auditHandler(
 
     const { data: localeData, error: localeError } = await supabase
       .from("translations")
-      .select("messages, version")
+      .select("messages,version")
       .eq("locale", locale)
       .single();
 
@@ -226,7 +226,7 @@ export default async function auditHandler(
   if (all) {
     const { data: allLocales, error: allError } = await supabase
       .from("translations")
-      .select("locale, messages, version")
+      .select("locale,messages,version")
       .neq("locale", "en");
 
     if (allError || !allLocales) {

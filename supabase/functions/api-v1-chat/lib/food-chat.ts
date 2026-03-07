@@ -202,7 +202,7 @@ export async function foodCreateRoom(ctx: HandlerContext<FoodCreateRoomBody>): P
 
   const { data: post, error: postError } = await supabase
     .from("posts")
-    .select("id, profile_id, post_name")
+    .select("id,profile_id,post_name")
     .eq("id", body.postId)
     .single();
 
@@ -273,7 +273,7 @@ export async function foodSendMessage(ctx: HandlerContext<FoodSendMessageBody>):
 
   const { data: room, error: roomError } = await supabase
     .from("rooms")
-    .select("id, sharer, requester")
+    .select("id,sharer,requester")
     .eq("id", body.roomId)
     .single();
 
@@ -295,7 +295,7 @@ export async function foodSendMessage(ctx: HandlerContext<FoodSendMessageBody>):
       text: encryptedText,
       image: body.image || null,
     })
-    .select("id, room_id, profile_id, text, image, timestamp")
+    .select("id,room_id,profile_id,text,image,timestamp")
     .single();
 
   if (messageError) {
@@ -444,7 +444,7 @@ export async function foodArchiveRoom(ctx: HandlerContext<unknown, ListQuery>): 
 
   const { data: room } = await supabase
     .from("rooms")
-    .select("sharer, requester")
+    .select("sharer,requester")
     .eq("id", roomId)
     .single();
 

@@ -104,7 +104,7 @@ export default async function updateHandler(
     // Get current translations
     const { data: current, error: fetchError } = await supabase
       .from("translations")
-      .select("id, messages, version")
+      .select("id,messages,version")
       .eq("locale", locale)
       .single();
 

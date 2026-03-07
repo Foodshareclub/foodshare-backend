@@ -43,22 +43,14 @@ CREATE POLICY user_events_2026_02_select ON public.user_events_2026_02 FOR SELEC
 CREATE POLICY "Service role full access" ON public.user_events_2026_02 TO service_role USING (true) WITH CHECK (true);
 
 -- email_provider_quota
-CREATE POLICY "Admins can read quota data" ON public.email_provider_quota FOR SELECT USING ((EXISTS ( SELECT 1
-   FROM public.profiles
-  WHERE (profiles.id = ( SELECT auth.uid() AS uid)))));
+CREATE POLICY "Admins can read quota data" ON public.email_provider_quota FOR SELECT USING (public.is_admin());
 
 -- email_queue
-CREATE POLICY "Admins can view email queue" ON public.email_queue FOR SELECT USING ((EXISTS ( SELECT 1
-   FROM public.profiles
-  WHERE (profiles.id = ( SELECT auth.uid() AS uid)))));
+CREATE POLICY "Admins can view email queue" ON public.email_queue FOR SELECT USING (public.is_admin());
 
 -- forum_reports
-CREATE POLICY "Moderators can update reports" ON public.forum_reports FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
-   FROM public.profiles
-  WHERE (profiles.id = ( SELECT auth.uid() AS uid)))));
-CREATE POLICY "Users can view own reports or moderators all" ON public.forum_reports FOR SELECT USING (((reporter_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1
-   FROM public.profiles
-  WHERE (profiles.id = ( SELECT auth.uid() AS uid))))));
+CREATE POLICY "Moderators can update reports" ON public.forum_reports FOR UPDATE TO authenticated USING (public.is_admin());
+CREATE POLICY "Users can view own reports or moderators all" ON public.forum_reports FOR SELECT USING (((reporter_id = ( SELECT auth.uid() AS uid)) OR public.is_admin()));
 
 -- post_activity_logs
 CREATE POLICY post_activity_logs_select ON public.post_activity_logs FOR SELECT USING (((actor_id = auth.uid()) OR (EXISTS ( SELECT 1

@@ -306,7 +306,7 @@ async function getProduct(ctx: HandlerContext<unknown, ListQuery>): Promise<Resp
   if (includeRelated && data.latitude && data.longitude) {
     const { data: related } = await supabase
       .from("posts_with_location")
-      .select("id, title, images, post_type, created_at, latitude, longitude, profile_id")
+      .select("id,title,images,post_type,created_at,latitude,longitude,profile_id")
       .neq("id", productId)
       .eq("status", "active")
       .or(`category_id.eq.${data.category_id},post_type.eq.${data.post_type}`)
@@ -454,7 +454,7 @@ async function updateProduct(ctx: HandlerContext<UpdateProductBody, ListQuery>):
   // Check ownership and current version
   const { data: existing, error: fetchError } = await supabase
     .from("posts")
-    .select("id, profile_id, version")
+    .select("id,profile_id,version")
     .eq("id", productId)
     .single();
 
@@ -542,7 +542,7 @@ async function deleteProduct(ctx: HandlerContext<unknown, ListQuery>): Promise<R
   // Check ownership
   const { data: existing, error: fetchError } = await supabase
     .from("posts")
-    .select("id, profile_id")
+    .select("id,profile_id")
     .eq("id", productId)
     .single();
 

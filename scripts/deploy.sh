@@ -201,7 +201,7 @@ do_backup() {
     fi
     git update-ref "refs/heads/$BRANCH_NAME" "$COMMIT"
     # Push via SSH (deploy key) since origin may be HTTPS
-    SSH_URL="git@github.com:Foodshareclub/foodshare-backend.git"
+    SSH_URL="git@github.com:Foodsharecom.flutterflow.foodshare-backend.git"
     
     export GIT_SSH_COMMAND="ssh -i /home/organic/.ssh/vps_backup_deploy_key -o StrictHostKeyChecking=no"
     if git push "$SSH_URL" "$BRANCH_NAME" --force --quiet; then

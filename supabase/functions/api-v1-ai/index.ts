@@ -111,7 +111,7 @@ async function getCachedResult(
 
   const { data } = await supabase
     .from("inference_cache")
-    .select("result, created_at")
+    .select("result,created_at")
     .eq("cache_key", cacheKey)
     .gte("created_at", new Date(Date.now() - HF_CACHE_TTL).toISOString())
     .single();

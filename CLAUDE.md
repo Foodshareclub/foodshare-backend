@@ -5,7 +5,7 @@ Self-hosted Supabase backend (Docker Compose + Deno Edge Functions + PostgreSQL)
 **Self-hosted Supabase:**
 - Studio (dashboard): https://studio.foodshare.club
 - API: https://api.foodshare.club
-- VPS: 152.53.136.84 (ARM64, 8GB RAM)
+- VPS: backend.foodshare.club (ARM64, 8GB RAM)
 
 ## Commands
 
@@ -78,10 +78,10 @@ Kong is the single entrypoint. Cloudflare tunnel routes to port 54321. Dashboard
 7. **RLS on all tables** -- No exceptions. Use service role client only for admin operations.
 8. **Changes affect ALL platforms** -- `foodshare-web/supabase` and `foodshare-ios/supabase` symlink to `supabase/`. Every change instantly affects Web, iOS, and Android.
 9. **Always return 200 from webhooks** -- Even on errors, to prevent retry storms from Telegram/WhatsApp/Meta.
-10. **Edge function secrets in `.env.functions`** -- NOT vault. Vault encryption keys are per-DB-instance. All secrets go in `.env.functions` and are injected via docker-compose `env_file`.
-11. **No deno.lock** -- Removed. Edge-runtime v1.70.1 resolves deps fresh. Old lock files cause boot errors.
+10. **Secret Management** -- Use Supabase Vault via `getSecret` from `_shared/vault.ts`. It provides encrypted storage with automatic caching and fallbacks to `.env.functions`.
+11. **No deno.lock** -- Do not commit `deno.lock`. Edge-runtime v1.70.1 resolves dependencies fresh to prevent cold start hangs or boot errors.
 
-## Functions (27 total)
+## Functions (28 total)
 
 | Category | Functions |
 |----------|-----------|
@@ -126,12 +126,11 @@ All functions use `verify_jwt = false` in config.toml -- auth is handled interna
 
 Tests in `supabase/functions/__tests__/`. Use `createTestContext()` and `mockSupabaseClient()` from `__tests__/test-utils.ts`.
 
-## Environment Variables
+Two env files and Supabase Vault:
 
-Two env files (both gitignored, see `.env.example` and `.env.functions.example` for templates):
-
-- **`.env`** -- Supabase infrastructure secrets (Postgres, JWT, Kong, GoTrue SMTP, Studio, Analytics)
-- **`.env.functions`** -- Edge function secrets (AWS, R2, email providers, AI keys, bot tokens, Redis, RevenueCat, etc.)
+- **Supabase Vault** -- Primary encrypted storage for API keys and sensitive credentials.
+- **`.env.functions`** -- Fallback for Vault secrets and non-sensitive configuration. Injected via docker-compose.
+- **`.env`** -- Supabase core infrastructure secrets (Postgres, JWT, Kong, SMTP).
 
 ## Deployment
 
@@ -149,7 +148,7 @@ The CI/CD pipeline runs: detect changes → test → security scan → validate 
 
 ```bash
 # Manual VPS access (debugging only, not for deploying)
-autossh -M 0 -o ServerAliveInterval=6000 -o ServerAliveCountMax=6000 -o ConnectTimeout=10 -o ConnectionAttempts=6000 -i ~/.ssh/id_rsa_gitlab organic@vps.foodshare.club
+autossh -M 0 -o ServerAliveInterval=6000 -o ServerAliveCountMax=6000 -o ConnectTimeout=10 -o ConnectionAttempts=6000 -i ~/.ssh/foodshare_id_ed25519 organic@backend.foodshare.club
 ```
 
 ## Common Pitfalls

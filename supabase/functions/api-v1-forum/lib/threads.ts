@@ -277,7 +277,7 @@ export async function togglePin(ctx: HandlerContext): Promise<Response> {
   // Verify ownership or mod status
   const { data: post, error: fetchError } = await supabase
     .from("forum")
-    .select("id, profile_id, is_pinned")
+    .select("id,profile_id,is_pinned")
     .eq("id", body.forumId)
     .is("deleted_at", null)
     .single();

@@ -1,4 +1,6 @@
-console.log("main function started");
+import { logger } from "../_shared/logger.ts";
+
+logger.info("main function started");
 
 Deno.serve(async (req: Request) => {
   const headers = new Headers({
@@ -56,7 +58,7 @@ Deno.serve(async (req: Request) => {
       const controller = new AbortController();
       return await worker.fetch(req, { signal: controller.signal });
     } catch (e) {
-      console.error(e);
+      logger.error("Worker fetch failed", { error: e, serviceName, pathname });
       // @ts-ignore: WorkerAlreadyRetired is specific to Deno Deploy / Supabase Edge Functions
       if (e instanceof Deno.errors.WorkerAlreadyRetired) {
         return await callWorker();

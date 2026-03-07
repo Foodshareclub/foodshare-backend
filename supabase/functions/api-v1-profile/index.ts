@@ -564,7 +564,7 @@ async function getSession(ctx: HandlerContext<unknown, QueryParams>): Promise<Re
   // Get minimal session data
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, display_name, avatar_url, preferred_locale")
+    .select("id,display_name,avatar_url,preferred_locale")
     .eq("id", userId)
     .single();
 
@@ -624,7 +624,7 @@ async function getDashboard(ctx: HandlerContext<unknown, QueryParams>): Promise<
   if (query.includeListings) {
     const { data } = await supabase
       .from("posts")
-      .select("id, title, images, status, created_at")
+      .select("id,title,images,status,created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(5);

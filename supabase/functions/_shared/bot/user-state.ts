@@ -74,7 +74,7 @@ export function createBotUserStateService<TState extends { action?: string }>(
     try {
       const { data, error } = await supabase
         .from(tableName)
-        .select("state, expires_at")
+        .select("state,expires_at")
         .eq(idColumn, id)
         .single();
 

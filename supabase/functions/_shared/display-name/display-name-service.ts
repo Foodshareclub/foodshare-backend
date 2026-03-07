@@ -383,7 +383,7 @@ export class DisplayNameService {
   private async fetchProfileData(userId: string): Promise<DatabaseProfileRow | null> {
     const { data, error } = await this.supabase
       .from("profiles")
-      .select("id, display_name, first_name, second_name, nickname, email")
+      .select("id,display_name,first_name,second_name,nickname,email")
       .eq("id", userId)
       .is("deleted_at", null)
       .single();
@@ -536,7 +536,7 @@ export class DisplayNameService {
     // Fetch profiles in batch
     const { data: profiles, error: profileError } = await this.supabase
       .from("profiles")
-      .select("id, display_name, first_name, second_name, nickname, email")
+      .select("id,display_name,first_name,second_name,nickname,email")
       .in("id", userIds)
       .is("deleted_at", null);
 
