@@ -276,7 +276,7 @@ async function handleSyncStatus(ctx: HandlerContext): Promise<Response> {
   // Get sync checkpoints for user
   const { data: checkpoints, error: checkpointError } = await supabase
     .from("sync_checkpoints")
-    .select("table_name, last_sync_version, last_sync_at")
+    .select("table_name,last_sync_version,last_sync_at")
     .eq("user_id", userId);
 
   if (checkpointError) {

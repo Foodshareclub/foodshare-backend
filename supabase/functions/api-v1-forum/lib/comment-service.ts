@@ -77,7 +77,7 @@ export class CommentService {
     // Verify post ownership
     const { data: post, error: postError } = await this.supabase
       .from("forum")
-      .select("profile_id, post_type")
+      .select("profile_id,post_type")
       .eq("id", forumId)
       .single();
 

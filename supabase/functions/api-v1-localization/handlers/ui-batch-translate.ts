@@ -319,7 +319,7 @@ export default async function uiBatchTranslateHandler(
     if (apply) {
       const { data: current, error: fetchError } = await supabase
         .from("translations")
-        .select("id, messages")
+        .select("id,messages")
         .eq("locale", locale)
         .single();
 

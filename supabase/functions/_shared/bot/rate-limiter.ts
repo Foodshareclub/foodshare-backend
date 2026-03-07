@@ -73,7 +73,7 @@ export function createBotRateLimiter(config: BotRateLimiterConfig) {
     try {
       const { data: existing } = await supabase
         .from(tableName)
-        .select("request_count, window_start")
+        .select("request_count,window_start")
         .eq(idColumn, id)
         .single();
 

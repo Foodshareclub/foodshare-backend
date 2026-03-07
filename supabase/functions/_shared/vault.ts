@@ -74,7 +74,7 @@ export async function loadAllSecrets(): Promise<void> {
     const { data, error } = await supabase
       .schema("vault")
       .from("secrets")
-      .select("name, secret");
+      .select("name,secret");
 
     if (error) throw error;
 

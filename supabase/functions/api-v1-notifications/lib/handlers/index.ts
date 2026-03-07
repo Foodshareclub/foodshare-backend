@@ -797,7 +797,7 @@ export async function handleDashboard(
 
     const { data, error } = await context.supabase
       .from("notification_delivery_log")
-      .select("status, channels")
+      .select("status,channels")
       .gte("created_at", since);
 
     if (error) {

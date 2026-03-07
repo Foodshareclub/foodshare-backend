@@ -174,7 +174,7 @@ export class PushChannelAdapter implements ChannelAdapter {
   private async getUserDevices(context: NotificationContext): Promise<DeviceToken[]> {
     const { data, error } = await context.supabase
       .from("device_tokens")
-      .select("profile_id, token, platform, endpoint, p256dh, auth")
+      .select("profile_id,token,platform,endpoint,p256dh,auth")
       .eq("profile_id", context.userId!)
       .eq("is_active", true);
 

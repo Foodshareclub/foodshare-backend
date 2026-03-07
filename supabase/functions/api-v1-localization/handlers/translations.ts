@@ -172,7 +172,7 @@ async function getUserContext(
     // Fetch user profile with preferences
     const { data: profile } = await supabase
       .from("profiles")
-      .select("preferred_locale, feature_flags, is_premium")
+      .select("preferred_locale,feature_flags,is_premium")
       .eq("id", user.id)
       .single();
 
@@ -200,7 +200,7 @@ async function getDeltaChanges(
     // Get current version
     const { data: currentData } = await supabase
       .from("translations")
-      .select("version, updated_at")
+      .select("version,updated_at")
       .eq("locale", locale)
       .single();
 
@@ -211,7 +211,7 @@ async function getDeltaChanges(
     // Query change log for delta
     const { data: changes } = await supabase
       .from("translation_change_log")
-      .select("key_path, old_value, new_value, change_type")
+      .select("key_path,old_value,new_value,change_type")
       .eq("locale", locale)
       .gt("version", sinceVersion)
       .order("created_at", { ascending: true });
@@ -553,7 +553,7 @@ export default async function translationsHandler(
     // Full sync: Fetch translations from database
     const { data, error } = await supabase
       .from("translations")
-      .select("messages, version, updated_at")
+      .select("messages,version,updated_at")
       .eq("locale", effectiveLocale)
       .single();
 
@@ -566,7 +566,7 @@ export default async function translationsHandler(
       // Fallback to English
       const { data: fallback, error: fallbackError } = await supabase
         .from("translations")
-        .select("messages, version, updated_at")
+        .select("messages,version,updated_at")
         .eq("locale", "en")
         .single();
 

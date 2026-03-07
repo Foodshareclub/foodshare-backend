@@ -145,7 +145,7 @@ async function checkRateLimit(
   try {
     const { data, error } = await supabase
       .from("rate_limits")
-      .select("request_count, window_start")
+      .select("request_count,window_start")
       .eq("identifier", identifier)
       .single();
 
@@ -249,7 +249,7 @@ export default async function uiStringsHandler(
     // Fetch from database
     const { data: translation, error: dbError } = await supabase
       .from("translations")
-      .select("locale, messages, version")
+      .select("locale,messages,version")
       .eq("locale", locale)
       .single();
 
@@ -257,7 +257,7 @@ export default async function uiStringsHandler(
       // Fallback to English
       const { data: fallbackTranslation, error: fallbackError } = await supabase
         .from("translations")
-        .select("locale, messages, version")
+        .select("locale,messages,version")
         .eq("locale", DEFAULT_LOCALE)
         .single();
 

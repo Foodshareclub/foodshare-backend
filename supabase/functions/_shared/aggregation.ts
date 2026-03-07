@@ -76,7 +76,7 @@ export async function aggregateStats(supabase: SupabaseClient, userId: string) {
 export async function aggregateImpact(supabase: SupabaseClient, userId: string) {
   const { data } = await supabase
     .from("user_impact")
-    .select("food_saved_kg, co2_saved_kg, meals_provided")
+    .select("food_saved_kg,co2_saved_kg,meals_provided")
     .eq("user_id", userId)
     .single();
 

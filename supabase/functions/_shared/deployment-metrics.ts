@@ -1,5 +1,6 @@
 // Enhanced observability - metrics and error tracking
 // Integrates with existing observability.ts
+import { logger } from "./logger.ts";
 
 export interface DeploymentMetrics {
   deploymentId: string;
@@ -41,7 +42,7 @@ export function endDeploymentTracking(
   metric.p95Latency = p95Latency;
 
   // Send to monitoring (Telegram, Datadog, etc.)
-  console.log(JSON.stringify(metric));
+  logger.info("deployment_metric", metric);
 }
 
 export function getRecentDeployments(limit = 10): DeploymentMetrics[] {

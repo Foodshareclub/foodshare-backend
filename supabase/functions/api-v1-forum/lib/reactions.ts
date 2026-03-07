@@ -275,7 +275,7 @@ export async function votePoll(ctx: HandlerContext): Promise<Response> {
       option_id: body.optionId,
       profile_id: userId,
     })
-    .select("id, poll_id, option_id, created_at")
+    .select("id,poll_id,option_id,created_at")
     .single();
 
   if (error) {

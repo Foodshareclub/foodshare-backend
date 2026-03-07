@@ -265,7 +265,7 @@ async function handleUpdateRoles(
   // Get all role IDs from roles table
   const { data: allRoles, error: rolesError } = await ctx.supabase
     .from("roles")
-    .select("id, name");
+    .select("id,name");
 
   if (rolesError) throw new Error(rolesError.message);
 
@@ -316,7 +316,7 @@ async function handleBanUser(
   // Check if user exists
   const { data: targetUser } = await ctx.supabase
     .from("profiles")
-    .select("id, first_name, second_name, email")
+    .select("id,first_name,second_name,email")
     .eq("id", userId)
     .single();
 
@@ -358,7 +358,7 @@ async function handleUnbanUser(
   // Check if user exists
   const { data: targetUser } = await ctx.supabase
     .from("profiles")
-    .select("id, email, is_active")
+    .select("id,email,is_active")
     .eq("id", userId)
     .single();
 

@@ -767,7 +767,7 @@ async function handlePostStats(corsHeaders: Record<string, string>): Promise<Res
 
   const { data, error } = await supabase
     .from("location_update_queue")
-    .select("status, retry_count, max_retries, completed_at");
+    .select("status,retry_count,max_retries,completed_at");
 
   if (error) {
     return errorResponse(error.message, corsHeaders, 500);

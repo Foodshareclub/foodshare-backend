@@ -286,7 +286,7 @@ async function storeProviderStats(
   try {
     const { data: existing } = await context.supabase
       .from("email_provider_health_metrics")
-      .select("daily_quota_used, monthly_quota_used, total_requests, successful_requests")
+      .select("daily_quota_used,monthly_quota_used,total_requests,successful_requests")
       .eq("provider", stats.provider)
       .single();
 

@@ -130,7 +130,7 @@ export async function handleVerifySend(
   // Look up profile by email
   const { data: profile, error: lookupError } = await supabase
     .from("profiles")
-    .select("id, email_verified, verification_locked_until, verification_attempts")
+    .select("id,email_verified,verification_locked_until,verification_attempts")
     .eq("email", email)
     .maybeSingle();
 
@@ -363,7 +363,7 @@ export async function handleVerifyResend(
   // Look up profile
   const { data: profile, error: lookupError } = await supabase
     .from("profiles")
-    .select("id, email_verified, verification_locked_until")
+    .select("id,email_verified,verification_locked_until")
     .eq("email", email)
     .maybeSingle();
 

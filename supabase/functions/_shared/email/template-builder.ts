@@ -778,7 +778,7 @@ export function appReleaseTemplate(params: AppLiveParams): { subject: string; ht
   const platformName = platform === "iOS" ? "App Store" : "Google Play";
   const appStoreUrl = platform === "iOS"
     ? "https://apps.apple.com/us/app/foodshare-club/id1573242804"
-    : "https://play.google.com/store/apps/details?id=club.foodshare";
+    : "https://play.google.com/store/apps/details?id=com.flutterflow.foodshare";
 
   const features: BulletItem[] = [
     {

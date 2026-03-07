@@ -30,7 +30,7 @@ export async function checkRateLimit(
 ): Promise<boolean> {
   const { data, error } = await supabase
     .from("user_rate_limits")
-    .select("count, reset_at")
+    .select("count,reset_at")
     .eq("user_id", userId)
     .eq("key", RATE_LIMIT_KEY)
     .single();

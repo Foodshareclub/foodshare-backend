@@ -344,7 +344,7 @@ export async function handleTriggerNewReport(
   if (reporterId && context.supabase) {
     const { data } = await context.supabase
       .from("profiles")
-      .select("nickname, first_name, second_name, email")
+      .select("nickname,first_name,second_name,email")
       .eq("id", reporterId)
       .single();
     reporter = data;
@@ -359,7 +359,7 @@ export async function handleTriggerNewReport(
     if (record.post_id && context.supabase) {
       const { data } = await context.supabase
         .from("posts")
-        .select("id, post_name, post_type, post_address, post_description, is_active, images")
+        .select("id,post_name,post_type,post_address,post_description,is_active,images")
         .eq("id", record.post_id)
         .single();
       post = data;

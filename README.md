@@ -7,8 +7,7 @@ Shared Supabase backend for FoodShare cross-platform apps (Web, iOS, Android).
 ```
 foodshare-backend/
 ├── functions/            # Deno Edge Functions (40+)
-│   ├── _shared/          # Shared utilities
-│   ├── PLATFORM_GUIDE.md # Platform categorization
+│   ├── _shared/          # Shared utilities (Vault, logger, etc.)
 │   └── */                # Individual functions
 └── migrations/           # Database migrations
 ```
@@ -26,7 +25,7 @@ Changes here are instantly visible to all client apps.
 
 ## Edge Functions
 
-See `functions/PLATFORM_GUIDE.md` for platform categorization.
+The backend orchestrates 28 Edge Functions (25 API endpoints, 2 bots, and 1 main router).
 
 ```bash
 # Deploy all functions
@@ -53,5 +52,23 @@ supabase migration list             # View status
 
 ## Client Apps
 
-- **Web**: [foodshare](https://github.com/Foodshareclub/foodshare) - Next.js app
-- **iOS**: [foodshare-ios](https://github.com/Foodshareclub/foodshare-ios) - Swift app
+- **Web**: [foodshare](https://github.com/Foodsharecom.flutterflow.foodshare) - Next.js app
+- **iOS**: [foodshare-ios](https://github.com/Foodsharecom.flutterflow.foodshare-ios) - Swift app
+
+## VPS Access
+
+To access the self-hosted Supabase backend VPS:
+
+```bash
+autossh -M 0 -o ServerAliveInterval=6000 -o ServerAliveCountMax=6000 -o ConnectTimeout=10 -o ConnectionAttempts=6000 -i ~/.ssh/foodshare_id_ed25519 organic@backend.foodshare.club
+```
+
+## Secret Management
+
+Operational secrets (API keys, credentials) are stored in the **Supabase Vault** with a fallback to `.env.functions`.
+
+To access secrets in Edge Functions:
+```typescript
+import { getSecret } from "../_shared/vault.ts";
+const apiKey = await getSecret("MY_API_KEY");
+```
