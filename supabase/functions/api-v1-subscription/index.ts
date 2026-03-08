@@ -227,10 +227,10 @@ async function processDLQ(
     }
 
     const { count } = await supabase
+      .schema("billing")
       .from("subscription_events_dlq")
       .select("*", { count: "exact", head: true })
-      .is("resolved_at", null)
-      .schema("billing");
+      .is("resolved_at", null);
 
     const result = {
       processed: data?.processed || 0,
@@ -240,10 +240,10 @@ async function processDLQ(
 
     if (result.pending > 20) {
       const { data: breakdown } = await supabase
+        .schema("billing")
         .from("subscription_events_dlq")
         .select("platform")
-        .is("resolved_at", null)
-        .schema("billing");
+        .is("resolved_at", null);
 
       const platformCounts: Record<string, number> = {};
       breakdown?.forEach((row: { platform: string }) => {
@@ -341,24 +341,24 @@ async function sendHealthReport(
 
   try {
     const { data: health } = await supabase
+      .schema("billing")
       .from("subscription_health")
-      .select("*")
-      .schema("billing");
+      .select("*");
 
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
       .toISOString()
       .split("T")[0];
 
     const { data: metrics } = await supabase
+      .schema("billing")
       .from("subscription_metrics")
       .select("*")
-      .eq("metric_date", yesterday)
-      .schema("billing");
+      .eq("metric_date", yesterday);
 
     const { data: dlq } = await supabase
+      .schema("billing")
       .from("dlq_summary")
-      .select("*")
-      .schema("billing");
+      .select("*");
 
     await sendTelegramAlert(
       "low",

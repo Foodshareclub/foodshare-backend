@@ -413,9 +413,11 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
                 );
               }
               break;
-            case "/help":
-              await handleHelpCommand(chatId, message.from?.language_code);
+            case "/help": {
+              const { detectLanguage } = await import("./lib/i18n.ts");
+              await handleHelpCommand(chatId, detectLanguage(message.from?.language_code));
               break;
+            }
             case "/share":
               if (msgUserId && message.from) {
                 await handleShareCommand(
