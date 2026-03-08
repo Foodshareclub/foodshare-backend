@@ -77,7 +77,9 @@ services:
     
   caddy:
     container_name: supabase-caddy
-    image: caddy:2.7.6-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
     restart: unless-stopped
     ports:
       - "80:80"
@@ -89,6 +91,7 @@ services:
     environment:
       DASHBOARD_USERNAME: ${DASHBOARD_USERNAME}
       DASHBOARD_PASSWORD_HASH: ${DASHBOARD_PASSWORD_HASH}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_DNS_ZONE_TOKEN_ORGANIC}
     networks:
       - supabase-network
     logging: *id001
