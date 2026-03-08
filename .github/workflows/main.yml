@@ -498,7 +498,7 @@ jobs:
           GOTRUE_EXTERNAL_GOOGLE_SECRET: ${{ secrets.GOTRUE_EXTERNAL_GOOGLE_SECRET }}
           VPS_BACKUP_PRIVATE_KEY: ${{ secrets.VPS_BACKUP_PRIVATE_KEY }}
         with:
-          host: backend.foodshare.club
+          host: 130.61.82.143
           username: organic
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 8m
