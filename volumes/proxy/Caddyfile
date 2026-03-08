@@ -8,7 +8,7 @@ api.foodshare.club, backend.foodshare.club {
         dns cloudflare {env.CLOUDFLARE_API_TOKEN}
     }
     reverse_proxy kong:8000 {
-        header_up Host api.foodshare.club
+        header_up Host {host}
     }
 }
 
