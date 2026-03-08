@@ -547,7 +547,7 @@ jobs:
                 # Remove existing key if present
                 grep -v "^${key}=" .env > .env.tmp || true
                 # Append new key=value
-                echo "${key}=\"${val}\"" >> .env.tmp
+                echo "${key}=${val}" >> .env.tmp
                 mv .env.tmp .env
               }
 
