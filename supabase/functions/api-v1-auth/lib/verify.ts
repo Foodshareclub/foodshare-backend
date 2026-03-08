@@ -139,11 +139,18 @@ export async function handleVerifySend(
     return json({ success: false, error: "Internal error" }, corsHeaders, 500);
   }
 
-  if (!profile) {
+  const profileData = profile as {
+    id: string;
+    email_verified: boolean;
+    verification_locked_until: string | null;
+    verification_attempts: number;
+  } | null;
+
+  if (!profileData) {
     return json({ success: false, error: "No account found for this email" }, corsHeaders, 404);
   }
 
-  if (profile.email_verified) {
+  if (profileData.email_verified) {
     return json({ success: false, error: "Email is already verified" }, corsHeaders, 409);
   }
 
@@ -228,7 +235,15 @@ export async function handleVerifyConfirm(
     return json({ success: false, error: "Internal error" }, corsHeaders, 500);
   }
 
-  if (!profile) {
+  const profileData = profile as {
+    id: string;
+    verification_code: string | null;
+    verification_code_expires_at: string | null;
+    verification_attempts: number;
+    verification_locked_until: string | null;
+  } | null;
+
+  if (!profileData) {
     return json({ success: false, error: "No account found for this email" }, corsHeaders, 404);
   }
 
@@ -253,8 +268,8 @@ export async function handleVerifyConfirm(
 
   // Check code expiry
   if (
-    !profile.verification_code_expires_at ||
-    new Date(profile.verification_code_expires_at) < new Date()
+    !profileData.verification_code_expires_at ||
+    new Date(profileData.verification_code_expires_at) < new Date()
   ) {
     return json(
       { success: false, error: "Verification code has expired. Request a new one." },
@@ -264,8 +279,8 @@ export async function handleVerifyConfirm(
   }
 
   // Check code match
-  if (profile.verification_code !== body.code) {
-    const newAttempts = (profile.verification_attempts || 0) + 1;
+  if (profileData.verification_code !== body.code) {
+    const newAttempts = (profileData.verification_attempts || 0) + 1;
     const attemptsLeft = MAX_VERIFICATION_ATTEMPTS - newAttempts;
 
     if (newAttempts >= MAX_VERIFICATION_ATTEMPTS) {
@@ -277,10 +292,10 @@ export async function handleVerifyConfirm(
           verification_attempts: newAttempts,
           verification_locked_until: lockedUntil.toISOString(),
         })
-        .eq("id", profile.id);
+        .eq("id", profileData.id);
 
       logger.warn("Account locked due to failed verification attempts", {
-        profileId: profile.id,
+        profileId: profileData.id,
         attempts: newAttempts,
         requestId: ctx.requestId,
       });
@@ -300,7 +315,7 @@ export async function handleVerifyConfirm(
     await supabase
       .from("profiles")
       .update({ verification_attempts: newAttempts })
-      .eq("id", profile.id);
+      .eq("id", profileData.id);
 
     return json(
       {
@@ -323,14 +338,14 @@ export async function handleVerifyConfirm(
       verification_attempts: 0,
       verification_locked_until: null,
     })
-    .eq("id", profile.id);
+    .eq("id", profileData.id);
 
   if (verifyError) {
     logger.error("Error marking email verified", new Error(verifyError.message));
     return json({ success: false, error: "Internal error" }, corsHeaders, 500);
   }
 
-  logger.info("Email verified successfully", { profileId: profile.id, requestId: ctx.requestId });
+  logger.info("Email verified successfully", { profileId: profileData.id, requestId: ctx.requestId });
 
   return json({ success: true, message: "Email verified successfully" }, corsHeaders);
 }
@@ -372,17 +387,23 @@ export async function handleVerifyResend(
     return json({ success: false, error: "Internal error" }, corsHeaders, 500);
   }
 
-  if (!profile) {
+  const profileData = profile as {
+    id: string;
+    email_verified: boolean;
+    verification_locked_until: string | null;
+  } | null;
+
+  if (!profileData) {
     return json({ success: false, error: "No account found for this email" }, corsHeaders, 404);
   }
 
-  if (profile.email_verified) {
+  if (profileData.email_verified) {
     return json({ success: false, error: "Email is already verified" }, corsHeaders, 409);
   }
 
   // Check lockout
-  if (profile.verification_locked_until) {
-    const lockedUntil = new Date(profile.verification_locked_until);
+  if (profileData.verification_locked_until) {
+    const lockedUntil = new Date(profileData.verification_locked_until);
     if (lockedUntil > new Date()) {
       const remainingMs = lockedUntil.getTime() - Date.now();
       const remainingMinutes = Math.ceil(remainingMs / 60000);
@@ -390,7 +411,7 @@ export async function handleVerifyResend(
         {
           success: false,
           error: "Account temporarily locked",
-          lockedUntil: profile.verification_locked_until,
+          lockedUntil: profileData.verification_locked_until,
           remainingMinutes,
         },
         corsHeaders,
@@ -409,7 +430,7 @@ export async function handleVerifyResend(
       verification_code: code,
       verification_code_expires_at: expiresAt.toISOString(),
     })
-    .eq("id", profile.id);
+    .eq("id", profileData.id);
 
   if (updateError) {
     logger.error("Error storing verification code", new Error(updateError.message));

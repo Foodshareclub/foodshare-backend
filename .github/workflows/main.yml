@@ -248,11 +248,16 @@ jobs:
           EXIT_CODE=$?
           echo "$OUTPUT"
 
-          ERROR_COUNT=$(echo "$OUTPUT" | grep -c "^error\[" || echo "0")
+          ERROR_COUNT=$(echo "$OUTPUT" | grep -oE "Found [0-9]+ errors" | grep -oE "[0-9]+" || echo "0")
+          if [ -z "$ERROR_COUNT" ]; then
+            # Fallback if "Found N errors" is missing (Deno might not print it on single error)
+            ERROR_COUNT=$(echo "$OUTPUT" | grep -c "\[ERROR\]" || echo "0")
+          fi
+          
           echo "error-count=$ERROR_COUNT" >> "$GITHUB_OUTPUT"
           echo "exit-code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
 
-          BASELINE=324
+          BASELINE=174
           DELTA=$((ERROR_COUNT - BASELINE))
           echo "baseline=$BASELINE" >> "$GITHUB_OUTPUT"
           echo "delta=$DELTA" >> "$GITHUB_OUTPUT"

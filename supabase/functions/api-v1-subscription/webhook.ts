@@ -165,10 +165,10 @@ configureCircuit("subscription-db", {
       totalFailures: state.totalFailures,
     });
 
-    if (to === "OPEN" || to === "HALF_OPEN" || (to === "CLOSED" && from !== "CLOSED")) {
+    if (to === "open" || to === "half-open" || (to === "closed" && from !== "closed")) {
       sendCircuitBreakerAlert(
         service,
-        to as "OPEN" | "HALF_OPEN" | "CLOSED",
+        to as "open" | "half-open" | "closed",
         state.failures,
       ).catch((err) => {
         logger.warn("Failed to send circuit breaker alert", {

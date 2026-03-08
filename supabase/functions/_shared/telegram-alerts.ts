@@ -217,10 +217,10 @@ export async function sendSubscriptionAlert(
  */
 export async function sendCircuitBreakerAlert(
   serviceName: string,
-  state: "OPEN" | "HALF_OPEN" | "CLOSED",
+  state: "open" | "half-open" | "closed",
   failures: number,
 ): Promise<boolean> {
-  if (state === "CLOSED") {
+  if (state === "closed") {
     return sendTelegramAlert(
       "low",
       "Circuit Breaker Recovered",
@@ -234,13 +234,13 @@ export async function sendCircuitBreakerAlert(
   }
 
   return sendTelegramAlert(
-    state === "OPEN" ? "critical" : "high",
-    `Circuit Breaker ${state}`,
+    state === "open" ? "critical" : "high",
+    `Circuit Breaker ${state.toUpperCase()}`,
     {
       Service: serviceName,
       State: state,
       Failures: failures,
-      Action: state === "OPEN" ? "All requests blocked" : "Testing recovery",
+      Action: state === "open" ? "All requests blocked" : "Testing recovery",
     },
     { throttleKey: `circuit:${serviceName}:${state}` },
   );

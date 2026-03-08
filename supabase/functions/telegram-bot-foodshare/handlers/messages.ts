@@ -30,8 +30,6 @@ import { handleEmailInput, handleVerificationCode } from "./auth.ts";
 
 // Actions that require authorization
 const PROTECTED_ACTIONS = new Set(["share", "nearby", "profile", "impact", "stats", "language"]);
-// Public actions that don't require auth (kept for documentation)
-const _PUBLIC_ACTIONS = new Set(["find", "help", "leaderboard"]);
 
 /**
  * Check if user is authorized (has verified email)
@@ -147,8 +145,10 @@ export async function handleTextMessage(message: TelegramMessage): Promise<void>
         return handleImpactCommand(chatId, userId);
       case "stats":
         return handleStatsCommand(chatId, userId, message.from?.language_code);
-      case "help":
-        return handleHelpCommand(chatId, message.from?.language_code);
+      case "help": {
+        const { detectLanguage } = await import("../lib/i18n.ts");
+        return handleHelpCommand(chatId, detectLanguage(message.from?.language_code));
+      }
       case "language":
         return handleLanguageCommand(chatId, userId);
       case "leaderboard":
