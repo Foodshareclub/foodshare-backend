@@ -538,11 +538,13 @@ jobs:
                 local key=$1
                 local val=$2
                 if [ -z "$val" ]; then return; fi
-                if grep -iq "^${key}=" .env; then
-                  sed -i "s|^${key}=.*|${key}=${val}|" .env
-                else
-                  echo "${key}=${val}" >> .env
-                fi
+                # Use a temporary file and safer update logic
+                touch .env
+                # Remove existing key if present
+                grep -v "^${key}=" .env > .env.tmp || true
+                # Append new key=value
+                echo "${key}=${val}" >> .env.tmp
+                mv .env.tmp .env
               }
 
               upsert_env "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
@@ -563,10 +565,14 @@ jobs:
               fi
               
               if [ -n "$GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID" ]; then
+                log "Enabling Google Auth provider..."
                 upsert_env "GOTRUE_EXTERNAL_GOOGLE_ENABLED" "true"
                 upsert_env "GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID" "$GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID"
                 upsert_env "GOTRUE_EXTERNAL_GOOGLE_SECRET" "$GOTRUE_EXTERNAL_GOOGLE_SECRET"
                 upsert_env "GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI" "https://api.foodshare.club/auth/v1/callback"
+                upsert_env "GOTRUE_EXTERNAL_GOOGLE_SKIP_NONCE_CHECK" "true"
+                # Force restart of config-dependent services
+                CONFIG_CHANGED="true"
               fi
             fi
 

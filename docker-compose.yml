@@ -165,6 +165,8 @@ services:
         condition: service_healthy
       analytics:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: 9999

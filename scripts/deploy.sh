@@ -408,13 +408,16 @@ do_restart() {
       fi
       if echo "$CHANGED" | grep -qE '(docker-compose\.yml|\.env\.example|volumes/)'; then
         log "Infrastructure changed — full restart"
-        docker compose up -d
+        docker compose up -d --force-recreate
       elif echo "$CHANGED" | grep -qE 'supabase/functions/'; then
         log "Functions changed — restarting functions"
         docker compose restart functions
       elif echo "$CHANGED" | grep -qE 'supabase/migrations/'; then
         log "Migrations only — restarting PostgREST"
         docker compose restart rest
+      elif echo "$CHANGED" | grep -qE '\.env'; then
+        log "Environment variables changed — restarting auth and functions"
+        docker compose up -d --force-recreate auth functions
       else
         log "Config/docs only — no restart needed"
       fi
