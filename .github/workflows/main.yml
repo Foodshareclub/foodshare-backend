@@ -565,7 +565,7 @@ jobs:
               fi
               
               if [ -n "$GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID" ]; then
-                log "Enabling Google Auth provider..."
+                echo "Enabling Google Auth provider..."
                 upsert_env "GOTRUE_EXTERNAL_GOOGLE_ENABLED" "true"
                 upsert_env "GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID" "$GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID"
                 upsert_env "GOTRUE_EXTERNAL_GOOGLE_SECRET" "$GOTRUE_EXTERNAL_GOOGLE_SECRET"
