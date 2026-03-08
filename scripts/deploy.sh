@@ -396,6 +396,10 @@ do_restart() {
       log "Restarting edge functions"
       docker compose restart functions
       ;;
+    config)
+      log "Configuration changed — recreating auth and functions"
+      docker compose up -d --force-recreate auth functions
+      ;;
     rest)
       log "Restarting PostgREST (schema cache refresh)"
       docker compose restart rest
