@@ -155,8 +155,8 @@ export async function handleVerifySend(
   }
 
   // Check lockout
-  if (profile.verification_locked_until) {
-    const lockedUntil = new Date(profile.verification_locked_until);
+  if (profileData.verification_locked_until) {
+    const lockedUntil = new Date(profileData.verification_locked_until);
     if (lockedUntil > new Date()) {
       const remainingMs = lockedUntil.getTime() - Date.now();
       const remainingMinutes = Math.ceil(remainingMs / 60000);
@@ -164,7 +164,7 @@ export async function handleVerifySend(
         {
           success: false,
           error: "Account temporarily locked due to too many failed attempts",
-          lockedUntil: profile.verification_locked_until,
+          lockedUntil: profileData.verification_locked_until,
           remainingMinutes,
         },
         corsHeaders,
@@ -185,7 +185,7 @@ export async function handleVerifySend(
       verification_attempts: 0,
       verification_locked_until: null,
     })
-    .eq("id", profile.id);
+    .eq("id", profileData.id);
 
   if (updateError) {
     logger.error("Error storing verification code", new Error(updateError.message));
@@ -248,8 +248,8 @@ export async function handleVerifyConfirm(
   }
 
   // Check lockout
-  if (profile.verification_locked_until) {
-    const lockedUntil = new Date(profile.verification_locked_until);
+  if (profileData.verification_locked_until) {
+    const lockedUntil = new Date(profileData.verification_locked_until);
     if (lockedUntil > new Date()) {
       const remainingMs = lockedUntil.getTime() - Date.now();
       const remainingMinutes = Math.ceil(remainingMs / 60000);
@@ -257,7 +257,7 @@ export async function handleVerifyConfirm(
         {
           success: false,
           error: "Account temporarily locked due to too many failed attempts",
-          lockedUntil: profile.verification_locked_until,
+          lockedUntil: profileData.verification_locked_until,
           remainingMinutes,
         },
         corsHeaders,
@@ -345,7 +345,10 @@ export async function handleVerifyConfirm(
     return json({ success: false, error: "Internal error" }, corsHeaders, 500);
   }
 
-  logger.info("Email verified successfully", { profileId: profileData.id, requestId: ctx.requestId });
+  logger.info("Email verified successfully", {
+    profileId: profileData.id,
+    requestId: ctx.requestId,
+  });
 
   return json({ success: true, message: "Email verified successfully" }, corsHeaders);
 }
