@@ -72,3 +72,4 @@ To access secrets in Edge Functions:
 import { getSecret } from "../_shared/vault.ts";
 const apiKey = await getSecret("MY_API_KEY");
 ```
+# Google OAuth configured - Sun Mar  8 18:10:24 PDT 2026
