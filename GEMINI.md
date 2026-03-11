@@ -147,6 +147,8 @@ gh run watch <run-id>             # Live-stream a running deploy
 
 The CI/CD pipeline runs: detect changes → test → security scan → validate migrations → lint → deploy gate → deploy to VPS → dry-run summary. Never SSH into the VPS to deploy manually — always push to `main` and let CI/CD handle it.
 
+**OAuth Secrets**: All OAuth provider configurations (`GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID`, `GOTRUE_EXTERNAL_APPLE_CLIENT_ID`, etc.) must be set via GitHub Actions Secrets on this repository. The CI/CD pipeline automatically injects them into the VPS `.env` file during deployment. Do not manually edit the `.env` file on the VPS for these.
+
 ```bash
 # Manual VPS access (debugging only, not for deploying)
 autossh -M 0 -o ServerAliveInterval=6000 -o ServerAliveCountMax=6000 -o ConnectTimeout=10 -o ConnectionAttempts=6000 -i ~/.ssh/foodshare_id_ed25519 organic@backend.foodshare.club
