@@ -573,7 +573,7 @@ jobs:
                 # Remove existing key if present (handles simple key=value only)
                 grep -v "^${key}=" .env > .env.tmp || true
                 # Append new key=value safely
-                printf "%s=%s\n" "$key" "$val" >> .env.tmp
+                printf "%s=\"%s\"\n" "$key" "$val" >> .env.tmp
                 mv .env.tmp .env
               }
 
