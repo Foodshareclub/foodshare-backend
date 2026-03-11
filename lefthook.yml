@@ -1,0 +1,19 @@
+# Lefthook Configuration for FoodShare Backend
+# Fast, intelligent git hooks powered by lefthook-rs
+
+pre-commit:
+  parallel: false
+  commands:
+    secrets-check:
+      priority: 1
+      run: |
+        REPO_ROOT="$(git rev-parse --show-toplevel)"
+        HOOKS_BIN="${FOODSHARE_HOOKS_BIN:-$REPO_ROOT/../foodshare-tools/target/release/lefthook-rs}"
+        if [ ! -f "$HOOKS_BIN" ]; then
+          HOOKS_BIN="${FOODSHARE_HOOKS_BIN:-$REPO_ROOT/../foodshare-tools/target/debug/lefthook-rs}"
+        fi
+        if [ -f "$HOOKS_BIN" ]; then
+          "$HOOKS_BIN" security {staged_files}
+        else
+          echo "lefthook-rs not found, skipping security check. Run 'cargo build --release' in foodshare-tools"
+        fi
