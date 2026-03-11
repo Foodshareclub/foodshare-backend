@@ -1,75 +1,77 @@
 # FoodShare Backend
 
-Shared Supabase backend for FoodShare cross-platform apps (Web, iOS, Android).
+Self-hosted Supabase backend (Docker Compose + Deno Edge Functions + PostgreSQL) serving the unified cross-platform FoodShare app (Web, iOS, Android).
 
 ## Structure
 
 ```
 foodshare-backend/
-├── functions/            # Deno Edge Functions (40+)
-│   ├── _shared/          # Shared utilities (Vault, logger, etc.)
-│   └── */                # Individual functions
-└── migrations/           # Database migrations
+├── .github/
+│   ├── actions/              # Reusable composite actions
+│   └── workflows/
+│       └── backend.yml       # CI/CD pipeline
+├── docker-compose.yml        # 14 Docker services
+├── Dockerfile.caddy          # Custom Caddy with Cloudflare DNS
+├── scripts/
+│   ├── deploy.sh             # Main deployment script
+│   ├── deploy-functions-zero-downtime.sh
+│   ├── backup-to-r2.ts       # R2 backup utility
+│   └── new-migration.sh      # Migration scaffolding
+├── supabase/
+│   ├── config.toml           # Function config (JWT exceptions)
+│   ├── seed.sql              # Email template seed data
+│   ├── migrations/           # PostgreSQL migrations (16)
+│   └── functions/            # Deno Edge Functions (28)
+│       ├── _shared/          # Shared utilities (singletons)
+│       ├── __tests__/        # Test suite
+│       ├── main/             # Edge-runtime router
+│       ├── api-v1-* (25)     # REST API endpoints
+│       ├── telegram-bot-foodshare/
+│       └── whatsapp-bot-foodshare/
+└── volumes/                  # Docker volume configs
+    ├── api/ (kong.yml)
+    ├── db/ (init scripts)
+    ├── logs/ (vector.yml)
+    └── pooler/ (pooler.exs)
 ```
 
-## Usage
+## Self-Hosted Supabase
 
-This repository is the source of truth. Client apps link to it via symlinks:
-
-```bash
-# From foodshare (web) or foodshare-ios directory:
-ln -s ../foodshare-backend supabase
-```
-
-Changes here are instantly visible to all client apps.
-
-## Edge Functions
-
-The backend orchestrates 28 Edge Functions (25 API endpoints, 2 bots, and 1 main router).
-
-```bash
-# Deploy all functions
-supabase functions deploy
-
-# Deploy specific function
-supabase functions deploy email
-```
-
-## Local Development
-
-```bash
-supabase start            # Start local Supabase
-supabase functions serve  # Serve functions locally
-```
-
-## Migrations
-
-```bash
-supabase db push                    # Apply migrations
-supabase migration new <name>       # Create migration
-supabase migration list             # View status
-```
+- **Studio**: https://studio.foodshare.club
+- **API**: https://api.foodshare.club
+- **VPS**: backend.foodshare.club (ARM64, 8GB RAM)
 
 ## Client Apps
 
-- **Web**: [foodshare](https://github.com/Foodsharecom.flutterflow.foodshare) - Next.js app
-- **iOS**: [foodshare-ios](https://github.com/Foodsharecom.flutterflow.foodshare-ios) - Swift app
+This repository is the source of truth for database schema and Edge Functions. Client apps link via symlinks:
 
-## VPS Access
+- **Web**: [`foodshare-web`](https://github.com/Foodshareclub/foodshare-web) — Next.js 16 (symlinks `supabase/` → `../foodshare-backend/supabase/`)
+- **Mobile**: [`foodshare-app`](https://github.com/Foodshareclub/foodshare-app) — Skip Fuse cross-platform (iOS + Android)
 
-To access the self-hosted Supabase backend VPS:
+## Deployment
+
+All deployments go through GitHub Actions CI/CD. Never SSH to deploy manually.
 
 ```bash
-autossh -M 0 -o ServerAliveInterval=6000 -o ServerAliveCountMax=6000 -o ConnectTimeout=10 -o ConnectionAttempts=6000 -i ~/.ssh/foodshare_id_ed25519 organic@backend.foodshare.club
+# Check latest CI/CD run status
+gh run list --limit 3
+gh run view <run-id>
+gh run view <run-id> --log-failed
 ```
 
 ## Secret Management
 
-Operational secrets (API keys, credentials) are stored in the **Supabase Vault** with a fallback to `.env.functions`.
+Operational secrets are stored in **Supabase Vault** with fallback to `.env.functions`.
 
-To access secrets in Edge Functions:
 ```typescript
 import { getSecret } from "../_shared/vault.ts";
 const apiKey = await getSecret("MY_API_KEY");
 ```
-# Google OAuth configured - Sun Mar  8 18:10:24 PDT 2026
+
+## VPS Access (debugging only)
+
+```bash
+autossh -M 0 -o ServerAliveInterval=6000 -o ServerAliveCountMax=6000 \
+  -o ConnectTimeout=10 -o ConnectionAttempts=6000 \
+  -i ~/.ssh/foodshare_id_ed25519 organic@backend.foodshare.club
+```

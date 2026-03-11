@@ -77,7 +77,7 @@ Kong is the single entrypoint. Cloudflare tunnel routes to port 54321. Dashboard
 5. **Singleton Supabase client** -- Use `getSupabaseClient()` from `_shared/supabase.ts`. Never create multiple clients per request. Connection pooling is automatic.
 6. **Create indexes CONCURRENTLY** -- Always `CREATE INDEX CONCURRENTLY` to avoid blocking production queries.
 7. **RLS on all tables** -- No exceptions. Use service role client only for admin operations.
-8. **Changes affect ALL platforms** -- `foodshare-web/supabase` and `foodshare-ios/supabase` symlink to `supabase/`. Every change instantly affects Web, iOS, and Android.
+8. **Changes affect ALL platforms** -- `foodshare-web/supabase` and `foodshare-app/supabase` symlink to `supabase/`. Every change instantly affects Web, iOS, and Android.
 9. **Always return 200 from webhooks** -- Even on errors, to prevent retry storms from Telegram/WhatsApp/Meta.
 10. **Secret Management** -- Use Supabase Vault via `getSecret` from `_shared/vault.ts`. It provides encrypted storage with automatic caching and fallbacks to `.env.functions`.
 11. **No deno.lock** -- Do not commit `deno.lock`. Edge-runtime v1.70.1 resolves dependencies fresh to prevent cold start hangs or boot errors.
