@@ -4,11 +4,6 @@
 -- Internal API: http://kong:8000 (Docker network)
 -- ============================================================================
 
--- Anon key for self-hosted
-\set anon_key '***REMOVED***'
--- Service role key for self-hosted
-\set service_key '***REMOVED***'
-
 -- ============================================================================
 -- Translation backfill jobs
 -- ============================================================================
@@ -16,7 +11,7 @@
 SELECT cron.schedule('backfill-challenge-translations', '0 3 * * *', $$
   SELECT net.http_post(
     url := 'http://kong:8000/functions/v1/api-v1-localization/backfill-challenges',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer ***REMOVED***"}'::jsonb,
+    headers := '{"Content-Type": "application/json", "x-supabase-cron": "true"}'::jsonb,
     body := '{"mode": "incremental", "limit": 100, "hoursBack": 168, "source": "cron"}'::jsonb,
     timeout_milliseconds := 60000
   ) AS request_id;
@@ -25,7 +20,7 @@ $$);
 SELECT cron.schedule('backfill-forum-post-translations', '0 4 * * *', $$
   SELECT net.http_post(
     url := 'http://kong:8000/functions/v1/api-v1-localization/backfill-forum-posts',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer ***REMOVED***"}'::jsonb,
+    headers := '{"Content-Type": "application/json", "x-supabase-cron": "true"}'::jsonb,
     body := '{"mode": "incremental", "limit": 100, "hoursBack": 48, "source": "cron"}'::jsonb,
     timeout_milliseconds := 60000
   ) AS request_id;
@@ -34,7 +29,7 @@ $$);
 SELECT cron.schedule('backfill-post-translations', '0 * * * *', $$
   SELECT net.http_post(
     url := 'http://kong:8000/functions/v1/api-v1-localization/backfill-posts',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer ***REMOVED***"}'::jsonb,
+    headers := '{"Content-Type": "application/json", "x-supabase-cron": "true"}'::jsonb,
     body := '{"mode": "incremental", "limit": 50, "hoursBack": 24, "source": "cron"}'::jsonb,
     timeout_milliseconds := 60000
   ) AS request_id;
@@ -43,7 +38,7 @@ $$);
 SELECT cron.schedule('backfill-untranslated-challenges', '0 */6 * * *', $$
   SELECT net.http_post(
     url := 'http://kong:8000/functions/v1/api-v1-localization/backfill-challenges',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer ***REMOVED***"}'::jsonb,
+    headers := '{"Content-Type": "application/json", "x-supabase-cron": "true"}'::jsonb,
     body := '{"mode": "full", "limit": 50, "onlyUntranslated": true, "source": "cron"}'::jsonb,
     timeout_milliseconds := 120000
   ) AS request_id;
@@ -52,7 +47,7 @@ $$);
 SELECT cron.schedule('backfill-untranslated-forum-posts', '30 */6 * * *', $$
   SELECT net.http_post(
     url := 'http://kong:8000/functions/v1/api-v1-localization/backfill-forum-posts',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer ***REMOVED***"}'::jsonb,
+    headers := '{"Content-Type": "application/json", "x-supabase-cron": "true"}'::jsonb,
     body := '{"mode": "full", "limit": 50, "onlyUntranslated": true, "source": "cron"}'::jsonb,
     timeout_milliseconds := 120000
   ) AS request_id;
@@ -61,7 +56,7 @@ $$);
 SELECT cron.schedule('backfill-untranslated-posts', '30 */2 * * *', $$
   SELECT net.http_post(
     url := 'http://kong:8000/functions/v1/api-v1-localization/backfill-posts',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer ***REMOVED***"}'::jsonb,
+    headers := '{"Content-Type": "application/json", "x-supabase-cron": "true"}'::jsonb,
     body := '{"mode": "full", "limit": 100, "onlyUntranslated": true, "source": "cron"}'::jsonb,
     timeout_milliseconds := 120000
   ) AS request_id;
@@ -83,7 +78,7 @@ SELECT cron.schedule('cleanup-translation-job-history', '0 5 * * *', $$DELETE FR
 SELECT cron.schedule('cleanup-orphan-images', '0 3 * * *', $$
   SELECT net.http_post(
     url := 'http://kong:8000/functions/v1/api-v1-images/cleanup',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer ***REMOVED***"}'::jsonb,
+    headers := '{"Content-Type": "application/json", "x-supabase-cron": "true"}'::jsonb,
     body := '{"gracePeriodHours": 24, "batchSize": 100, "dryRun": false}'::jsonb
   );
 $$);
@@ -93,7 +88,7 @@ SELECT cron.schedule('compress-large-images', '* * * * *', 'SELECT invoke_image_
 SELECT cron.schedule('recompress-old-images', '0 4 * * *', $$
   SELECT net.http_post(
     url := 'http://kong:8000/functions/v1/api-v1-images/recompress',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer ***REMOVED***"}'::jsonb,
+    headers := '{"Content-Type": "application/json", "x-supabase-cron": "true"}'::jsonb,
     body := '{}'::jsonb
   );
 $$);
@@ -209,8 +204,8 @@ SELECT cron.schedule('notification-digest-weekly', '0 9 * * 1', $$SELECT trigger
 
 SELECT cron.schedule('process-automation-queue', '*/5 * * * *', $$
   SELECT net.http_post(
-    url := 'http://kong:8000/functions/v1/api-v1-admin/process-automation-queue',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer ***REMOVED***"}'::jsonb,
+    url := 'http://kong:8000/functions/v1/api-v1-email/process/automation',
+    headers := '{"Content-Type": "application/json", "x-supabase-cron": "true"}'::jsonb,
     body := jsonb_build_object('triggered_at', NOW(), 'source', 'cron'),
     timeout_milliseconds := 30000
   ) AS request_id;
@@ -219,7 +214,7 @@ $$);
 SELECT cron.schedule('process-translation-queue', '* * * * *', $$
   SELECT net.http_post(
     url := 'http://kong:8000/functions/v1/api-v1-localization/process-queue',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer ***REMOVED***"}'::jsonb,
+    headers := '{"Content-Type": "application/json", "x-supabase-cron": "true"}'::jsonb,
     body := '{"limit": 20}'::jsonb,
     timeout_milliseconds := 120000
   ) AS request_id;
