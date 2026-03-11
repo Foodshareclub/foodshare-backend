@@ -585,6 +585,12 @@ jobs:
               fi
             fi
 
+            # Prevent empty SSH environment variables from overriding the .env file during docker compose
+            unset POSTGRES_PASSWORD JWT_SECRET ANON_KEY SERVICE_ROLE_KEY
+            unset GOTRUE_EXTERNAL_APPLE_CLIENT_ID GOTRUE_EXTERNAL_APPLE_SECRET
+            unset GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID GOTRUE_EXTERNAL_FACEBOOK_SECRET
+            unset GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID GOTRUE_EXTERNAL_GOOGLE_SECRET
+
             # ── Stage 1: Backup ──
             if [ "$SKIP_BACKUP" != "true" ]; then
               echo "=== Stage: backup ==="
