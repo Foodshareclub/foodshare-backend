@@ -1,6 +1,9 @@
 # Lefthook Configuration for FoodShare Backend
 # Fast, intelligent git hooks powered by lefthook-rs
 
+# ============================================================================
+# PRE-COMMIT: Fast checks for security and quality
+# ============================================================================
 pre-commit:
   parallel: false
   commands:
@@ -16,4 +19,80 @@ pre-commit:
           "$HOOKS_BIN" security {staged_files}
         else
           echo "lefthook-rs not found, skipping security check. Run 'cargo build --release' in foodshare-tools"
+        fi
+
+    lint:
+      priority: 2
+      glob: "supabase/functions/**/*.ts"
+      run: deno lint {staged_files}
+
+    format:
+      priority: 3
+      glob: "supabase/functions/**/*.ts"
+      run: deno fmt {staged_files}
+      stage_fixed: true
+
+# ============================================================================
+# COMMIT-MSG: Validates commit message format
+# ============================================================================
+commit-msg:
+  commands:
+    conventional-commits:
+      run: |
+        REPO_ROOT="$(git rev-parse --show-toplevel)"
+        HOOKS_BIN="${FOODSHARE_HOOKS_BIN:-$REPO_ROOT/../foodshare-tools/target/release/lefthook-rs}"
+        if [ ! -f "$HOOKS_BIN" ]; then
+          HOOKS_BIN="${FOODSHARE_HOOKS_BIN:-$REPO_ROOT/../foodshare-tools/target/debug/lefthook-rs}"
+        fi
+        if [ -f "$HOOKS_BIN" ]; then
+          "$HOOKS_BIN" conventional-commit {1}
+        fi
+
+# ============================================================================
+# PRE-PUSH: Comprehensive checks before push
+# ============================================================================
+pre-push:
+  parallel: false
+  commands:
+    protected-branch:
+      priority: 1
+      run: |
+        REPO_ROOT="$(git rev-parse --show-toplevel)"
+        HOOKS_BIN="${FOODSHARE_HOOKS_BIN:-$REPO_ROOT/../foodshare-tools/target/release/lefthook-rs}"
+        if [ ! -f "$HOOKS_BIN" ]; then
+          HOOKS_BIN="${FOODSHARE_HOOKS_BIN:-$REPO_ROOT/../foodshare-tools/target/debug/lefthook-rs}"
+        fi
+        if [ -f "$HOOKS_BIN" ]; then
+          "$HOOKS_BIN" protected-branch
+        fi
+
+    large-files:
+      priority: 2
+      run: |
+        REPO_ROOT="$(git rev-parse --show-toplevel)"
+        HOOKS_BIN="${FOODSHARE_HOOKS_BIN:-$REPO_ROOT/../foodshare-tools/target/release/lefthook-rs}"
+        if [ ! -f "$HOOKS_BIN" ]; then
+          HOOKS_BIN="${FOODSHARE_HOOKS_BIN:-$REPO_ROOT/../foodshare-tools/target/debug/lefthook-rs}"
+        fi
+        if [ -f "$HOOKS_BIN" ]; then
+          "$HOOKS_BIN" large-files --max-size 1024
+        fi
+
+# ============================================================================
+# MAINTENANCE: Auto-maintenance after checkout or merge
+# ============================================================================
+post-checkout:
+  commands:
+    env-check:
+      run: |
+        if git diff --name-only {1} {2} 2>/dev/null | grep -qE "^\.env"; then
+          echo "⚠️  Environment files may have changed, please review .env and .env.functions"
+        fi
+
+post-merge:
+  commands:
+    env-check:
+      run: |
+        if git diff-tree -r --name-only --no-commit-id HEAD@{1} HEAD | grep -qE "^\.env"; then
+          echo "⚠️  Environment files changed, please review .env and .env.functions"
         fi
