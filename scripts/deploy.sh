@@ -262,6 +262,13 @@ EOF
     # Escape single quotes and backslashes for SQL
     ESCAPED_VALUE=$(echo "$VALUE" | sed "s/\\\\/\\\\\\\\/g; s/'/''/g")
     
+    # Skip multiline values that could break the line-by-line parser
+    # Valid secrets are usually alphanumeric or base64 without newlines
+    if [[ "$VALUE" == *$'\n'* ]]; then
+      log "INFO: Skipping multiline secret $KEY (not supported in simple Vault sync)"
+      continue
+    fi
+    
     cat >> "$script_file" <<EOF
   SELECT id INTO secret_id FROM vault.secrets WHERE name = '$KEY';
   IF secret_id IS NULL THEN

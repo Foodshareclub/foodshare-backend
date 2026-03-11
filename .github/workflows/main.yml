@@ -66,6 +66,10 @@ jobs:
         working-directory: supabase/functions
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - uses: ./.github/actions/setup-deno
 
       - name: deno lint
@@ -94,6 +98,10 @@ jobs:
         working-directory: supabase/functions
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - uses: ./.github/actions/setup-deno
 
       - name: deno test
@@ -239,6 +247,10 @@ jobs:
         working-directory: supabase/functions
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - uses: ./.github/actions/setup-deno
 
       - name: deno check
@@ -293,6 +305,10 @@ jobs:
         working-directory: supabase/functions
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - uses: ./.github/actions/setup-deno
 
       - name: Validate changed functions
@@ -548,16 +564,16 @@ jobs:
               echo "=== Updating .env with secrets ==="
               
               # Function to safely update or append env variables
+              # Supports multiline values via printf
               upsert_env() {
                 local key=$1
                 local val=$2
                 if [ -z "$val" ]; then return; fi
-                # Use a temporary file and safer update logic
                 touch .env
-                # Remove existing key if present
+                # Remove existing key if present (handles simple key=value only)
                 grep -v "^${key}=" .env > .env.tmp || true
-                # Append new key=value
-                echo "${key}=${val}" >> .env.tmp
+                # Append new key=value safely
+                printf "%s=%s\n" "$key" "$val" >> .env.tmp
                 mv .env.tmp .env
               }
 
