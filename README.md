@@ -1,5 +1,7 @@
 # FoodShare Backend
 
+[![CI/CD](https://github.com/Foodshareclub/foodshare-backend/actions/workflows/backend.yml/badge.svg)](https://github.com/Foodshareclub/foodshare-backend/actions/workflows/backend.yml)
+
 Self-hosted Supabase backend (Docker Compose + Deno Edge Functions + PostgreSQL) serving the unified cross-platform FoodShare app (Web, iOS, Android).
 
 ## Structure
