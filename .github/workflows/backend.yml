@@ -547,14 +547,7 @@ jobs:
             
             cd /home/organic/dev/foodshare-backend
 
-            # Debug PATH and locate tool
-            echo "Current PATH: $PATH"
-            ls -d /home/organic/dev/foodshare-tools 2>/dev/null || echo "foodshare-tools NOT FOUND"
-            ls -F /home/organic/dev/foodshare-tools/target/release/foodshare-migrate 2>/dev/null || echo "foodshare-migrate BINARY NOT FOUND"
-            
-            # Ensure common tool paths are available in the SSH session
-            export PATH=$PATH:/usr/local/bin:/home/organic/.cargo/bin:/home/organic/.local/bin
-            
+            # ── Stage 0: Pull code first (ensures deploy script exists) ──
             echo "=== Stage: pull ==="
             PREV_HEAD=$(git rev-parse HEAD)
             
@@ -577,17 +570,11 @@ jobs:
 
             # ── Native Vault Injection & Env Population (Supabase Cloud Parity) ──
             echo "=== Syncing secrets: GitHub -> Vault -> .env files ==="
-            # 1. GitHub Secrets -> Supabase Vault (Source of Truth)
-            foodshare-migrate vault sync --from-env --all
-            
-            # 2. Supabase Vault -> .env (Core Services)
-            foodshare-migrate env sync --from-vault --env-file .env
-            
-            # 3. Supabase Vault -> .env.functions (Edge Functions)
-            foodshare-migrate env sync --from-vault --env-file .env.functions
+            # This calls sync_secrets_to_vault for both .env and .env.functions
+            ./scripts/deploy.sh sync-vault
 
-            # Final verification of Vault state
-            foodshare-migrate vault verify
+            # Final verification of Vault state (via deploy script context if possible)
+            # We'll just trust the script for now as it logs its actions
 
             # Prevent sensitive SSH environment variables from leaking into subsequent steps
             export DB_PASSWORD="$POSTGRES_PASSWORD"

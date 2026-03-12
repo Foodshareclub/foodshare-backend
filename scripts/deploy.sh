@@ -578,31 +578,41 @@ do_status() {
   fi
 }
 
+# ── Stage: sync-vault ──────────────────────────────────────────────────
+
+do_sync_vault() {
+  require_dir
+  sync_secrets_to_vault ".env"
+  sync_secrets_to_vault ".env.functions"
+}
+
 # ── Main ────────────────────────────────────────────────────────────────
 
 STAGE="${1:-}"
 shift 2>/dev/null || true
 
 case "$STAGE" in
-  backup)   do_backup "$@" ;;
-  pull)     do_pull "$@" ;;
-  detect)   require_dir; state_init "detect" ;;
-  migrate)  do_migrate "$@" ;;
-  restart)  do_restart "$@" ;;
-  smoke)    do_smoke "$@" ;;
-  rollback) do_rollback "$@" ;;
-  status)   do_status "$@" ;;
+  backup)     do_backup "$@" ;;
+  pull)       do_pull "$@" ;;
+  sync-vault) do_sync_vault "$@" ;;
+  detect)     require_dir; state_init "detect" ;;
+  migrate)    do_migrate "$@" ;;
+  restart)    do_restart "$@" ;;
+  smoke)      do_smoke "$@" ;;
+  rollback)   do_rollback "$@" ;;
+  status)     do_status "$@" ;;
   *)
     echo "Usage: $0 <stage> [options]"
     echo ""
     echo "Stages:"
-    echo "  backup    Pre-deploy backup (DB + secrets + git state)"
-    echo "  pull      Pull latest code (git pull --ff-only)"
-    echo "  migrate   Apply pending database migrations"
-    echo "  restart   Restart services (full|functions|rest|detect)"
-    echo "  smoke     Run smoke tests"
-    echo "  rollback  Rollback to previous state"
-    echo "  status    Show service status and deploy state"
+    echo "  backup      Pre-deploy backup (DB + secrets + git state)"
+    echo "  pull        Pull latest code (git pull --ff-only)"
+    echo "  sync-vault  Bidirectional sync between .env files and Vault"
+    echo "  migrate     Apply pending database migrations"
+    echo "  restart     Restart services (full|functions|rest|detect)"
+    echo "  smoke       Run smoke tests"
+    echo "  rollback    Rollback to previous state"
+    echo "  status      Show service status and deploy state"
     exit 1
     ;;
 esac
