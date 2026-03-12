@@ -240,7 +240,7 @@ sync_secrets_to_vault() {
   log "Syncing secrets from $env_file to Supabase Vault..."
   
   if command -v foodshare-migrate >/dev/null 2>&1; then
-    if foodshare-migrate vault sync --env-file "$env_file" --container "$DB_CONTAINER" --db-user "$DB_USER"; then
+    if foodshare-migrate vault sync --all --env-file "$env_file" --container "$DB_CONTAINER" --db-user "$DB_USER"; then
       log "Vault sync complete (via foodshare-migrate)"
     else
       err "Vault sync FAILED (via foodshare-migrate)"

@@ -568,52 +568,31 @@ jobs:
               sed -i 's/\([^[:space:]]\)POSTGRES_PASSWORD=/\1\nPOSTGRES_PASSWORD=/g' .env 2>/dev/null || true
             fi
 
-            # ── Update .env with secrets from GitHub Actions ──
+            # ── Update .env with bootstrapping secrets ──
             if [ -f .env ]; then
-              echo "=== Updating .env with secrets ==="
+              echo "=== Updating .env with bootstrapping secrets ==="
               
-              upsert_env() {
-                local key=$1
-                local val=$2
-                local file=${3:-.env}
-                if [ -z "$val" ]; then return; fi
-                python3 scripts/upsert-env.py "$key" "$val" "$file" || echo "Failed to upsert $key"
-              }
+              # Essential secrets for container orchestration and Supavisor
+              sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$POSTGRES_PASSWORD|" .env
+              sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$JWT_SECRET|" .env
+              sed -i "s|^ANON_KEY=.*|ANON_KEY=$ANON_KEY|" .env
+              sed -i "s|^SERVICE_ROLE_KEY=.*|SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY|" .env
 
-              upsert_env "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
-              upsert_env "JWT_SECRET" "$JWT_SECRET"
-              upsert_env "ANON_KEY" "$ANON_KEY"
-              upsert_env "SERVICE_ROLE_KEY" "$SERVICE_ROLE_KEY"
-              
-              if [ -n "$GOTRUE_EXTERNAL_APPLE_CLIENT_ID" ]; then
-                upsert_env "GOTRUE_EXTERNAL_APPLE_ENABLED" "true"
-                upsert_env "GOTRUE_EXTERNAL_APPLE_CLIENT_ID" "$GOTRUE_EXTERNAL_APPLE_CLIENT_ID"
-                upsert_env "GOTRUE_EXTERNAL_APPLE_TEAM_ID" "$GOTRUE_EXTERNAL_APPLE_TEAM_ID"
-                upsert_env "GOTRUE_EXTERNAL_APPLE_KEY_ID" "$GOTRUE_EXTERNAL_APPLE_KEY_ID"
-                upsert_env "GOTRUE_EXTERNAL_APPLE_PRIVATE_KEY" "$GOTRUE_EXTERNAL_APPLE_PRIVATE_KEY"
-                upsert_env "GOTRUE_EXTERNAL_APPLE_REDIRECT_URI" "$GOTRUE_EXTERNAL_APPLE_REDIRECT_URI"
-                if [ -n "$GOTRUE_EXTERNAL_APPLE_SECRET" ]; then
-                  upsert_env "GOTRUE_EXTERNAL_APPLE_SECRET" "$GOTRUE_EXTERNAL_APPLE_SECRET"
-                fi
-              fi
-              
-              if [ -n "$GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID" ]; then
-                upsert_env "GOTRUE_EXTERNAL_FACEBOOK_ENABLED" "true"
-                upsert_env "GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID" "$GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID"
-                upsert_env "GOTRUE_EXTERNAL_FACEBOOK_SECRET" "$GOTRUE_EXTERNAL_FACEBOOK_SECRET"
-              fi
-              
-              if [ -n "$ACTUAL_GOOGLE_CLIENT_ID" ]; then
-                echo "Enabling Google Auth provider..."
-                upsert_env "GOTRUE_EXTERNAL_GOOGLE_ENABLED" "true"
-                upsert_env "GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID" "$ACTUAL_GOOGLE_CLIENT_ID"
-                upsert_env "GOTRUE_EXTERNAL_GOOGLE_SECRET" "$GOTRUE_EXTERNAL_GOOGLE_SECRET"
-                upsert_env "GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI" "https://api.foodshare.club/auth/v1/callback"
-                upsert_env "GOTRUE_EXTERNAL_GOOGLE_SKIP_NONCE_CHECK" "true"
-              fi
+              # Enabled flags for Studio/GoTrue UI (Secrets live in Vault)
+              [ -n "$ACTUAL_GOOGLE_CLIENT_ID" ] && sed -i "s|^GOTRUE_EXTERNAL_GOOGLE_ENABLED=.*|GOTRUE_EXTERNAL_GOOGLE_ENABLED=true|" .env || true
+              [ -n "$GOTRUE_EXTERNAL_APPLE_CLIENT_ID" ] && sed -i "s|^GOTRUE_EXTERNAL_APPLE_ENABLED=.*|GOTRUE_EXTERNAL_APPLE_ENABLED=true|" .env || true
+              [ -n "$GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID" ] && sed -i "s|^GOTRUE_EXTERNAL_FACEBOOK_ENABLED=.*|GOTRUE_EXTERNAL_FACEBOOK_ENABLED=true|" .env || true
             fi
 
+            # ── Native Vault Injection (No files touched) ──
+            echo "=== Syncing secrets to Supabase Vault ==="
+            # foodshare-migrate reads directly from the SSH environment variables
+            # We use --all to sync everything passed from GitHub Secrets
+            foodshare-migrate vault sync --from-env --all
+
             # Prevent empty SSH environment variables from overriding the .env file during docker compose
+            # We only keep what's needed for the next steps
+            export DB_PASSWORD="$POSTGRES_PASSWORD"
             unset POSTGRES_PASSWORD JWT_SECRET ANON_KEY SERVICE_ROLE_KEY
             unset GOTRUE_EXTERNAL_APPLE_CLIENT_ID GOTRUE_EXTERNAL_APPLE_SECRET GOTRUE_EXTERNAL_APPLE_TEAM_ID GOTRUE_EXTERNAL_APPLE_KEY_ID GOTRUE_EXTERNAL_APPLE_PRIVATE_KEY GOTRUE_EXTERNAL_APPLE_REDIRECT_URI
             unset GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID GOTRUE_EXTERNAL_FACEBOOK_SECRET
