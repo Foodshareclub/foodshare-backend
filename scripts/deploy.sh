@@ -242,63 +242,80 @@ do_backup() {
   stage_end "Backup"
 }
 
-# ── Vault Sync ─────────────────────────────────────────────────────────
+# ── Vault Operations ──────────────────────────────────────────────────
+
+# Exec SQL in the database container
+sql_exec() {
+  local query="$1"
+  docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "$query"
+}
+
+set_vault_secret() {
+  local key="$1"
+  local val="$2"
+  local desc="${3:-Manual update via deploy.sh}"
+
+  if [ -z "$key" ] || [ -z "$val" ]; then
+    log "ERROR: Key and value are required for set-secret"
+    return 1
+  fi
+
+  # Escape single quotes for SQL
+  val="${val//\'/\'\'}"
+  
+  log "Setting secret $key in Vault..."
+  sql_exec "
+    DO \$\$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM vault.secrets WHERE name = '$key') THEN
+        PERFORM vault.update_secret((SELECT id FROM vault.secrets WHERE name = '$key'), new_secret := '$val');
+      ELSE
+        PERFORM vault.create_secret('$val', '$key', '$desc');
+      END IF;
+    END \$\$;
+  " >/dev/null
+}
+
+get_vault_secrets() {
+  sql_exec "SELECT name || '=' || decrypted_secret FROM vault.decrypted_secrets ORDER BY name;"
+}
 
 sync_secrets_to_vault() {
   local env_file="$1"
   if [ ! -f "$env_file" ]; then
-    log "INFO: No $env_file found to sync to/from Vault"
+    log "INFO: No $env_file found to sync"
     return
   fi
 
-  log "Processing secrets for $env_file (Vault bidirectional sync)..."
+  log "Syncing secrets for $env_file..."
 
-  if command -v foodshare-migrate >/dev/null 2>&1; then
-    # 1. Sync from Env into Vault (Supports GitHub Actions secrets injection)
-    # This captures secrets passed via SSH environment variables
-    if foodshare-migrate vault sync --from-env --all --container "$DB_CONTAINER" --db-user "$DB_USER" >/dev/null 2>&1; then
-      log "Vault sync: Environment -> Vault (via foodshare-migrate)"
+  # 1. Pull down from Vault -> Env File (Vault is source of truth)
+  # We read the current file and only update keys that exist in the Vault
+  local vault_data
+  vault_data=$(get_vault_secrets)
+  
+  while IFS= read -r line; do
+    local key="${line%%=*}"
+    local val="${line#*=}"
+    
+    # Only update if the key exists in the current file
+    if grep -q "^${key}=" "$env_file"; then
+      # Use a temp file for safety
+      local tmp_file="${env_file}.tmp"
+      sed "s|^${key}=.*|${key}=${val}|" "$env_file" > "$tmp_file" && mv "$tmp_file" "$env_file"
     fi
+  done <<< "$vault_data"
 
-    # 2. Sync from Env File -> Vault (Ensures manual changes reach Vault)
-    if foodshare-migrate vault sync --all --env-file "$env_file" --container "$DB_CONTAINER" --db-user "$DB_USER" >/dev/null 2>&1; then
-      log "Vault sync: $env_file -> Vault (via foodshare-migrate)"
+  # 2. Injection: Push from SSH Environment -> Vault
+  # This allows GitHub Actions to still seed the Vault with missing secrets
+  # but they are un-set in the Workflow later.
+  local secrets_to_sync=("POSTGRES_PASSWORD" "JWT_SECRET" "ANON_KEY" "SERVICE_ROLE_KEY" "GOTRUE_EXTERNAL_APPLE_CLIENT_ID" "GOTRUE_EXTERNAL_APPLE_SECRET" "OPEN_AI_API_KEY" "RESEND_API_KEY")
+  for key in "${secrets_to_sync[@]}"; do
+    local val="${!key}"
+    if [ -n "$val" ]; then
+      set_vault_secret "$key" "$val" "Injected via GitHub Actions environment"
     fi
-
-    # 3. Sync from Vault -> Env File (Ensures file parity with Vault)
-    if foodshare-migrate env sync --from-vault --env-file "$env_file" --container "$DB_CONTAINER" --db-user "$DB_USER" >/dev/null 2>&1; then
-      log "Vault sync: Vault -> $env_file (via foodshare-migrate)"
-    fi
-  else
-    log "WARNING: foodshare-migrate not found in PATH, falling back to basic sync"
-    # Basic fallback — uses ON CONFLICT for idempotency
-    local script_file="/tmp/vault_sync_$$.sql"
-    {
-      echo "DO \$\$ BEGIN"
-      while IFS='=' read -r key val || [ -n "$key" ]; do
-        # Skip comments and empty lines
-        [[ "$key" =~ ^#.* ]] || [ -z "$key" ] && continue
-        # Strip surrounding quotes
-        val="${val#\"}"
-        val="${val%\"}"
-        # Escape single quotes for SQL
-        val="${val//\'/\'\'}"
-        cat <<EOSQL
-        IF EXISTS (SELECT 1 FROM vault.secrets WHERE name = '$key') THEN
-          PERFORM vault.update_secret((SELECT id FROM vault.secrets WHERE name = '$key'), new_secret := '$val');
-        ELSE
-          PERFORM vault.create_secret('$val', '$key');
-        END IF;
-EOSQL
-      done < "$env_file"
-      echo "END \$\$;"
-    } > "$script_file"
-
-    if docker cp "$script_file" "$DB_CONTAINER":/tmp/vault_sync.sql >/dev/null 2>&1; then
-      docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -f /tmp/vault_sync.sql >/dev/null 2>&1
-    fi
-    rm -f "$script_file"
-  fi
+  done
 }
 
 # ── Stage: pull ─────────────────────────────────────────────────────────
@@ -717,6 +734,8 @@ case "$STAGE" in
   backup)        do_backup "$@" ;;
   pull)          do_pull "$@" ;;
   sync-vault)    do_sync_vault "$@" ;;
+  set-secret)    set_vault_secret "$1" "$2" "$3" ;;
+  get-secrets)   get_vault_secrets ;;
   new-migration) do_new_migration "$@" ;;
   detect)        require_dir; state_init "detect" ;;
   migrate)       do_migrate "$@" ;;
@@ -730,7 +749,9 @@ case "$STAGE" in
     echo "Stages:"
     echo "  backup         Pre-deploy backup (DB + secrets + git snapshot)"
     echo "  pull           Pull latest code (git pull --ff-only)"
-    echo "  sync-vault     Bidirectional sync between .env files and Vault"
+    echo "  sync-vault     Sync Vault secrets down to .env files"
+    echo "  set-secret     [key] [value] [desc] Set a secret in the Vault"
+    echo "  get-secrets    List all secrets in the Vault (KEY=VAL)"
     echo "  new-migration  Create a new timestamped migration file"
     echo "  migrate        Apply pending database migrations"
     echo "  restart        Restart services (full|functions|config|rest|detect)"
