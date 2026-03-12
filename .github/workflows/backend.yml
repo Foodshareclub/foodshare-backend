@@ -538,10 +538,6 @@ jobs:
             CONFIRMED_GOOGLE_CLIENT_ID="314120228176-jkeegcv3gpsei98sc6d3gqiscf7glp3f.apps.googleusercontent.com"
             ACTUAL_GOOGLE_CLIENT_ID="${GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID:-$CONFIRMED_GOOGLE_CLIENT_ID}"
             
-            # Use confirmed Client ID if secret is missing
-            CONFIRMED_GOOGLE_CLIENT_ID="314120228176-jkeegcv3gpsei98sc6d3gqiscf7glp3f.apps.googleusercontent.com"
-            ACTUAL_GOOGLE_CLIENT_ID="${GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID:-$CONFIRMED_GOOGLE_CLIENT_ID}"
-            
             # Setup Deploy Key
             if [ -n "$VPS_BACKUP_PRIVATE_KEY" ]; then
               mkdir -p ~/.ssh
@@ -581,7 +577,7 @@ jobs:
                 local val=$2
                 local file=${3:-.env}
                 if [ -z "$val" ]; then return; fi
-                python3 -c 'import sys, re, os; key, val, file = sys.argv[1:4]; content = open(file, "r").read() if os.path.exists(file) else ""; content += "\n" if content and not content.endswith("\n") else ""; pattern = re.compile(rf"^{re.escape(key)}=.*$", re.MULTILINE); content = pattern.sub(f"{key}={val}", content) if pattern.search(content) else content + f"{key}={val}\n"; open(file, "w").write(content)' "$key" "$val" "$file" || echo "Failed to upsert $key"
+                python3 -c 'import sys, re, os, json; key, val, file = sys.argv[1:4]; content = open(file, "r").read() if os.path.exists(file) else ""; content += "\n" if content and not content.endswith("\n") else ""; safe_val = json.dumps(val) if any(c in val for c in "\n \"") else val; pattern = re.compile(rf"^{re.escape(key)}=.*$", re.MULTILINE); new_line = f"{key}={safe_val}"; content = pattern.sub(new_line, content) if pattern.search(content) else content + new_line + "\n"; open(file, "w").write(content)' "$key" "$val" "$file" || echo "Failed to upsert $key"
               }
 
               upsert_env "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
