@@ -559,7 +559,7 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             NEW_HEAD=$(git rev-parse HEAD)
-            chmod +x scripts/deploy.sh scripts/upsert-env.py
+            chmod +x scripts/deploy.sh
 
             # ── Clean corrupted appended variables if they fused ──
             if [ -f .env ]; then
