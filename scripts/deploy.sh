@@ -298,11 +298,16 @@ sync_secrets_to_vault() {
     local key="${line%%=*}"
     local val="${line#*=}"
     
-    # Only update if the key exists in the current file
+    # Only update or add if the key exists in the Vault
     if grep -q "^${key}=" "$env_file"; then
-      # Use a temp file for safety
+      # Update existing
       local tmp_file="${env_file}.tmp"
       sed "s|^${key}=.*|${key}=${val}|" "$env_file" > "$tmp_file" && mv "$tmp_file" "$env_file"
+    else
+      # Add new (if not a blank line and key not empty)
+      if [ -n "$key" ]; then
+        echo "${key}=${val}" >> "$env_file"
+      fi
     fi
   done <<< "$vault_data"
 
