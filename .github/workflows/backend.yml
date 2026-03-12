@@ -549,10 +549,10 @@ jobs:
 
             # Debug PATH and locate tool
             echo "Current PATH: $PATH"
-            find /usr/local/bin /home/organic/.cargo/bin /usr/bin -name "*migrate*" -type f 2>/dev/null || true
+            find /home/organic -name "foodshare-migrate" -type f 2>/dev/null | head -n 5 || true
             
             # Ensure common tool paths are available in the SSH session
-            export PATH=$PATH:/usr/local/bin:/home/organic/.cargo/bin
+            export PATH=$PATH:/usr/local/bin:/home/organic/.cargo/bin:/home/organic/.local/bin
             
             echo "=== Stage: pull ==="
             PREV_HEAD=$(git rev-parse HEAD)
