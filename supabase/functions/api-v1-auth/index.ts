@@ -32,6 +32,7 @@ import {
 } from "./lib/schemas.ts";
 import { handleRateCheck, handleRateRecord } from "./lib/rate.ts";
 import { handleVerifyConfirm, handleVerifyResend, handleVerifySend } from "./lib/verify.ts";
+import { handleAppleSignIn } from "./lib/apple.ts";
 import type { AuthContext } from "./lib/types.ts";
 
 const VERSION = "1.0.0";
@@ -121,6 +122,11 @@ async function handlePost(ctx: HandlerContext): Promise<Response> {
       throw new AppError("Not found", "NOT_FOUND", 404, {
         details: { availableActions: ["send", "confirm", "resend"] },
       });
+    }
+
+    // Route: /apple
+    if (route.resource === "apple") {
+      return await handleAppleSignIn(body, authCtx);
     }
 
     throw new AppError("Not found", "NOT_FOUND", 404, {

@@ -566,17 +566,23 @@ jobs:
               echo "=== Updating .env with secrets ==="
               
               # Function to safely update or append env variables
-              # Supports multiline values via printf
+              # Uses foodshare-migrate if available, otherwise basic append
               upsert_env() {
                 local key=$1
                 local val=$2
+                local file=${3:-.env}
                 if [ -z "$val" ]; then return; fi
-                touch .env
-                # Remove existing key if present (handles simple key=value only)
-                grep -v "^${key}=" .env > .env.tmp || true
-                # Append new key=value safely
-                printf "%s=\"%s\"\n" "$key" "$val" >> .env.tmp
-                mv .env.tmp .env
+                if command -v foodshare-migrate >/dev/null 2>&1; then
+                  foodshare-migrate env set --key "$key" --value "$val" --env-file "$file"
+                else
+                  # Fallback to python script if still present, or basic append
+                  if [ -f scripts/upsert-env.py ]; then
+                    python3 scripts/upsert-env.py "$key" "$val" "$file"
+                  else
+                    # Basic append (doesn't handle multiline or updates well)
+                    echo "$key=$val" >> "$file"
+                  fi
+                fi
               }
 
               upsert_env "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"

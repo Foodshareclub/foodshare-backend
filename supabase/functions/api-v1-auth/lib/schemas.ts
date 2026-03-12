@@ -44,6 +44,14 @@ export const verifyResendSchema = z.object({
   email: z.string().email(),
 });
 
+export const appleSignInSchema = z.object({
+  identityToken: z.string().min(1, "Identity token is required"),
+  nonce: z.string().optional(),
+  email: z.string().email().optional(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+});
+
 // =============================================================================
 // Inferred Types
 // =============================================================================

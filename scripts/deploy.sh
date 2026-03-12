@@ -237,59 +237,40 @@ sync_secrets_to_vault() {
     return
   fi
 
-  log "Syncing secrets to Supabase Vault..."
+  log "Syncing secrets from $env_file to Supabase Vault..."
   
-  local script_file="/tmp/vault_sync_$$.sql"
-  cat > "$script_file" <<EOF
-DO \$\$
-DECLARE
-  secret_id UUID;
-BEGIN
-EOF
-
-  while IFS= read -r line || [ -n "$line" ]; do
-    # Skip comments, empty lines, and lines without =
-    [[ "$line" =~ ^#.*$ ]] && continue
-    [[ -z "$line" ]] && continue
-    [[ ! "$line" =~ = ]] && continue
-    
-    KEY=$(echo "$line" | cut -d'=' -f1 | xargs)
-    VALUE=$(echo "$line" | cut -d'=' -f2- | xargs)
-    
-    [ -z "$KEY" ] && continue
-    [ -z "$VALUE" ] && continue
-    
-    # Escape single quotes and backslashes for SQL
-    ESCAPED_VALUE=$(echo "$VALUE" | sed "s/\\\\/\\\\\\\\/g; s/'/''/g")
-    
-    # Skip multiline values that could break the line-by-line parser
-    # Valid secrets are usually alphanumeric or base64 without newlines
-    if [[ "$VALUE" == *$'\n'* ]]; then
-      log "INFO: Skipping multiline secret $KEY (not supported in simple Vault sync)"
-      continue
+  if command -v foodshare-migrate >/dev/null 2>&1; then
+    if foodshare-migrate vault sync --env-file "$env_file" --container "$DB_CONTAINER" --db-user "$DB_USER"; then
+      log "Vault sync complete (via foodshare-migrate)"
+    else
+      err "Vault sync FAILED (via foodshare-migrate)"
     fi
-    
-    cat >> "$script_file" <<EOF
-  SELECT id INTO secret_id FROM vault.secrets WHERE name = '$KEY';
-  IF secret_id IS NULL THEN
-    PERFORM vault.create_secret('$ESCAPED_VALUE', '$KEY');
-  ELSE
-    PERFORM vault.update_secret(secret_id, new_secret := '$ESCAPED_VALUE');
-  END IF;
-EOF
-  done < "$env_file"
-
-  echo "END \$\$;" >> "$script_file"
-
-  # Copy and execute in DB container
-  if docker cp "$script_file" supabase-db:/tmp/vault_sync.sql >/dev/null 2>&1; then
-    docker exec supabase-db psql -U postgres -d postgres -f /tmp/vault_sync.sql >/dev/null 2>&1
-    log "Vault sync complete"
   else
-    log "WARNING: Could not connect to database for Vault sync"
+    log "WARNING: foodshare-migrate not found in PATH, falling back to basic sync"
+    # Basic fallback for single-line secrets only — doesn't handle multiline well
+    local script_file="/tmp/vault_sync_$$.sql"
+    echo "DO \$\$ BEGIN" > "$script_file"
+    while IFS='=' read -r key val || [ -n "$key" ]; do
+      [[ "$key" =~ ^#.* ]] || [ -z "$key" ] && continue
+      # Strip quotes if present
+      val=$(echo "$val" | sed -e 's/^"//' -e 's/"$//')
+      # Escape for SQL
+      eval_escaped=$(echo "$val" | sed "s/'/''/g")
+      cat >> "$script_file" <<EOF
+      IF EXISTS (SELECT 1 FROM vault.secrets WHERE name = '$key') THEN
+        PERFORM vault.update_secret((SELECT id FROM vault.secrets WHERE name = '$key'), new_secret := '$eval_escaped');
+      ELSE
+        PERFORM vault.create_secret('$eval_escaped', '$key');
+      END IF;
+EOF
+    done < "$env_file"
+    echo "END \$\$;" >> "$script_file"
+    
+    if docker cp "$script_file" "$DB_CONTAINER":/tmp/vault_sync.sql >/dev/null 2>&1; then
+      docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -f /tmp/vault_sync.sql >/dev/null 2>&1
+    fi
+    rm -f "$script_file"
   fi
-  
-  rm -f "$script_file"
 }
 
 # ── Stage: pull ─────────────────────────────────────────────────────────
