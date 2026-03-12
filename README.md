@@ -61,12 +61,21 @@ gh run view <run-id> --log-failed
 
 ## Secret Management
 
-Operational secrets are stored in **Supabase Vault** with fallback to `.env.functions`.
+Operational secrets are managed via **Supabase Vault** (source of truth).
 
+### Commands (on VPS)
+Use `scripts/deploy.sh` for lifecycle management:
+- `./scripts/deploy.sh get-secrets`: Audit all active secrets
+- `./scripts/deploy.sh set-secret KEY VAL [desc]`: Set/Update a secret securely
+- `./scripts/deploy.sh new-secret-migration KEY`: Create a code-level requirement migration
+
+### Usage in Code
 ```typescript
 import { getSecret } from "../_shared/vault.ts";
 const apiKey = await getSecret("MY_API_KEY");
 ```
+> [!NOTE]
+> Changes to Vault secrets automatically propagate to `.env` and `.env.functions` files on the next service restart or deployment.
 
 ## VPS Access (debugging only)
 
