@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Usage: ./scripts/deploy.sh <stage> [options]
 #
-# Stages: backup, pull, detect, migrate, restart, smoke, rollback, status
+# Stages: backup, pull, sync-vault, new-migration, migrate, restart, smoke, rollback, status
 # State:  /tmp/deploy-state.json (persists between stages)
 #
 # Examples:
-#   ./scripts/deploy.sh status        # Check service health
-#   ./scripts/deploy.sh smoke         # Run smoke tests
-#   ./scripts/deploy.sh backup        # Pre-deploy backup
-#   ./scripts/deploy.sh restart full  # Full stack restart
+#   ./scripts/deploy.sh status              # Check service health
+#   ./scripts/deploy.sh smoke               # Run smoke tests
+#   ./scripts/deploy.sh backup              # Pre-deploy backup
+#   ./scripts/deploy.sh restart full        # Full stack restart
+#   ./scripts/deploy.sh restart functions   # Zero-downtime function restart
+#   ./scripts/deploy.sh new-migration desc  # Create migration file
 
 set -eo pipefail
 
@@ -38,6 +40,17 @@ done
 
 log() { echo "[deploy] $*"; }
 err() { echo "[deploy] ERROR: $*" >&2; }
+
+# Timer: call stage_start at the beginning, stage_end at the end
+stage_start() {
+  STAGE_START_TIME=$SECONDS
+  log "=== $1 ==="
+}
+
+stage_end() {
+  local elapsed=$(( SECONDS - STAGE_START_TIME ))
+  log "=== $1 completed in ${elapsed}s ==="
+}
 
 state_read() {
   if [ -f "$STATE_FILE" ]; then
@@ -72,7 +85,7 @@ require_dir() {
 
 get_env_value() {
   local key="$1"
-  sed -n "s/^${key}=//p" .env | head -1
+  grep -m1 "^${key}=" .env 2>/dev/null | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || echo ""
 }
 
 get_anon_key()    { get_env_value "ANON_KEY"; }
@@ -83,6 +96,7 @@ get_service_key() { get_env_value "SERVICE_ROLE_KEY"; }
 do_backup() {
   require_dir
   state_init "backup"
+  stage_start "Backup"
 
   DAILY=false
   for arg in "$@"; do
@@ -151,7 +165,7 @@ do_backup() {
       docker-compose.override.yml \
       2>/dev/null || tar czf "$SECRETS_FILE" .env .env.functions 2>/dev/null || true
     log "Secrets: $(du -h "$SECRETS_FILE" | cut -f1)"
-    
+
     # Also save DB to long-retention directory
     cp "$DB_TARGET" "$BACKUP_DIR/db/foodshare-$DATE.sql.gz" 2>/dev/null || true
   else
@@ -173,7 +187,7 @@ do_backup() {
   # Force add persistent user data volumes
   git add -f volumes/storage/ 2>/dev/null || true
   git add -f volumes/snippets/ 2>/dev/null || true
-  
+
   # Ensure raw DB data is explicitly excluded to prevent torn pages and massive bloat
   git reset volumes/db/data/ 2>/dev/null || true
 
@@ -202,7 +216,7 @@ do_backup() {
     git update-ref "refs/heads/$BRANCH_NAME" "$COMMIT"
     # Push via SSH (deploy key) since origin may be HTTPS
     SSH_URL="git@github.com:Foodsharecom.flutterflow.foodshare-backend.git"
-    
+
     export GIT_SSH_COMMAND="ssh -i /home/organic/.ssh/vps_backup_deploy_key -o StrictHostKeyChecking=no"
     if git push "$SSH_URL" "$BRANCH_NAME" --force --quiet; then
       log "Pushed $BRANCH_NAME: $(git rev-parse --short "$COMMIT")"
@@ -225,7 +239,7 @@ do_backup() {
 
   state_write "backup" "done"
   state_write "db_size" "$DB_SIZE"
-  log "Backup complete"
+  stage_end "Backup"
 }
 
 # ── Vault Sync ─────────────────────────────────────────────────────────
@@ -238,7 +252,7 @@ sync_secrets_to_vault() {
   fi
 
   log "Processing secrets for $env_file (Vault bidirectional sync)..."
-  
+
   if command -v foodshare-migrate >/dev/null 2>&1; then
     # 1. Sync from Env into Vault (Supports GitHub Actions secrets injection)
     # This captures secrets passed via SSH environment variables
@@ -250,30 +264,36 @@ sync_secrets_to_vault() {
     if foodshare-migrate vault sync --all --env-file "$env_file" --container "$DB_CONTAINER" --db-user "$DB_USER" >/dev/null 2>&1; then
       log "Vault sync: $env_file -> Vault (via foodshare-migrate)"
     fi
-    
+
     # 3. Sync from Vault -> Env File (Ensures file parity with Vault)
     if foodshare-migrate env sync --from-vault --env-file "$env_file" --container "$DB_CONTAINER" --db-user "$DB_USER" >/dev/null 2>&1; then
       log "Vault sync: Vault -> $env_file (via foodshare-migrate)"
     fi
   else
     log "WARNING: foodshare-migrate not found in PATH, falling back to basic sync"
-    # Basic fallback (unlikely on VPS, but good for resilience)
+    # Basic fallback — uses ON CONFLICT for idempotency
     local script_file="/tmp/vault_sync_$$.sql"
-    echo "DO \$\$ BEGIN" > "$script_file"
-    while IFS='=' read -r key val || [ -n "$key" ]; do
-      [[ "$key" =~ ^#.* ]] || [ -z "$key" ] && continue
-      val=$(echo "$val" | sed -e 's/^"//' -e 's/"$//')
-      eval_escaped=$(echo "$val" | sed "s/'/''/g")
-      cat >> "$script_file" <<EOF
-      IF EXISTS (SELECT 1 FROM vault.secrets WHERE name = '$key') THEN
-        PERFORM vault.update_secret((SELECT id FROM vault.secrets WHERE name = '$key'), new_secret := '$eval_escaped');
-      ELSE
-        PERFORM vault.create_secret('$eval_escaped', '$key');
-      END IF;
-EOF
-    done < "$env_file"
-    echo "END \$\$;" >> "$script_file"
-    
+    {
+      echo "DO \$\$ BEGIN"
+      while IFS='=' read -r key val || [ -n "$key" ]; do
+        # Skip comments and empty lines
+        [[ "$key" =~ ^#.* ]] || [ -z "$key" ] && continue
+        # Strip surrounding quotes
+        val="${val#\"}"
+        val="${val%\"}"
+        # Escape single quotes for SQL
+        val="${val//\'/\'\'}"
+        cat <<EOSQL
+        IF EXISTS (SELECT 1 FROM vault.secrets WHERE name = '$key') THEN
+          PERFORM vault.update_secret((SELECT id FROM vault.secrets WHERE name = '$key'), new_secret := '$val');
+        ELSE
+          PERFORM vault.create_secret('$val', '$key');
+        END IF;
+EOSQL
+      done < "$env_file"
+      echo "END \$\$;"
+    } > "$script_file"
+
     if docker cp "$script_file" "$DB_CONTAINER":/tmp/vault_sync.sql >/dev/null 2>&1; then
       docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -f /tmp/vault_sync.sql >/dev/null 2>&1
     fi
@@ -286,6 +306,7 @@ EOF
 do_pull() {
   require_dir
   state_write "stage" "pull"
+  stage_start "Pull"
 
   PREV_HEAD=$(git rev-parse HEAD)
   state_write "prev_head" "$PREV_HEAD"
@@ -307,7 +328,7 @@ do_pull() {
     echo "$CHANGED"
   fi
 
-  log "Pull complete"
+  stage_end "Pull"
 }
 
 # ── Stage: migrate ──────────────────────────────────────────────────────
@@ -315,6 +336,7 @@ do_pull() {
 do_migrate() {
   require_dir
   state_write "stage" "migrate"
+  stage_start "Migrate"
 
   LATEST_APPLIED=$(timeout 30 docker exec "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -c \
     "SELECT COALESCE(MAX(version), '0') FROM supabase_migrations.schema_migrations;" 2>/dev/null | tr -d ' ' || echo "0")
@@ -363,87 +385,7 @@ do_migrate() {
     exit 1
   fi
 
-  log "Applied $APPLIED migration(s)"
-}
-
-# ── Stage: restart ──────────────────────────────────────────────────────
-
-do_restart() {
-  require_dir
-  state_write "stage" "restart"
-
-  # Sync secrets to Vault for Studio visibility and Edge Function access
-  sync_secrets_to_vault ".env.functions"
-  sync_secrets_to_vault ".env"
-
-  MODE="${1:-detect}"
-
-
-  case "$MODE" in
-    full)
-      log "Full stack restart"
-      docker compose up -d
-
-      # Restart services for environment variables to take effect
-      log "Restarting services to pick up new secrets..."
-      docker compose restart kong
-      ;;
-    functions)
-      log "Restarting edge functions (zero-downtime)"
-      docker compose up -d --force-recreate functions
-      sleep 10
-      check_functions_health || {
-        err "Functions failed health check — triggering rollback"
-        do_rollback
-        exit 1
-      }
-      ;;
-    config)
-      log "Configuration changed — recreating auth and functions"
-      docker compose up -d --force-recreate auth functions
-      ;;
-    rest)
-      log "Restarting PostgREST (schema cache refresh)"
-      docker compose restart rest
-      ;;
-    detect)
-      CHANGED=$(state_read "changed_files" "")
-      if [ -z "$CHANGED" ]; then
-        log "No changes — skipping restart"
-        return 0
-      fi
-      if echo "$CHANGED" | grep -qE '(docker-compose\.yml|\.env\.example|volumes/)'; then
-        log "Infrastructure changed — full restart"
-        # Rebuild Caddy if its Dockerfile changed (avoids stale base image cache)
-        if echo "$CHANGED" | grep -q "Dockerfile.caddy"; then
-          log "Caddy Dockerfile changed — rebuilding with --no-cache --pull"
-          docker compose build --pull --no-cache caddy
-        fi
-        docker compose up -d --force-recreate
-      elif echo "$CHANGED" | grep -q "Dockerfile.caddy"; then
-        log "Caddy Dockerfile changed — rebuilding and restarting caddy"
-        docker compose build --pull --no-cache caddy
-        docker compose up -d --force-recreate caddy
-      elif echo "$CHANGED" | grep -qE 'supabase/functions/'; then
-        log "Functions changed — restarting functions"
-        docker compose restart functions
-      elif echo "$CHANGED" | grep -qE 'supabase/migrations/'; then
-        log "Migrations only — restarting PostgREST"
-        docker compose restart rest
-      elif echo "$CHANGED" | grep -qE '\.env'; then
-        log "Environment variables changed — restarting auth and functions"
-        docker compose up -d --force-recreate auth functions
-      else
-        log "Config/docs only — no restart needed"
-      fi
-      ;;
-    *)
-      err "Unknown restart mode: $MODE (use: full, functions, rest, detect)"
-      exit 1
-      ;;
-  esac
-
-  log "Restart complete"
+  stage_end "Migrate ($APPLIED applied)"
 }
 
 # ── Smoke test helper ──────────────────────────────────────────────────
@@ -452,7 +394,8 @@ check_endpoint() {
   local name="$1" url="$2" headers="$3" retries="${4:-1}" delay="${5:-0}"
   local code
   for i in $(seq 1 "$retries"); do
-    [ "$delay" -gt 0 ] && sleep "$delay"
+    # Sleep between attempts, not before the first one
+    [ "$i" -gt 1 ] && [ "$delay" -gt 0 ] && sleep "$delay"
     code=$(eval "curl -s -o /dev/null -w '%{http_code}' '$url' $headers" 2>/dev/null || echo "000")
     log "  $name attempt $i: HTTP $code"
     if [ "$code" = "200" ] || [ "$code" = "204" ]; then
@@ -474,7 +417,7 @@ check_functions_health() {
   anon_key=$(get_anon_key)
 
   if [ -z "$anon_key" ]; then
-    log "WARNING: ANON_KEY not found, skipping specific function health check"
+    log "WARNING: ANON_KEY not found, skipping function health check"
     return 0
   fi
 
@@ -498,21 +441,111 @@ check_functions_health() {
   return 1
 }
 
+# ── Stage: restart ──────────────────────────────────────────────────────
+
+do_restart() {
+  require_dir
+  state_write "stage" "restart"
+  stage_start "Restart"
+
+  # Sync secrets to Vault for Studio visibility and Edge Function access
+  sync_secrets_to_vault ".env.functions"
+  sync_secrets_to_vault ".env"
+
+  MODE="${1:-detect}"
+
+  case "$MODE" in
+    full)
+      log "Full stack restart"
+      docker compose up -d
+
+      # Restart services for environment variables to take effect
+      log "Restarting services to pick up new secrets..."
+      docker compose restart kong
+
+      # Verify functions came up healthy
+      sleep 10
+      check_functions_health 5 3 || log "WARNING: Functions health check failed after full restart"
+      ;;
+    functions)
+      log "Restarting edge functions (zero-downtime)"
+      docker compose up -d --force-recreate functions
+      sleep 10
+      check_functions_health || {
+        err "Functions failed health check — triggering rollback"
+        do_rollback
+        exit 1
+      }
+      ;;
+    config)
+      log "Configuration changed — recreating auth and functions"
+      docker compose up -d --force-recreate auth functions
+      sleep 10
+      check_functions_health 5 3 || log "WARNING: Functions health check failed after config restart"
+      ;;
+    rest)
+      log "Restarting PostgREST (schema cache refresh)"
+      docker compose restart rest
+      ;;
+    detect)
+      CHANGED=$(state_read "changed_files" "")
+      if [ -z "$CHANGED" ]; then
+        log "No changes — skipping restart"
+        stage_end "Restart (skipped)"
+        return 0
+      fi
+      if echo "$CHANGED" | grep -qE '(docker-compose\.yml|\.env\.example|volumes/)'; then
+        log "Infrastructure changed — full restart"
+        # Rebuild Caddy if its Dockerfile changed (avoids stale base image cache)
+        if echo "$CHANGED" | grep -q "Dockerfile.caddy"; then
+          log "Caddy Dockerfile changed — rebuilding with --no-cache --pull"
+          docker compose build --pull --no-cache caddy
+        fi
+        docker compose up -d --force-recreate
+      elif echo "$CHANGED" | grep -q "Dockerfile.caddy"; then
+        log "Caddy Dockerfile changed — rebuilding and restarting caddy"
+        docker compose build --pull --no-cache caddy
+        docker compose up -d --force-recreate caddy
+      elif echo "$CHANGED" | grep -qE 'supabase/functions/'; then
+        log "Functions changed — zero-downtime restart"
+        docker compose up -d --force-recreate functions
+        sleep 10
+        check_functions_health || log "WARNING: Functions health check failed"
+      elif echo "$CHANGED" | grep -qE 'supabase/migrations/'; then
+        log "Migrations only — restarting PostgREST"
+        docker compose restart rest
+      elif echo "$CHANGED" | grep -qE '\.env'; then
+        log "Environment variables changed — restarting auth and functions"
+        docker compose up -d --force-recreate auth functions
+      else
+        log "Config/docs only — no restart needed"
+      fi
+      ;;
+    *)
+      err "Unknown restart mode: $MODE (use: full, functions, config, rest, detect)"
+      exit 1
+      ;;
+  esac
+
+  stage_end "Restart ($MODE)"
+}
+
 # ── Stage: smoke ────────────────────────────────────────────────────────
 
 do_smoke() {
   require_dir
   state_write "stage" "smoke"
+  stage_start "Smoke tests"
 
   ANON_KEY=$(get_anon_key)
   SERVICE_KEY=$(get_service_key)
-  
+
   if [ -z "$ANON_KEY" ] || [ -z "$SERVICE_KEY" ]; then
     log "WARNING: Missing API keys, skipping smoke tests"
     state_write "smoke" "skipped"
     return 0
   fi
-  
+
   SMOKE_PASS=true
 
   check_endpoint "Kong REST API" \
@@ -543,6 +576,8 @@ do_smoke() {
 
   rm -f /tmp/pre-deploy-db.sql.gz
   log "Cleaned up pre-deploy backup"
+
+  stage_end "Smoke tests"
 }
 
 # ── Stage: rollback ─────────────────────────────────────────────────────
@@ -550,6 +585,7 @@ do_smoke() {
 do_rollback() {
   require_dir
   state_write "stage" "rollback"
+  stage_start "Rollback"
 
   log "=== ROLLING BACK ==="
   set +e
@@ -573,7 +609,8 @@ do_rollback() {
     fi
   fi
 
-  docker compose up -d
+  # Use --no-build --pull never to ensure rollback uses exactly what's cached locally
+  docker compose up -d --no-build --pull never
   log "Services restarted with rolled-back code"
 
   # Verify rollback health (inline, no recursive rollback)
@@ -589,7 +626,7 @@ do_rollback() {
     "-H 'Host: api.foodshare.club' -H 'apikey: $ANON_KEY'" 3 5 || err "Rollback health check failed for Functions"
 
   state_write "rollback" "done"
-  log "=== ROLLBACK COMPLETE ==="
+  stage_end "Rollback"
   set -e
 }
 
@@ -632,7 +669,6 @@ SQL
   fi
 }
 
-
 # ── Stage: status ───────────────────────────────────────────────────────
 
 do_status() {
@@ -666,8 +702,10 @@ do_status() {
 
 do_sync_vault() {
   require_dir
+  stage_start "Vault sync"
   sync_secrets_to_vault ".env"
   sync_secrets_to_vault ".env.functions"
+  stage_end "Vault sync"
 }
 
 # ── Main ────────────────────────────────────────────────────────────────
@@ -680,25 +718,25 @@ case "$STAGE" in
   pull)          do_pull "$@" ;;
   sync-vault)    do_sync_vault "$@" ;;
   new-migration) do_new_migration "$@" ;;
-  detect)     require_dir; state_init "detect" ;;
-  migrate)    do_migrate "$@" ;;
-  restart)    do_restart "$@" ;;
-  smoke)      do_smoke "$@" ;;
-  rollback)   do_rollback "$@" ;;
-  status)     do_status "$@" ;;
+  detect)        require_dir; state_init "detect" ;;
+  migrate)       do_migrate "$@" ;;
+  restart)       do_restart "$@" ;;
+  smoke)         do_smoke "$@" ;;
+  rollback)      do_rollback "$@" ;;
+  status)        do_status "$@" ;;
   *)
     echo "Usage: $0 <stage> [options]"
     echo ""
     echo "Stages:"
-    echo "  backup      Pre-deploy backup (DB + secrets + git state)"
-    echo "  pull        Pull latest code (git pull --ff-only)"
-    echo "  sync-vault  Bidirectional sync between .env files and Vault"
-    echo "  migrate     Apply pending database migrations"
-    echo "  restart     Restart services (full|functions|rest|detect)"
+    echo "  backup         Pre-deploy backup (DB + secrets + git snapshot)"
+    echo "  pull           Pull latest code (git pull --ff-only)"
+    echo "  sync-vault     Bidirectional sync between .env files and Vault"
+    echo "  new-migration  Create a new timestamped migration file"
+    echo "  migrate        Apply pending database migrations"
+    echo "  restart        Restart services (full|functions|config|rest|detect)"
     echo "  smoke          Run smoke tests"
     echo "  rollback       Rollback to previous state"
     echo "  status         Show service status and deploy state"
-    echo "  new-migration  Create a new timestamped migration file"
     exit 1
     ;;
 esac
