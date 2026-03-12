@@ -666,14 +666,61 @@ do_new_migration() {
   local filename="${timestamp}_${desc}.sql"
   local filepath="supabase/migrations/${filename}"
 
-  cat > "$filepath" << 'SQL'
--- Migration: TODO describe what this migration does
+  cat > "$filepath" << SQL
+-- Migration: $desc
 --
 -- Reminders:
 --   - Use CREATE INDEX CONCURRENTLY to avoid blocking queries
 --   - Enable RLS on new tables: ALTER TABLE <t> ENABLE ROW LEVEL SECURITY;
 --   - Test with: psql -v ON_ERROR_STOP=1 -f <this file>
 
+BEGIN;
+
+-- TODO: Add migration logic here
+
+COMMIT;
+SQL
+
+  log "Created migration: $filepath"
+}
+
+# ── Stage: new-secret-migration ───────────────────────────────────────
+
+do_new_secret_migration() {
+  local secret_key="${1:-}"
+  if [ -z "$secret_key" ]; then
+    err "Secret key required (e.g. ./scripts/deploy.sh new-secret-migration STRIPE_KEY)"
+    exit 1
+  fi
+
+  if ! echo "$secret_key" | grep -qE '^[A-Z][A-Z0-9_]+$'; then
+    err "Secret key must be UPPERCASE snake_case: [A-Z][A-Z0-9_]+"
+    exit 1
+  fi
+
+  require_dir
+  local timestamp=$(date -u +%Y%m%d%H%M%S)
+  local desc="add_secret_$(echo "$secret_key" | tr '[:upper:]' '[:lower:]')"
+  local filename="${timestamp}_${desc}.sql"
+  local filepath="supabase/migrations/${filename}"
+
+  cat > "$filepath" << SQL
+-- Migration: Add secret $secret_key to Vault
+--
+-- This migration ensures that the secret key exists in the Supabase Vault.
+-- The value is set to a placeholder if it doesn't already exist.
+-- Update the actual value via: ./scripts/deploy.sh set-secret $secret_key <value>
+
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM vault.secrets WHERE name = '$secret_key') THEN
+    PERFORM vault.create_secret('PLACEHOLDER_CHANGE_ME', '$secret_key', 'Created via migration');
+  END IF;
+END \$\$;
+SQL
+
+  log "Created secret migration: $filepath"
+}
 SQL
 
   log "Created: $filepath"
@@ -737,6 +784,7 @@ case "$STAGE" in
   set-secret)    set_vault_secret "$1" "$2" "$3" ;;
   get-secrets)   get_vault_secrets ;;
   new-migration) do_new_migration "$@" ;;
+  new-secret-migration) do_new_secret_migration "$@" ;;
   detect)        require_dir; state_init "detect" ;;
   migrate)       do_migrate "$@" ;;
   restart)       do_restart "$@" ;;
@@ -747,17 +795,18 @@ case "$STAGE" in
     echo "Usage: $0 <stage> [options]"
     echo ""
     echo "Stages:"
-    echo "  backup         Pre-deploy backup (DB + secrets + git snapshot)"
-    echo "  pull           Pull latest code (git pull --ff-only)"
-    echo "  sync-vault     Sync Vault secrets down to .env files"
-    echo "  set-secret     [key] [value] [desc] Set a secret in the Vault"
-    echo "  get-secrets    List all secrets in the Vault (KEY=VAL)"
-    echo "  new-migration  Create a new timestamped migration file"
-    echo "  migrate        Apply pending database migrations"
-    echo "  restart        Restart services (full|functions|config|rest|detect)"
-    echo "  smoke          Run smoke tests"
-    echo "  rollback       Rollback to previous state"
-    echo "  status         Show service status and deploy state"
+    echo "  backup               Pre-deploy backup (DB + secrets + git snapshot)"
+    echo "  pull                 Pull latest code (git pull --ff-only)"
+    echo "  sync-vault           Sync Vault secrets down to .env files"
+    echo "  set-secret           [key] [value] [desc] Set a secret in the Vault"
+    echo "  get-secrets          List all secrets in the Vault (KEY=VAL)"
+    echo "  new-migration        [desc] Create a new timestamped migration file"
+    echo "  new-secret-migration [KEY] Create a migration to seed a secret key"
+    echo "  migrate              Apply pending database migrations"
+    echo "  restart              Restart services (full|functions|config|rest|detect)"
+    echo "  smoke                Run smoke tests"
+    echo "  rollback             Rollback to previous state"
+    echo "  status               Show service status and deploy state"
     exit 1
     ;;
 esac
