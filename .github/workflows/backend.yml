@@ -547,7 +547,10 @@ jobs:
             
             cd /home/organic/dev/foodshare-backend
 
-            # ── Stage 0: Pull code first (ensures deploy script exists) ──
+            # Debug PATH and locate tool
+            echo "Current PATH: $PATH"
+            find /usr/local/bin /home/organic/.cargo/bin /usr/bin -name "*migrate*" -type f 2>/dev/null || true
+            
             # Ensure common tool paths are available in the SSH session
             export PATH=$PATH:/usr/local/bin:/home/organic/.cargo/bin
             
