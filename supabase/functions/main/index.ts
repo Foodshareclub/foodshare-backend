@@ -1,4 +1,5 @@
 import { logger } from "../_shared/logger.ts";
+import { getAdminClient } from "../_shared/supabase.ts";
 
 logger.info("main function started");
 
@@ -38,6 +39,28 @@ Deno.serve(async (req: Request) => {
   const createWorker = async () => {
     const envVarsObj = Deno.env.toObject();
     const envVars = Object.keys(envVarsObj).map((k) => [k, envVarsObj[k]]);
+
+    // Fetch secrets from Vault for full parity with Supabase Cloud
+    try {
+      const supabase = getAdminClient();
+      const { data: secrets, error } = await supabase
+        .schema("vault")
+        .from("secrets")
+        .select("name,secret");
+
+      if (!error && secrets) {
+        for (const { name, secret } of secrets) {
+          if (name && secret) {
+            // Check if already present to avoid overriding explicit Deno.env overrides
+            if (!envVarsObj[name]) {
+              envVars.push([name, secret]);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      logger.error("Failed to inject vault secrets into worker", { error: e });
+    }
 
     // @ts-ignore: EdgeRuntime is available in Supabase Edge Functions environment
     return await EdgeRuntime.userWorkers.create({

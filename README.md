@@ -16,9 +16,7 @@ foodshare-backend/
 ├── Dockerfile.caddy          # Custom Caddy with Cloudflare DNS
 ├── scripts/
 │   ├── deploy.sh             # Main deployment script
-│   ├── deploy-functions-zero-downtime.sh
-│   ├── backup-to-r2.ts       # R2 backup utility
-│   └── new-migration.sh      # Migration scaffolding
+│   └── backup-to-r2.ts       # R2 backup utility
 ├── supabase/
 │   ├── config.toml           # Function config (JWT exceptions)
 │   ├── seed.sql              # Email template seed data

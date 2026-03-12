@@ -240,25 +240,29 @@ sync_secrets_to_vault() {
   log "Processing secrets for $env_file (Vault bidirectional sync)..."
   
   if command -v foodshare-migrate >/dev/null 2>&1; then
-    # 1. Sync from Env to Vault (Ensures new local changes reach Vault)
-    if foodshare-migrate vault sync --all --env-file "$env_file" --container "$DB_CONTAINER" --db-user "$DB_USER"; then
+    # 1. Sync from Env into Vault (Supports GitHub Actions secrets injection)
+    # This captures secrets passed via SSH environment variables
+    if foodshare-migrate vault sync --from-env --all --container "$DB_CONTAINER" --db-user "$DB_USER" >/dev/null 2>&1; then
+      log "Vault sync: Environment -> Vault (via foodshare-migrate)"
+    fi
+
+    # 2. Sync from Env File -> Vault (Ensures manual changes reach Vault)
+    if foodshare-migrate vault sync --all --env-file "$env_file" --container "$DB_CONTAINER" --db-user "$DB_USER" >/dev/null 2>&1; then
       log "Vault sync: $env_file -> Vault (via foodshare-migrate)"
     fi
     
-    # 2. Sync from Vault to Env (Ensures local file has all secrets from Vault)
-    if foodshare-migrate env sync --from-vault --env-file "$env_file" --container "$DB_CONTAINER" --db-user "$DB_USER"; then
+    # 3. Sync from Vault -> Env File (Ensures file parity with Vault)
+    if foodshare-migrate env sync --from-vault --env-file "$env_file" --container "$DB_CONTAINER" --db-user "$DB_USER" >/dev/null 2>&1; then
       log "Vault sync: Vault -> $env_file (via foodshare-migrate)"
     fi
   else
     log "WARNING: foodshare-migrate not found in PATH, falling back to basic sync"
-    # Basic fallback for single-line secrets only — doesn't handle multiline well
+    # Basic fallback (unlikely on VPS, but good for resilience)
     local script_file="/tmp/vault_sync_$$.sql"
     echo "DO \$\$ BEGIN" > "$script_file"
     while IFS='=' read -r key val || [ -n "$key" ]; do
       [[ "$key" =~ ^#.* ]] || [ -z "$key" ] && continue
-      # Strip quotes if present
       val=$(echo "$val" | sed -e 's/^"//' -e 's/"$//')
-      # Escape for SQL
       eval_escaped=$(echo "$val" | sed "s/'/''/g")
       cat >> "$script_file" <<EOF
       IF EXISTS (SELECT 1 FROM vault.secrets WHERE name = '$key') THEN
@@ -385,8 +389,14 @@ do_restart() {
       docker compose restart kong
       ;;
     functions)
-      log "Restarting edge functions"
-      docker compose restart functions
+      log "Restarting edge functions (zero-downtime)"
+      docker compose up -d --force-recreate functions
+      sleep 10
+      check_functions_health || {
+        err "Functions failed health check — triggering rollback"
+        do_rollback
+        exit 1
+      }
       ;;
     config)
       log "Configuration changed — recreating auth and functions"
@@ -451,6 +461,40 @@ check_endpoint() {
     fi
   done
   err "FAIL: $name (HTTP $code)"
+  return 1
+}
+
+# ── Health check loop for functions ────────────────────────────────────
+
+check_functions_health() {
+  local retries="${1:-10}"
+  local delay="${2:-5}"
+  local url="http://localhost:54321/functions/v1/api-v1-health"
+  local anon_key
+  anon_key=$(get_anon_key)
+
+  if [ -z "$anon_key" ]; then
+    log "WARNING: ANON_KEY not found, skipping specific function health check"
+    return 0
+  fi
+
+  log "Waiting for edge functions to initialise..."
+  for i in $(seq 1 "$retries"); do
+    [ "$i" -gt 1 ] && sleep "$delay"
+    local code
+    code=$(curl -sf -o /dev/null -w "%{http_code}" \
+      -H "apikey: $anon_key" \
+      -H "Host: api.foodshare.club" \
+      "$url" 2>/dev/null || echo "000")
+
+    if [ "$code" = "200" ] || [ "$code" = "204" ]; then
+      log "PASS: Edge functions healthy (attempt $i, HTTP $code)"
+      return 0
+    fi
+    log "  Attempt $i: HTTP $code — retrying in ${delay}s..."
+  done
+
+  err "FAIL: Edge functions unhealthy after $retries attempts"
   return 1
 }
 
@@ -549,6 +593,46 @@ do_rollback() {
   set -e
 }
 
+# ── Stage: new-migration ───────────────────────────────────────────────
+
+do_new_migration() {
+  local desc="${1:-}"
+  if [ -z "$desc" ]; then
+    err "Description required (e.g. ./scripts/deploy.sh new-migration add_user_preferences)"
+    exit 1
+  fi
+
+  if ! echo "$desc" | grep -qE '^[a-z][a-z0-9_]+$'; then
+    err "Description must be lowercase snake_case: [a-z][a-z0-9_]+"
+    exit 1
+  fi
+
+  require_dir
+  local timestamp=$(date -u +%Y%m%d%H%M%S)
+  local filename="${timestamp}_${desc}.sql"
+  local filepath="supabase/migrations/${filename}"
+
+  cat > "$filepath" << 'SQL'
+-- Migration: TODO describe what this migration does
+--
+-- Reminders:
+--   - Use CREATE INDEX CONCURRENTLY to avoid blocking queries
+--   - Enable RLS on new tables: ALTER TABLE <t> ENABLE ROW LEVEL SECURITY;
+--   - Test with: psql -v ON_ERROR_STOP=1 -f <this file>
+
+SQL
+
+  log "Created: $filepath"
+
+  # Open in editor if set
+  if [ -n "${EDITOR:-}" ]; then
+    exec "$EDITOR" "$filepath"
+  elif [ -n "${VISUAL:-}" ]; then
+    exec "$VISUAL" "$filepath"
+  fi
+}
+
+
 # ── Stage: status ───────────────────────────────────────────────────────
 
 do_status() {
@@ -592,9 +676,10 @@ STAGE="${1:-}"
 shift 2>/dev/null || true
 
 case "$STAGE" in
-  backup)     do_backup "$@" ;;
-  pull)       do_pull "$@" ;;
-  sync-vault) do_sync_vault "$@" ;;
+  backup)        do_backup "$@" ;;
+  pull)          do_pull "$@" ;;
+  sync-vault)    do_sync_vault "$@" ;;
+  new-migration) do_new_migration "$@" ;;
   detect)     require_dir; state_init "detect" ;;
   migrate)    do_migrate "$@" ;;
   restart)    do_restart "$@" ;;
@@ -610,9 +695,10 @@ case "$STAGE" in
     echo "  sync-vault  Bidirectional sync between .env files and Vault"
     echo "  migrate     Apply pending database migrations"
     echo "  restart     Restart services (full|functions|rest|detect)"
-    echo "  smoke       Run smoke tests"
-    echo "  rollback    Rollback to previous state"
-    echo "  status      Show service status and deploy state"
+    echo "  smoke          Run smoke tests"
+    echo "  rollback       Rollback to previous state"
+    echo "  status         Show service status and deploy state"
+    echo "  new-migration  Create a new timestamped migration file"
     exit 1
     ;;
 esac
