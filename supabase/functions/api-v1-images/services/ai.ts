@@ -5,9 +5,10 @@
 
 import type { AIData } from "../types/index.ts";
 import { logger } from "../../_shared/logger.ts";
+import { getSecretSync } from "../../_shared/vault.ts";
 
 export async function analyzeImage(imageUrl: string): Promise<AIData | null> {
-  const HF_TOKEN = Deno.env.get("HUGGINGFACE_TOKEN");
+  const HF_TOKEN = getSecretSync("HUGGINGFACE_TOKEN");
 
   if (!HF_TOKEN) {
     logger.warn("HuggingFace token not configured, skipping AI analysis");

@@ -52,7 +52,7 @@ async function handleGet(ctx: HandlerContext): Promise<Response> {
       status: "healthy",
       version: VERSION,
       service: SERVICE,
-      r2: isR2Configured(),
+      r2: await isR2Configured(),
     }, ctx);
   }
 

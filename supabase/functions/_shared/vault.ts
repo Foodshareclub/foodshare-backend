@@ -65,6 +65,17 @@ export async function getSecret(name: string): Promise<string | undefined> {
 }
 
 /**
+ * Fetch a secret synchronously from cache or Deno.env fallback.
+ * Assumes loadAllSecrets() has been called.
+ */
+export function getSecretSync(name: string): string | undefined {
+  if (cache.has(name)) {
+    return cache.get(name);
+  }
+  return Deno.env.get(name);
+}
+
+/**
  * Pre-load all secrets from the Vault into cache.
  * Useful at startup to avoid multiple queries.
  */

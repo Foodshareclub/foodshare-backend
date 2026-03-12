@@ -1,3 +1,4 @@
+import { getSecretSync } from "../vault.ts";
 /**
  * Shared Image Compression Service
  * Used by api-v1-images
@@ -56,7 +57,7 @@ async function compressWithTinyPNG(
   imageData: Uint8Array,
   targetWidth: number = 800,
 ): Promise<CompressResult> {
-  const apiKey = Deno.env.get("TINYPNG_API_KEY");
+  const apiKey = getSecretSync("TINYPNG_API_KEY");
   if (!apiKey) throw new Error("TINYPNG_API_KEY not set");
 
   const authHeader = "Basic " + btoa(`api:${apiKey}`);
@@ -105,9 +106,9 @@ async function compressWithCloudinary(
   imageData: Uint8Array,
   targetWidth: number = 800,
 ): Promise<CompressResult> {
-  const cloudName = Deno.env.get("CLOUDINARY_CLOUD_NAME");
-  const apiKey = Deno.env.get("CLOUDINARY_API_KEY");
-  const apiSecret = Deno.env.get("CLOUDINARY_API_SECRET");
+  const cloudName = getSecretSync("CLOUDINARY_CLOUD_NAME");
+  const apiKey = getSecretSync("CLOUDINARY_API_KEY");
+  const apiSecret = getSecretSync("CLOUDINARY_API_SECRET");
 
   if (!cloudName || !apiKey || !apiSecret) {
     throw new Error("Cloudinary credentials not set");

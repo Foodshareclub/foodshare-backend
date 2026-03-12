@@ -8,6 +8,7 @@
  * API Docs: https://developers.mailersend.com/api/v1/email.html
  */
 
+import { getSecretSync } from "../vault.ts";
 import {
   EmailProvider,
   EmailProviderName,
@@ -59,10 +60,10 @@ export class MailerSendProvider implements EmailProvider {
 
   constructor(config: Partial<MailerSendConfig> = {}) {
     this.config = {
-      apiKey: config.apiKey || Deno.env.get("MAILERSEND_API_KEY") || "",
-      fromEmail: config.fromEmail || Deno.env.get("MAILERSEND_SENDER_EMAIL") ||
+      apiKey: config.apiKey || getSecretSync("MAILERSEND_API_KEY") || "",
+      fromEmail: config.fromEmail || getSecretSync("MAILERSEND_SENDER_EMAIL") ||
         "contact@foodshare.club",
-      fromName: config.fromName || Deno.env.get("MAILERSEND_SENDER_NAME") || "FoodShare",
+      fromName: config.fromName || getSecretSync("MAILERSEND_SENDER_NAME") || "FoodShare",
     };
   }
 

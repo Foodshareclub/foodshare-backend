@@ -6,6 +6,7 @@
 
 import { logger } from "./logger.ts";
 import { getContext } from "./context.ts";
+import { getSecret } from "./vault.ts";
 import type { AppError } from "./errors.ts";
 
 // =============================================================================
@@ -234,8 +235,8 @@ async function sendAlert(alert: ErrorAlert): Promise<void> {
  * Send alert to Slack webhook
  */
 async function sendSlackAlert(alert: ErrorAlert): Promise<void> {
-  const webhookUrl = Deno.env.get("SLACK_ALERT_WEBHOOK_URL") ||
-    Deno.env.get("ERROR_ALERT_WEBHOOK_URL");
+  const webhookUrl = await getSecret("SLACK_ALERT_WEBHOOK_URL") ||
+    await getSecret("ERROR_ALERT_WEBHOOK_URL");
   if (!webhookUrl) return;
 
   const severityEmoji: Record<ErrorSeverity, string> = {
@@ -317,7 +318,7 @@ async function sendSlackAlert(alert: ErrorAlert): Promise<void> {
  * Send alert to PagerDuty for critical errors
  */
 async function sendPagerDutyAlert(alert: ErrorAlert): Promise<void> {
-  const routingKey = Deno.env.get("PAGERDUTY_ROUTING_KEY");
+  const routingKey = await getSecret("PAGERDUTY_ROUTING_KEY");
   if (!routingKey) return;
 
   const environment = Deno.env.get("ENVIRONMENT") || Deno.env.get("DENO_ENV") || "production";

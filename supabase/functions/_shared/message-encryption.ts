@@ -13,6 +13,7 @@
  */
 
 import { logger } from "./logger.ts";
+import { getSecret } from "./vault.ts";
 
 const ENCRYPTED_PREFIX = "enc:";
 const NONCE_LENGTH = 12; // AES-GCM standard nonce size
@@ -22,14 +23,14 @@ let _cryptoKey: CryptoKey | null = null;
 let _keyLoadAttempted = false;
 
 /**
- * Lazily load the encryption key from environment.
+ * Lazily load the encryption key from environment or Vault.
  * Returns null if key is not configured (encryption disabled).
  */
 async function getCryptoKey(): Promise<CryptoKey | null> {
   if (_keyLoadAttempted) return _cryptoKey;
   _keyLoadAttempted = true;
 
-  const keyBase64 = Deno.env.get("CHAT_ENCRYPTION_KEY");
+  const keyBase64 = await getSecret("CHAT_ENCRYPTION_KEY");
   if (!keyBase64) {
     logger.warn("CHAT_ENCRYPTION_KEY not set — message encryption disabled");
     return null;

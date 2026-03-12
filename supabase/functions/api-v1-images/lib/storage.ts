@@ -76,7 +76,7 @@ export async function uploadWithFallback(
   buffer: Uint8Array,
   contentType: string,
 ): Promise<{ publicUrl: string; storage: "r2" | "supabase" }> {
-  if (isR2Configured()) {
+  if (await isR2Configured()) {
     const r2Path = `${bucket}/${path}`;
     const result = await uploadToR2(buffer, r2Path, contentType);
     if (result.success) {

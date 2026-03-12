@@ -18,6 +18,7 @@
 import { logger } from "./logger.ts";
 import { getCircuitStatus, withCircuitBreaker } from "./circuit-breaker.ts";
 import { RETRY_PRESETS, withRetry } from "./retry.ts";
+import { getSecretSync } from "./vault.ts";
 
 // =============================================================================
 // Configuration
@@ -327,7 +328,7 @@ export async function generateEmbeddings(
   const errors: Error[] = [];
 
   for (const provider of PROVIDERS) {
-    const apiKey = Deno.env.get(provider.envKey);
+    const apiKey = getSecretSync(provider.envKey);
 
     if (!apiKey) {
       logger.debug(`Skipping ${provider.name}: API key not configured`);
@@ -456,7 +457,7 @@ export function getEmbeddingHealth(): Record<
   >;
 
   for (const provider of PROVIDERS) {
-    const apiKey = Deno.env.get(provider.envKey);
+    const apiKey = getSecretSync(provider.envKey);
     const circuitStatus = getCircuitStatus(`embedding-${provider.name}`);
 
     result[provider.name] = {
@@ -474,7 +475,7 @@ export function getEmbeddingHealth(): Record<
  */
 export function getActiveProvider(): EmbeddingProvider | null {
   for (const provider of PROVIDERS) {
-    const apiKey = Deno.env.get(provider.envKey);
+    const apiKey = getSecretSync(provider.envKey);
     const circuitStatus = getCircuitStatus(`embedding-${provider.name}`);
 
     if (apiKey && circuitStatus?.state !== "open") {

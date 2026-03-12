@@ -351,7 +351,7 @@ async function createProduct(ctx: HandlerContext<CreateProductBody>): Promise<Re
   }
 
   // Validate image URLs belong to our storage
-  const imageCheck = validateProductImageUrls(body.images);
+  const imageCheck = await validateProductImageUrls(body.images);
   if (!imageCheck.valid) {
     throw new ValidationError(
       "All image URLs must be uploaded through our image API",
@@ -476,7 +476,7 @@ async function updateProduct(ctx: HandlerContext<UpdateProductBody, ListQuery>):
 
   // Validate image URLs belong to our storage (when provided)
   if (body.images !== undefined) {
-    const imageCheck = validateProductImageUrls(body.images);
+    const imageCheck = await validateProductImageUrls(body.images);
     if (!imageCheck.valid) {
       throw new ValidationError(
         "All image URLs must be uploaded through our image API",

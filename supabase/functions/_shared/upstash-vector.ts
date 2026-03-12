@@ -19,6 +19,7 @@
 import { logger } from "./logger.ts";
 import { getCircuitStatus, withCircuitBreaker } from "./circuit-breaker.ts";
 import { RETRY_PRESETS, withRetry } from "./retry.ts";
+import { getSecretSync } from "./vault.ts";
 
 // =============================================================================
 // Configuration
@@ -397,8 +398,8 @@ let clientInstance: UpstashVectorClient | null = null;
  */
 export function getVectorClient(config?: Partial<VectorClientConfig>): UpstashVectorClient {
   if (!clientInstance) {
-    const url = config?.url || Deno.env.get("UPSTASH_VECTOR_REST_URL");
-    const token = config?.token || Deno.env.get("UPSTASH_VECTOR_REST_TOKEN");
+    const url = config?.url || getSecretSync("UPSTASH_VECTOR_REST_URL");
+    const token = config?.token || getSecretSync("UPSTASH_VECTOR_REST_TOKEN");
 
     if (!url || !token) {
       throw new VectorClientError(
