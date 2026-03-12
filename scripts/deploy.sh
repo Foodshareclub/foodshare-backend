@@ -318,6 +318,8 @@ sync_secrets_to_vault() {
     "NEXT_PUBLIC_OAUTH_GOOGLE_ENABLED" "NEXT_PUBLIC_OAUTH_FACEBOOK_ENABLED"
     "NEXT_PUBLIC_OAUTH_APPLE_ENABLED" "NEXT_PUBLIC_OAUTH_GITHUB_ENABLED"
     "SITE_DOMAIN" "CADDY_ACME_EMAIL"
+    "CLOUDFLARE_API_TOKEN" "CLOUDFLARE_DNS_ZONE_TOKEN_ORGANIC" "CLOUDFLARE_ZONE_ID"
+    "VERCEL_FOODSHARE_TOKEN"
   )
   for key in "${secrets_to_sync[@]}"; do
     local val="${!key}"
@@ -729,17 +731,6 @@ END \$\$;
 SQL
 
   log "Created secret migration: $filepath"
-}
-SQL
-
-  log "Created: $filepath"
-
-  # Open in editor if set
-  if [ -n "${EDITOR:-}" ]; then
-    exec "$EDITOR" "$filepath"
-  elif [ -n "${VISUAL:-}" ]; then
-    exec "$VISUAL" "$filepath"
-  fi
 }
 
 # ── Stage: status ───────────────────────────────────────────────────────
