@@ -309,7 +309,16 @@ sync_secrets_to_vault() {
   # 2. Injection: Push from SSH Environment -> Vault
   # This allows GitHub Actions to still seed the Vault with missing secrets
   # but they are un-set in the Workflow later.
-  local secrets_to_sync=("POSTGRES_PASSWORD" "JWT_SECRET" "ANON_KEY" "SERVICE_ROLE_KEY" "GOTRUE_EXTERNAL_APPLE_CLIENT_ID" "GOTRUE_EXTERNAL_APPLE_SECRET" "OPEN_AI_API_KEY" "RESEND_API_KEY")
+  local secrets_to_sync=(
+    "POSTGRES_PASSWORD" "JWT_SECRET" "ANON_KEY" "SERVICE_ROLE_KEY"
+    "GOTRUE_EXTERNAL_APPLE_CLIENT_ID" "GOTRUE_EXTERNAL_APPLE_SECRET"
+    "GOTRUE_EXTERNAL_APPLE_TEAM_ID" "GOTRUE_EXTERNAL_APPLE_KEY_ID"
+    "GOTRUE_EXTERNAL_APPLE_PRIVATE_KEY" "GOTRUE_EXTERNAL_APPLE_REDIRECT_URI"
+    "OPEN_AI_API_KEY" "RESEND_API_KEY"
+    "NEXT_PUBLIC_OAUTH_GOOGLE_ENABLED" "NEXT_PUBLIC_OAUTH_FACEBOOK_ENABLED"
+    "NEXT_PUBLIC_OAUTH_APPLE_ENABLED" "NEXT_PUBLIC_OAUTH_GITHUB_ENABLED"
+    "SITE_DOMAIN" "CADDY_ACME_EMAIL"
+  )
   for key in "${secrets_to_sync[@]}"; do
     local val="${!key}"
     if [ -n "$val" ]; then
