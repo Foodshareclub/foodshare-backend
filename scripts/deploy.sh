@@ -314,26 +314,30 @@ sync_secrets_to_vault() {
   done
 
   # 2. Pull down from Vault -> Env File (Vault is source of truth)
-  # We read the current file and only update keys that exist in the Vault
+  # We use a temporary file to rebuild the .env cleanly, avoiding duplicates
   local vault_data
   vault_data=$(get_vault_secrets)
+  
+  local tmp_env="${env_file}.new"
+  # Copy existing non-syncable settings if needed, or start fresh
+  # For our setup, Vault is the source of truth for ALL synced keys
+  cp "$env_file" "$tmp_env"
   
   while IFS= read -r line; do
     local key="${line%%=*}"
     local val="${line#*=}"
     
-    # Only update or add if the key exists in the Vault
-    if grep -q "^${key}=" "$env_file"; then
-      # Update existing
-      local tmp_file="${env_file}.tmp"
-      sed "s|^${key}=.*|${key}=${val}|" "$env_file" > "$tmp_file" && mv "$tmp_file" "$env_file"
+    # Update or Add using a cleaner awk script to handle the replacement
+    if grep -q "^${key}=" "$tmp_env"; then
+      perl -i -pe "s|^${key}=.*|${key}=${val}|" "$tmp_env"
     else
-      # Add new (if not a blank line and key not empty)
-      if [ -n "$key" ]; then
-        echo "${key}=${val}" >> "$env_file"
-      fi
+      echo "${key}=${val}" >> "$tmp_env"
     fi
   done <<< "$vault_data"
+
+  # Final cleanup: ensure no duplicate keys remain (keep the last one)
+  awk -F= '!a[$1]++' "$tmp_env" > "${tmp_env}.final" && mv "${tmp_env}.final" "$env_file"
+  rm -f "$tmp_env"
 }
 
 # ── Stage: pull ─────────────────────────────────────────────────────────
