@@ -568,35 +568,27 @@ jobs:
               sed -i 's/\([^[:space:]]\)POSTGRES_PASSWORD=/\1\nPOSTGRES_PASSWORD=/g' .env 2>/dev/null || true
             fi
 
-            # ── Update .env with bootstrapping secrets ──
-            if [ -f .env ]; then
-              echo "=== Updating .env with bootstrapping secrets ==="
-              
-              # Essential secrets for container orchestration and Supavisor
-              sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$POSTGRES_PASSWORD|" .env
-              sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$JWT_SECRET|" .env
-              sed -i "s|^ANON_KEY=.*|ANON_KEY=$ANON_KEY|" .env
-              sed -i "s|^SERVICE_ROLE_KEY=.*|SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY|" .env
-
-              # Enabled flags for Studio/GoTrue UI (Secrets live in Vault)
-              [ -n "$ACTUAL_GOOGLE_CLIENT_ID" ] && sed -i "s|^GOTRUE_EXTERNAL_GOOGLE_ENABLED=.*|GOTRUE_EXTERNAL_GOOGLE_ENABLED=true|" .env || true
-              [ -n "$GOTRUE_EXTERNAL_APPLE_CLIENT_ID" ] && sed -i "s|^GOTRUE_EXTERNAL_APPLE_ENABLED=.*|GOTRUE_EXTERNAL_APPLE_ENABLED=true|" .env || true
-              [ -n "$GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID" ] && sed -i "s|^GOTRUE_EXTERNAL_FACEBOOK_ENABLED=.*|GOTRUE_EXTERNAL_FACEBOOK_ENABLED=true|" .env || true
-            fi
-
-            # ── Native Vault Injection (No files touched) ──
-            echo "=== Syncing secrets to Supabase Vault ==="
-            # foodshare-migrate reads directly from the SSH environment variables
-            # We use --all to sync everything passed from GitHub Secrets
+            # ── Native Vault Injection & Env Population (Supabase Cloud Parity) ──
+            echo "=== Syncing secrets: GitHub -> Vault -> .env files ==="
+            # 1. GitHub Secrets -> Supabase Vault (Source of Truth)
             foodshare-migrate vault sync --from-env --all
+            
+            # 2. Supabase Vault -> .env (Core Services)
+            foodshare-migrate env sync --from-vault --env-file .env
+            
+            # 3. Supabase Vault -> .env.functions (Edge Functions)
+            foodshare-migrate env sync --from-vault --env-file .env.functions
 
-            # Prevent empty SSH environment variables from overriding the .env file during docker compose
-            # We only keep what's needed for the next steps
+            # Final verification of Vault state
+            foodshare-migrate vault verify
+
+            # Prevent sensitive SSH environment variables from leaking into subsequent steps
             export DB_PASSWORD="$POSTGRES_PASSWORD"
             unset POSTGRES_PASSWORD JWT_SECRET ANON_KEY SERVICE_ROLE_KEY
             unset GOTRUE_EXTERNAL_APPLE_CLIENT_ID GOTRUE_EXTERNAL_APPLE_SECRET GOTRUE_EXTERNAL_APPLE_TEAM_ID GOTRUE_EXTERNAL_APPLE_KEY_ID GOTRUE_EXTERNAL_APPLE_PRIVATE_KEY GOTRUE_EXTERNAL_APPLE_REDIRECT_URI
             unset GOTRUE_EXTERNAL_FACEBOOK_CLIENT_ID GOTRUE_EXTERNAL_FACEBOOK_SECRET
             unset GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID GOTRUE_EXTERNAL_GOOGLE_SECRET
+            unset GOTRUE_EXTERNAL_GOOGLE_ENABLED GOTRUE_EXTERNAL_APPLE_ENABLED GOTRUE_EXTERNAL_FACEBOOK_ENABLED
 
             # ── Stage 1: Backup ──
             if [ "$SKIP_BACKUP" != "true" ]; then

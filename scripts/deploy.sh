@@ -233,17 +233,21 @@ do_backup() {
 sync_secrets_to_vault() {
   local env_file="$1"
   if [ ! -f "$env_file" ]; then
-    log "INFO: No $env_file found to sync to Vault"
+    log "INFO: No $env_file found to sync to/from Vault"
     return
   fi
 
-  log "Syncing secrets from $env_file to Supabase Vault..."
+  log "Processing secrets for $env_file (Vault bidirectional sync)..."
   
   if command -v foodshare-migrate >/dev/null 2>&1; then
+    # 1. Sync from Env to Vault (Ensures new local changes reach Vault)
     if foodshare-migrate vault sync --all --env-file "$env_file" --container "$DB_CONTAINER" --db-user "$DB_USER"; then
-      log "Vault sync complete (via foodshare-migrate)"
-    else
-      err "Vault sync FAILED (via foodshare-migrate)"
+      log "Vault sync: $env_file -> Vault (via foodshare-migrate)"
+    fi
+    
+    # 2. Sync from Vault to Env (Ensures local file has all secrets from Vault)
+    if foodshare-migrate env sync --from-vault --env-file "$env_file" --container "$DB_CONTAINER" --db-user "$DB_USER"; then
+      log "Vault sync: Vault -> $env_file (via foodshare-migrate)"
     fi
   else
     log "WARNING: foodshare-migrate not found in PATH, falling back to basic sync"
