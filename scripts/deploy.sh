@@ -400,7 +400,16 @@ do_restart() {
       fi
       if echo "$CHANGED" | grep -qE '(docker-compose\.yml|\.env\.example|volumes/)'; then
         log "Infrastructure changed — full restart"
+        # Rebuild Caddy if its Dockerfile changed (avoids stale base image cache)
+        if echo "$CHANGED" | grep -q "Dockerfile.caddy"; then
+          log "Caddy Dockerfile changed — rebuilding with --no-cache --pull"
+          docker compose build --pull --no-cache caddy
+        fi
         docker compose up -d --force-recreate
+      elif echo "$CHANGED" | grep -q "Dockerfile.caddy"; then
+        log "Caddy Dockerfile changed — rebuilding and restarting caddy"
+        docker compose build --pull --no-cache caddy
+        docker compose up -d --force-recreate caddy
       elif echo "$CHANGED" | grep -qE 'supabase/functions/'; then
         log "Functions changed — restarting functions"
         docker compose restart functions
