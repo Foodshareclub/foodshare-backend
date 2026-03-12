@@ -559,7 +559,7 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             NEW_HEAD=$(git rev-parse HEAD)
-            chmod +x scripts/deploy.sh
+            chmod +x scripts/deploy.sh scripts/upsert-env.py
 
             # ── Clean corrupted appended variables if they fused ──
             if [ -f .env ]; then
@@ -577,7 +577,7 @@ jobs:
                 local val=$2
                 local file=${3:-.env}
                 if [ -z "$val" ]; then return; fi
-                python3 -c 'import sys, re, os, json; key, val, file = sys.argv[1:4]; content = open(file, "r").read() if os.path.exists(file) else ""; content += "\n" if content and not content.endswith("\n") else ""; safe_val = json.dumps(val) if any(c in val for c in "\n \"") else val; pattern = re.compile(rf"^{re.escape(key)}=.*$", re.MULTILINE); new_line = f"{key}={safe_val}"; content = pattern.sub(new_line, content) if pattern.search(content) else content + new_line + "\n"; open(file, "w").write(content)' "$key" "$val" "$file" || echo "Failed to upsert $key"
+                python3 scripts/upsert-env.py "$key" "$val" "$file" || echo "Failed to upsert $key"
               }
 
               upsert_env "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
