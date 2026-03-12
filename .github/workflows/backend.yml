@@ -548,6 +548,9 @@ jobs:
             cd /home/organic/dev/foodshare-backend
 
             # ── Stage 0: Pull code first (ensures deploy script exists) ──
+            # Ensure common tool paths are available in the SSH session
+            export PATH=$PATH:/usr/local/bin:/home/organic/.cargo/bin
+            
             echo "=== Stage: pull ==="
             PREV_HEAD=$(git rev-parse HEAD)
             
