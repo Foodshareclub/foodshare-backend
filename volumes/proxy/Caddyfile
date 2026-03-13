@@ -3,7 +3,7 @@
 }
 
 # Principal API Endpoint (Handles SSL via Cloudflare or direct)
-api.foodshare.club, backend.foodshare.club {
+api.foodshare.club {
     tls {
         dns cloudflare {env.CLOUDFLARE_API_TOKEN}
     }

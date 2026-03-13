@@ -5,7 +5,7 @@ Self-hosted Supabase backend (Docker Compose + Deno Edge Functions + PostgreSQL)
 **Self-hosted Supabase:**
 - Studio (dashboard): https://studio.foodshare.club
 - API: https://api.foodshare.club
-- VPS: backend.foodshare.club (ARM64, 8GB RAM)
+- VPS: api.foodshare.club (ARM64, 8GB RAM)
 
 ## Commands
 
@@ -148,7 +148,7 @@ The CI/CD pipeline runs: detect changes → test → security scan → validate 
 
 ```bash
 # Manual VPS access (debugging only, not for deploying)
-autossh -M 0 -o ServerAliveInterval=6000 -o ServerAliveCountMax=6000 -o ConnectTimeout=10 -o ConnectionAttempts=6000 -i ~/.ssh/foodshare_id_ed25519 organic@backend.foodshare.club
+autossh -M 0 -o ServerAliveInterval=6000 -o ServerAliveCountMax=6000 -o ConnectTimeout=10 -o ConnectionAttempts=6000 -i ~/.ssh/foodshare_id_ed25519 organic@api.foodshare.club
 ```
 
 ## Common Pitfalls

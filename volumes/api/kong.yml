@@ -41,7 +41,6 @@ services:
       - name: auth-v1-open
         hosts:
           - api.foodshare.club
-          - backend.foodshare.club
           - kong:8000
         strip_path: true
         paths:
@@ -54,7 +53,6 @@ services:
       - name: auth-v1-open-callback
         hosts:
           - api.foodshare.club
-          - backend.foodshare.club
           - kong:8000
         strip_path: true
         paths:
@@ -67,7 +65,6 @@ services:
       - name: auth-v1-open-authorize
         hosts:
           - api.foodshare.club
-          - backend.foodshare.club
           - kong:8000
         strip_path: true
         paths:
@@ -83,7 +80,6 @@ services:
       - name: auth-v1-all
         hosts:
           - api.foodshare.club
-          - backend.foodshare.club
           - kong:8000
         strip_path: true
         paths:
@@ -108,7 +104,6 @@ services:
       - name: rest-v1-all
         hosts:
           - api.foodshare.club
-          - backend.foodshare.club
           - kong:8000
           - db.foodshare.club
         strip_path: true
@@ -134,7 +129,6 @@ services:
       - name: graphql-v1-all
         hosts:
           - api.foodshare.club
-          - backend.foodshare.club
           - kong:8000
           - db.foodshare.club
         strip_path: true
@@ -166,7 +160,6 @@ services:
       - name: realtime-v1-ws
         hosts:
           - api.foodshare.club
-          - backend.foodshare.club
           - kong:8000
         strip_path: true
         paths:
@@ -190,7 +183,6 @@ services:
       - name: realtime-v1-rest
         hosts:
           - api.foodshare.club
-          - backend.foodshare.club
           - kong:8000
         strip_path: true
         paths:
@@ -215,7 +207,6 @@ services:
       - name: storage-v1-all
         hosts:
           - api.foodshare.club
-          - backend.foodshare.club
           - kong:8000
           - storage.foodshare.club
         strip_path: true
@@ -232,7 +223,6 @@ services:
       - name: functions-v1-all
         hosts:
           - api.foodshare.club
-          - backend.foodshare.club
           - kong:8000
         strip_path: true
         paths:
@@ -248,7 +238,6 @@ services:
       - name: analytics-v1-all
         hosts:
           - api.foodshare.club
-          - backend.foodshare.club
           - kong:8000
         strip_path: true
         paths:
@@ -262,7 +251,6 @@ services:
       - name: meta-all
         hosts:
           - api.foodshare.club
-          - backend.foodshare.club
           - kong:8000
           - db.foodshare.club
         strip_path: true
