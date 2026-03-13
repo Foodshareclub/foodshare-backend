@@ -52,6 +52,9 @@ This repository is the source of truth for database schema and Edge Functions. C
 
 All deployments go through GitHub Actions CI/CD. Never SSH to deploy manually.
 
+> [!IMPORTANT]
+> **CI/CD-First Directive**: Manual `git pull` or `docker compose` restarts on the VPS are forbidden for deployment. The pipeline is the sole source of truth.
+
 ```bash
 # Check latest CI/CD run status
 gh run list --limit 3

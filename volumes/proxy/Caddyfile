@@ -24,3 +24,8 @@ backend.foodshare.club {
 studio.foodshare.club {
     reverse_proxy studio:3000
 }
+
+# Web Application
+foodshare.club, www.foodshare.club {
+    reverse_proxy foodshare-web:3000
+}

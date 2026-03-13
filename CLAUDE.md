@@ -80,6 +80,7 @@ Kong is the single entrypoint. Cloudflare tunnel routes to port 54321. Dashboard
 9. **Always return 200 from webhooks** -- Even on errors, to prevent retry storms from Telegram/WhatsApp/Meta.
 10. **Secret Management** -- Use Supabase Vault via `getSecret` from `_shared/vault.ts`. It provides encrypted storage with automatic caching and fallbacks to `.env.functions`.
 11. **No deno.lock** -- Do not commit `deno.lock`. Edge-runtime v1.70.1 resolves dependencies fresh to prevent cold start hangs or boot errors.
+12. **CI/CD-First Directive** -- All infrastructure changes, domain standardizations, and service restarts MUST be handled via the GitHub Actions pipeline. AI assistants must **NEVER** suggest manual `git pull` or manual `docker compose` restarts on the VPS. The pipeline is the sole source of truth.
 
 ## Functions (28 total)
 
@@ -144,7 +145,7 @@ gh run view <run-id> --log-failed # Show failure logs
 gh run watch <run-id>             # Live-stream a running deploy
 ```
 
-The CI/CD pipeline runs: detect changes → test → security scan → validate migrations → lint → deploy gate → deploy to VPS → dry-run summary. Never SSH into the VPS to deploy manually — always push to `main` and let CI/CD handle it.
+The CI/CD pipeline runs: detect changes → test → security scan → validate migrations → lint → deploy gate → deploy to VPS → dry-run summary. Never SSH into the VPS to deploy manually — always push to `main` and let CI/CD handle it. The pipeline automatically standardizes domains (e.g., `backend.` -> `api.`) when syncing secrets to the Vault.
 
 ```bash
 # Manual VPS access (debugging only, not for deploying)
