@@ -306,10 +306,20 @@ sync_secrets_to_vault() {
     "CLOUDFLARE_API_TOKEN" "CLOUDFLARE_DNS_ZONE_TOKEN_ORGANIC" "CLOUDFLARE_ZONE_ID"
     "VERCEL_FOODSHARE_TOKEN"
   )
+  # Domain Standardization Helper
+  standardize_domain() {
+    local value="$1"
+    # Replace legacy backend domain with standardized api domain
+    # Also standardize foodshare.app to foodshare.club if still lurking
+    echo "$value" | sed -e 's/backend\.foodshare\.club/api.foodshare.club/g' \
+                       -e 's/foodshare\.app/foodshare.club/g'
+  }
+
   for key in "${secrets_to_sync[@]}"; do
     local val="${!key}"
     if [ -n "$val" ]; then
-      set_vault_secret "$key" "$val" "Injected via GitHub Actions environment"
+      local clean_val=$(standardize_domain "$val")
+      set_vault_secret "$key" "$clean_val" "Injected/Standardized via GitHub Actions"
     fi
   done
 

@@ -39,7 +39,7 @@ foodshare-backend/
 
 - **Studio**: https://studio.foodshare.club
 - **API**: https://api.foodshare.club
-- **VPS**: backend.foodshare.club (ARM64, 8GB RAM)
+- **VPS**: api.foodshare.club (ARM64, 8GB RAM)
 
 ## Client Apps
 
@@ -82,5 +82,5 @@ const apiKey = await getSecret("MY_API_KEY");
 ```bash
 autossh -M 0 -o ServerAliveInterval=6000 -o ServerAliveCountMax=6000 \
   -o ConnectTimeout=10 -o ConnectionAttempts=6000 \
-  -i ~/.ssh/foodshare_id_ed25519 organic@backend.foodshare.club
+  -i ~/.ssh/foodshare_id_ed25519 organic@api.foodshare.club
 ```

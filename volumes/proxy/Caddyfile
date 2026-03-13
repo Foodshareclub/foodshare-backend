@@ -2,7 +2,7 @@
     email support@foodshare.club
 }
 
-# Principal API Endpoint (Handles SSL via Cloudflare or direct)
+# Principal API Endpoint
 api.foodshare.club {
     tls {
         dns cloudflare {env.CLOUDFLARE_API_TOKEN}
@@ -10,6 +10,14 @@ api.foodshare.club {
     reverse_proxy kong:8000 {
         header_up Host {host}
     }
+}
+
+# Legacy Redirect (backend -> api)
+backend.foodshare.club {
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
+    redir https://api.foodshare.club{uri} permanent
 }
 
 # Supabase Studio (Dashboard)
